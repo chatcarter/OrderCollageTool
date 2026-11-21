@@ -247,6 +247,13 @@
             </div>
             <textarea id="editHwText" rows="3" placeholder="輸入客戶資料..."></textarea>
 
+            <div class="control-row" style="margin-top: 6px;">
+              <div class="control-label">
+                <span>人物字跡（20 種高差異化風格）</span>
+              </div>
+              <select id="editHwPersona" class="hw-select"></select>
+            </div>
+
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; gap: 8px;">
               <div class="color-presets" style="margin: 0;" id="editHwColorPresets">
                 <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色"></div>
@@ -262,21 +269,21 @@
 
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>✍️ 筆跡工整度（Lv.1 漂亮 ➔ Lv.20 普通）</span>
-                <span class="slider-val" id="valEditHwQuality">Lv.4 (漂亮工整)</span>
-              </div>
-              <div class="slider-container">
-                <input type="range" id="sliderEditHwQuality" min="1" max="20" step="1" value="4">
-              </div>
-            </div>
-
-            <div class="control-row" style="margin-top: 4px;">
-              <div class="control-label">
                 <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
                 <span class="slider-val" id="valEditHwSpacing">5 (標準)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderEditHwSpacing" min="1" max="10" step="1" value="5">
+              </div>
+            </div>
+
+            <div class="control-row" style="margin-top: 4px;">
+              <div class="control-label">
+                <span>🎛️ 微調工整度（認真 ➔ 隨性）</span>
+                <span class="slider-val" id="valEditHwNeatness">5 (標準)</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderEditHwNeatness" min="1" max="10" step="1" value="5">
               </div>
             </div>
           </div>
@@ -477,11 +484,11 @@
         </div>
       </div>
 
-      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (速乾油性原子筆 ＋ 20 級美醜工整度 ＋ 10 級字距) -->
+      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (20 種高差異化人物字跡 ＋ 速乾油性原子筆 ＋ 10 級字距) -->
       <div class="panel-card" id="cardHandwriting">
         <div class="card-title">
           <span>✍️ 保卡手寫客戶資料生成器</span>
-          <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">油性原子筆就緒</span>
+          <span class="count-badge" id="hwPersonaBadge">#01 細膩女會計</span>
         </div>
 
         <div class="panel-body-box">
@@ -489,11 +496,24 @@
           <div class="control-row">
             <div class="control-label">
               <span>客戶資料多行輸入（姓名／電話／Email／地址／機號）</span>
+              <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">油性原子筆就緒</span>
             </div>
             <textarea id="inputHandwritingText" rows="4" placeholder="請輸入或貼上客戶資料（支援換行排版）...">王小明
 0912-345-678
 demo@example.com
 台北市信義區忠孝東路五段68號</textarea>
+          </div>
+
+          <!-- 20 種高差異化人物字跡選擇器（四大類分頁 ＋ 快速點選按鈕 ＋ 下拉選單） -->
+          <div class="hw-persona-selector">
+            <div class="hw-cat-tabs" id="hwCategoryTabs">
+              <button type="button" class="hw-cat-tab active" data-cat="female">👩 女性 (5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="male">👨 男性 (5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="elder">👴 長輩 (5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="special">🎨 特殊 (5)</button>
+            </div>
+            <div class="hw-persona-btns" id="hwPersonaButtons"></div>
+            <select id="hwPersonaSelect" class="hw-select" style="margin-top: 6px;" title="快速切換全部 20 種人物字跡"></select>
           </div>
 
           <!-- 細微調整面板 -->
@@ -518,25 +538,25 @@ demo@example.com
               </div>
             </div>
 
-            <!-- 筆跡美醜 20 級滑桿（Lv.1 漂亮 ➔ Lv.20 普通） -->
-            <div class="control-row" style="margin-top: 6px;">
-              <div class="control-label">
-                <span>✍️ 筆跡工整度（Lv.1 漂亮 ➔ Lv.20 普通）</span>
-                <span class="slider-val" id="valHwQuality">Lv.4 (漂亮工整)</span>
-              </div>
-              <div class="slider-container">
-                <input type="range" id="sliderHwQuality" min="1" max="20" step="1" value="4">
-              </div>
-            </div>
-
             <!-- 左右字距 10 級滑桿（1 最寬 ➔ 10 最緊靠） -->
-            <div class="control-row" style="margin-top: 4px;">
+            <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
                 <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
                 <span class="slider-val" id="valHwSpacing">5 (標準)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderHwSpacing" min="1" max="10" step="1" value="5">
+              </div>
+            </div>
+
+            <!-- 微調工整度輔助滑桿（1 認真 ➔ 10 隨性） -->
+            <div class="control-row" style="margin-top: 4px;">
+              <div class="control-label">
+                <span>🎛️ 微調工整度（認真 ➔ 隨性）</span>
+                <span class="slider-val" id="valHwNeatness">5 (標準)</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderHwNeatness" min="1" max="10" step="1" value="5">
               </div>
             </div>
           </div>
@@ -548,7 +568,7 @@ demo@example.com
 
           <!-- 重新抽樣 ＋ 蓋上保卡按鈕 -->
           <div style="display: flex; gap: 6px; margin-top: 8px;">
-            <button type="button" class="btn btn-outline btn-sm" id="btnHwResample" title="同等級下重新隨機微調筆順與起伏">
+            <button type="button" class="btn btn-outline btn-sm" id="btnHwResample" title="同人物下重新隨機微調筆順與起伏">
               🔄 換個筆順微調
             </button>
             <button type="button" class="btn btn-primary" id="btnAddHandwriting" style="flex: 1; background-color: #003FBC;">
