@@ -100,10 +100,12 @@
           <span>已匯入物件清單</span>
           <span class="count-badge" id="layerCountBadge">0 個物件</span>
         </div>
-        <div class="layers-list" id="layersList">
-          <div class="empty-hint" id="emptyLayersHint">
-            尚未匯入任何物件<br>
-            請直接將 PDF 或圖片拖曳至左側白色畫布
+        <div class="panel-body-box">
+          <div class="layers-list" id="layersList">
+            <div class="empty-hint" id="emptyLayersHint">
+              尚未匯入任何物件<br>
+              請直接將 PDF 或圖片拖曳至左側白色畫布
+            </div>
           </div>
         </div>
       </div>
@@ -115,6 +117,7 @@
           <span id="activeTypeName" style="font-size: 11px; color: var(--text-muted); font-weight: normal;">未選取任何物件</span>
         </div>
 
+        <div class="panel-body-box">
         <div id="noSelectionHint" class="empty-hint">
           請在左側畫布或上方清單點選物件以展開控制
         </div>
@@ -237,6 +240,65 @@
             </div>
           </div>
 
+          <!-- 手寫客戶資料圖層專用控制 -->
+          <div id="handwritingControls" class="control-row hidden">
+            <div class="control-label">
+              <span>手寫客戶資料內容</span>
+            </div>
+            <textarea id="editHwText" rows="3" placeholder="輸入客戶資料..."></textarea>
+
+            <div class="control-row" style="margin-top: 6px;">
+              <div class="control-label">
+                <span>筆跡人格</span>
+              </div>
+              <select id="editHwPersona" class="hw-select">
+                <option value="0">#1 工整專櫃</option>
+                <option value="1">#2 俐落業務</option>
+                <option value="2">#3 秀氣微傾</option>
+                <option value="3">#4 圓潤自然</option>
+                <option value="4">#5 快寫連筆</option>
+                <option value="5">#6 沉穩大氣</option>
+                <option value="6">#7 輕快隨筆</option>
+                <option value="7">#8 細長清秀</option>
+                <option value="8">#9 豪邁奔放</option>
+                <option value="9">#10 職人手寫</option>
+              </select>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; gap: 8px;">
+              <div class="color-presets" style="margin: 0;" id="editHwColorPresets">
+                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色"></div>
+                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="淺藍色"></div>
+                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="墨藍色"></div>
+              </div>
+              <div class="hw-seg-group" id="editHwTipGroup">
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">細</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">中</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">粗</button>
+              </div>
+            </div>
+
+            <div class="control-row" style="margin-top: 6px;">
+              <div class="control-label">
+                <span>筆觸段位 (正體 ➔ 潦草)</span>
+                <span class="slider-val" id="valEditHwStyle">Lv.2</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderEditHwStyle" min="1" max="6" step="1" value="2">
+              </div>
+            </div>
+
+            <div class="control-row" style="margin-top: 4px;">
+              <div class="control-label">
+                <span>牽絲過渡細線</span>
+                <span class="slider-val" id="valEditHwLigature">10%</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderEditHwLigature" min="0" max="40" step="5" value="10">
+              </div>
+            </div>
+          </div>
+
           <!-- 局部圈選刪除（塗白橡皮擦 - 適用於 PDF 訂購單與照片） -->
           <div id="eraseControls" class="control-row hidden" style="border-top: 1px solid #f1f5f9; padding-top: 10px;">
             <div id="eraseNotice" class="tool-notice hidden" style="margin-bottom: 8px;">
@@ -272,6 +334,7 @@
           </div>
 
         </div>
+        </div>
       </div>
 
       <!-- 3. 櫃位印章與同色系動態日期 (常駐區塊) -->
@@ -280,6 +343,7 @@
           <span>櫃位印章與動態日期</span>
         </div>
 
+        <div class="panel-body-box">
         <div class="stamp-preview-box">
           <img src="" alt="櫃位印章預覽" class="stamp-preview-img" id="stampPreviewImg">
         </div>
@@ -326,6 +390,7 @@
           </svg>
           蓋上印章（加到畫布）
         </button>
+        </div>
       </div>
 
       <!-- 4. 單據內文辨識 (OCR) 與審核備註文字 -->
@@ -345,6 +410,7 @@
           </div>
         </div>
 
+        <div class="panel-body-box">
         <div id="ocrStatusBox" class="ocr-status hidden"></div>
 
         <div class="control-row">
@@ -370,6 +436,7 @@
             </button>
           </div>
         </div>
+        </div>
       </div>
 
       <!-- 5. 🔤 內文修改：原生字型嵌入與文字覆寫 -->
@@ -378,6 +445,7 @@
           <span>🔤 內文修改：原生字型嵌入與覆寫</span>
         </div>
 
+        <div class="panel-body-box">
         <!-- 字型選擇器 -->
         <div class="control-row">
           <div class="control-label">
@@ -424,14 +492,101 @@
             ➕ 插入覆寫文字到畫布
           </button>
         </div>
+        </div>
       </div>
 
-      <!-- 6. 高解析度無損匯出 -->
+      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (10 種固定筆跡人格 ＋ 細微參數微調) -->
+      <div class="panel-card" id="cardHandwriting">
+        <div class="card-title">
+          <span>✍️ 保卡手寫客戶資料生成器</span>
+          <span class="count-badge" id="hwPersonaBadge">#1 工整專櫃</span>
+        </div>
+
+        <div class="panel-body-box">
+          <!-- 客戶資料多行打字區 -->
+          <div class="control-row">
+            <div class="control-label">
+              <span>客戶資料多行輸入（姓名／電話／Email／地址／機號）</span>
+            </div>
+            <textarea id="inputHandwritingText" rows="4" placeholder="請輸入或貼上客戶資料（支援換行排版）...">王小明
+0912-345-678
+demo@example.com
+台北市信義區忠孝東路五段68號</textarea>
+          </div>
+
+          <!-- 10 種固定筆跡人格即時預覽網格 -->
+          <div class="control-row" style="margin-top: 8px;">
+            <div class="control-label">
+              <span>10 種固定筆跡人格（點擊鎖定筆跡）</span>
+              <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">筆順模擬就緒</span>
+            </div>
+            <div class="hw-preset-grid" id="handwritingPresetGrid"></div>
+          </div>
+
+          <!-- 選定筆跡後的細微調整面板 -->
+          <div class="hw-tweak-panel">
+            <!-- 墨水顏色（3 色） -->
+            <div class="hw-tweak-row">
+              <span class="hw-tweak-label">墨水顏色</span>
+              <div class="color-presets" style="margin: 0;" id="hwColorPresets">
+                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色 (#1A1A1A)"></div>
+                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="淺藍色 (#1E6FD9)"></div>
+                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="墨藍色 (#0B2859)"></div>
+              </div>
+            </div>
+
+            <!-- 筆尖粗細（3 段） -->
+            <div class="hw-tweak-row">
+              <span class="hw-tweak-label">筆尖粗細</span>
+              <div class="hw-seg-group" id="hwTipGroup">
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">細 (0.4mm)</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">中 (0.7mm)</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">粗 (1.1mm)</button>
+              </div>
+            </div>
+
+            <!-- 筆觸段位滑桿（6 段：正體 Lv.1 -> 潦草 Lv.6） -->
+            <div class="control-row" style="margin-top: 6px;">
+              <div class="control-label">
+                <span>筆觸段位（正體 Lv.1 ➔ 潦草 Lv.6）</span>
+                <span class="slider-val" id="valHwStyle">Lv.2</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderHwStyle" min="1" max="6" step="1" value="2">
+              </div>
+            </div>
+
+            <!-- 牽絲過渡細線微調（0% ~ 40%） -->
+            <div class="control-row" style="margin-top: 4px;">
+              <div class="control-label">
+                <span>牽絲過渡細線微調</span>
+                <span class="slider-val" id="valHwLigature">10%</span>
+              </div>
+              <div class="slider-container">
+                <input type="range" id="sliderHwLigature" min="0" max="40" step="5" value="10">
+              </div>
+            </div>
+          </div>
+
+          <!-- 即時放大預覽區 -->
+          <div class="hw-main-preview-box">
+            <canvas id="hwMainPreviewCanvas"></canvas>
+          </div>
+
+          <!-- 蓋上保卡按鈕 -->
+          <button type="button" class="btn btn-primary btn-full" id="btnAddHandwriting" style="margin-top: 8px; background-color: #003FBC;">
+            ✍️ 蓋上保卡（加入畫布）
+          </button>
+        </div>
+      </div>
+
+      <!-- 7. 高解析度無損匯出 -->
       <div class="panel-card export-card">
         <div class="card-title">
           <span>高解析度無損匯出</span>
         </div>
 
+        <div class="panel-body-box">
         <!-- 圖紙輸出範圍勾選開關 -->
         <div class="toggle-row" style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9;">
           <span style="font-size: 12px; font-weight: 600;">依自訂範圍裁切匯出</span>
@@ -469,6 +624,7 @@
           </svg>
           匯出 PNG 圖片
         </button>
+        </div>
       </div>
 
     </aside>
