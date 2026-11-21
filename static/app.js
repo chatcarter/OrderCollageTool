@@ -154,7 +154,27 @@ const valContrast = document.getElementById('valContrast');
 // 文字專用控制
 const textControls = document.getElementById('textControls');
 const editTextContent = document.getElementById('editTextContent');
+const sliderTextFontSize = document.getElementById('sliderTextFontSize');
+const numTextFontSize = document.getElementById('numTextFontSize');
+const valTextFontSize = document.getElementById('valTextFontSize');
 const btnTextBold = document.getElementById('btnTextBold');
+
+// 原生字型嵌入與覆寫文字控制項
+const inputCustomFont = document.getElementById('inputCustomFont');
+const customFontStatus = document.getElementById('customFontStatus');
+const inputOverrideText = document.getElementById('inputOverrideText');
+const inputOverrideFontSize = document.getElementById('inputOverrideFontSize');
+const numOverrideFontSize = document.getElementById('numOverrideFontSize');
+const valOverrideFontSize = document.getElementById('valOverrideFontSize');
+const btnOverrideBold = document.getElementById('btnOverrideBold');
+const overrideColorPresets = document.getElementById('overrideColorPresets');
+const btnAddOverrideText = document.getElementById('btnAddOverrideText');
+
+let currentEmbeddedFontFamily = null;
+let currentEmbeddedFontName = '系統預設黑體／細明體';
+let overrideFontSize = 40;
+let overrideIsBold = false;
+let overrideColor = '#000000';
 
 // 快速變形控制
 const btnRotateCCW = document.getElementById('btnRotateCCW');
@@ -562,7 +582,7 @@ function render(isExporting = false) {
       ctx.scale(-1, 1);
     }
 
-    if (layer.type === 'text') {
+    if (layer.type === 'text' || layer.type === 'overrideText') {
       drawTextLayer(layer);
     } else if (!isExporting && layer === activeLayer && layer.distortMode && layer.distortCorners) {
       // 自由梯形變形「即時跟隨拉扯預覽」 + 九宮格參考輔助線
@@ -613,14 +633,15 @@ function render(isExporting = false) {
   ctx.restore();
 }
 
-// 繪製文字圖層
+// 繪製文字圖層 (包含審核備註與原生字型覆寫文字)
 function drawTextLayer(layer) {
-  const fontWeight = layer.bold ? 'bold ' : '';
-  ctx.font = `${fontWeight}${layer.fontSize}px -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif`;
-  ctx.fillStyle = layer.color;
+  const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+  const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif';
+  ctx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
+  ctx.fillStyle = layer.color || '#000000';
   ctx.textBaseline = 'top';
 
-  const lines = layer.text.split('\n');
+  const lines = (layer.text || '').split('\n');
   const lineHeight = layer.fontSize * 1.35;
 
   let maxWidth = 0;
@@ -630,11 +651,14 @@ function drawTextLayer(layer) {
   });
   const totalHeight = lines.length * lineHeight;
 
-  layer.width = Math.max(100, maxWidth + 30);
-  layer.height = Math.max(50, totalHeight + 15);
+  const padX = layer.type === 'overrideText' ? 14 : 30;
+  const padY = layer.type === 'overrideText' ? 8 : 15;
 
-  const startX = -layer.width / 2 + 15;
-  const startY = -layer.height / 2 + 8;
+  layer.width = Math.max(50, Math.round(maxWidth + padX));
+  layer.height = Math.max(25, Math.round(totalHeight + padY));
+
+  const startX = -layer.width / 2 + padX / 2;
+  const startY = -layer.height / 2 + padY / 2;
 
   lines.forEach((line, idx) => {
     ctx.fillText(line, startX, startY + idx * lineHeight);
@@ -1628,8 +1652,18 @@ window.addEventListener('mousemove', e => {
     activeLayer.width = Math.round(origW * newScale);
     activeLayer.height = Math.round(origH * newScale);
 
-    if (activeLayer.type === 'text') {
-      activeLayer.fontSize = Math.max(14, Math.round(objInitialState.fontSize * newScale));
+    if (activeLayer.type === 'text' || activeLayer.type === 'overrideText') {
+      activeLayer.fontSize = Math.max(10, Math.round(objInitialState.fontSize * newScale));
+      if (sliderTextFontSize && numTextFontSize) {
+        sliderTextFontSize.value = activeLayer.fontSize;
+        numTextFontSize.value = activeLayer.fontSize;
+        if (valTextFontSize) valTextFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
+      if (activeLayer.type === 'overrideText' && inputOverrideFontSize && numOverrideFontSize) {
+        inputOverrideFontSize.value = activeLayer.fontSize;
+        numOverrideFontSize.value = activeLayer.fontSize;
+        if (valOverrideFontSize) valOverrideFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
     }
 
     render();
@@ -1801,7 +1835,7 @@ window.addEventListener('keydown', e => {
     }
   } else if (activeLayer && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     e.preventDefault();
-    const step = e.shiftKey ? 12 : 2;
+    const step = e.shiftKey ? 10 : 1;
     if (e.key === 'ArrowUp') activeLayer.y -= step;
     if (e.key === 'ArrowDown') activeLayer.y += step;
     if (e.key === 'ArrowLeft') activeLayer.x -= step;
@@ -1833,9 +1867,10 @@ canvas.addEventListener('dblclick', e => {
       render();
       showToast('已開啟矩形裁切（拖曳框線去除桌面，完成後再點兩下照片即可）');
     }
-  } else if (hit.layer.type === 'text') {
+  } else if (hit.layer.type === 'text' || hit.layer.type === 'overrideText') {
+    setActiveLayer(hit.layer);
     editTextContent.focus();
-    showToast('請在右側面板修改備註文字');
+    showToast('請在右側面板修改文字內容');
   }
 });
 
@@ -1897,12 +1932,31 @@ function setActiveLayer(layer) {
     }
   } else if (layer.type === 'stamp') {
     activeTypeName.textContent = '專櫃印章 (獨立圖層)';
-  } else if (layer.type === 'text') {
-    activeTypeName.textContent = '審核備註文字';
+  } else if (layer.type === 'text' || layer.type === 'overrideText') {
+    activeTypeName.textContent = layer.type === 'overrideText' ? '原生字型覆寫文字 (獨立圖層)' : '審核備註文字 (獨立圖層)';
     textControls.classList.remove('hidden');
     editTextContent.value = layer.text;
-    btnTextBold.style.backgroundColor = layer.bold ? '#e2e8f0' : 'transparent';
+    btnTextBold.style.backgroundColor = (layer.bold || layer.fontWeight === 'bold') ? '#e2e8f0' : 'transparent';
     updateColorButtonSelection(textControls, layer.color);
+    if (sliderTextFontSize && numTextFontSize) {
+      sliderTextFontSize.value = layer.fontSize;
+      numTextFontSize.value = layer.fontSize;
+      if (valTextFontSize) valTextFontSize.textContent = `${layer.fontSize}px`;
+    }
+    if (layer.type === 'overrideText') {
+      if (inputOverrideText) inputOverrideText.value = layer.text;
+      if (inputOverrideFontSize && numOverrideFontSize) {
+        inputOverrideFontSize.value = layer.fontSize;
+        numOverrideFontSize.value = layer.fontSize;
+        if (valOverrideFontSize) valOverrideFontSize.textContent = `${layer.fontSize}px`;
+      }
+      if (btnOverrideBold) {
+        btnOverrideBold.style.backgroundColor = (layer.bold || layer.fontWeight === 'bold') ? '#e2e8f0' : 'transparent';
+      }
+      if (overrideColorPresets) {
+        updateColorButtonSelection(overrideColorPresets, layer.color);
+      }
+    }
   }
 
   render();
@@ -1946,12 +2000,17 @@ function updateLayersListUI() {
     } else if (layer.type === 'stamp') {
       badgeClass = 'badge-stamp';
       typeLabel = '專櫃印章';
+    } else if (layer.type === 'overrideText') {
+      badgeClass = 'badge-override';
+      typeLabel = '覆寫文字';
     } else if (layer.type === 'text') {
       badgeClass = 'badge-text';
       typeLabel = '審核備註';
     }
 
-    if (layer.type === 'text') {
+    if (layer.type === 'overrideText') {
+      thumbHtml = `<div class="layer-thumb layer-thumb-override" title="${layer.fontName || '原生字型'}">🔤</div>`;
+    } else if (layer.type === 'text') {
       thumbHtml = `<div class="layer-thumb layer-thumb-text">T</div>`;
     } else if (layer.image) {
       const src = layer.image instanceof HTMLCanvasElement ? layer.image.toDataURL() : layer.image.src;
@@ -2923,15 +2982,18 @@ async function runSerialRegionOcr(rx, ry, rw, rh) {
       cCtx.translate(layer.x, layer.y);
       cCtx.rotate(layer.rotation);
       if (layer.flipH) cCtx.scale(-1, 1);
-      if (layer.type === 'text') {
-        const fontWeight = layer.bold ? 'bold ' : '';
-        cCtx.font = `${fontWeight}${layer.fontSize}px -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif`;
-        cCtx.fillStyle = layer.color;
+      if (layer.type === 'text' || layer.type === 'overrideText') {
+        const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+        const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif';
+        cCtx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
+        cCtx.fillStyle = layer.color || '#000000';
         cCtx.textBaseline = 'top';
-        const lines = layer.text.split('\n');
+        const lines = (layer.text || '').split('\n');
         const lineHeight = layer.fontSize * 1.35;
-        const startX = -layer.width / 2 + 15;
-        const startY = -layer.height / 2 + 8;
+        const padX = layer.type === 'overrideText' ? 14 : 30;
+        const padY = layer.type === 'overrideText' ? 8 : 15;
+        const startX = -layer.width / 2 + padX / 2;
+        const startY = -layer.height / 2 + padY / 2;
         lines.forEach((line, idx) => cCtx.fillText(line, startX, startY + idx * lineHeight));
       } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
         cCtx.drawImage(layer.image, -layer.width / 2, -layer.height / 2, layer.width, layer.height);
@@ -3014,15 +3076,18 @@ async function runInvoiceRegionOcr(rx, ry, rw, rh) {
       cCtx.translate(layer.x, layer.y);
       cCtx.rotate(layer.rotation);
       if (layer.flipH) cCtx.scale(-1, 1);
-      if (layer.type === 'text') {
-        const fontWeight = layer.bold ? 'bold ' : '';
-        cCtx.font = `${fontWeight}${layer.fontSize}px -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif`;
-        cCtx.fillStyle = layer.color;
+      if (layer.type === 'text' || layer.type === 'overrideText') {
+        const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+        const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif';
+        cCtx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
+        cCtx.fillStyle = layer.color || '#000000';
         cCtx.textBaseline = 'top';
-        const lines = layer.text.split('\n');
+        const lines = (layer.text || '').split('\n');
         const lineHeight = layer.fontSize * 1.35;
-        const startX = -layer.width / 2 + 15;
-        const startY = -layer.height / 2 + 8;
+        const padX = layer.type === 'overrideText' ? 14 : 30;
+        const padY = layer.type === 'overrideText' ? 8 : 15;
+        const startX = -layer.width / 2 + padX / 2;
+        const startY = -layer.height / 2 + padY / 2;
         lines.forEach((line, idx) => cCtx.fillText(line, startX, startY + idx * lineHeight));
       } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
         cCtx.drawImage(layer.image, -layer.width / 2, -layer.height / 2, layer.width, layer.height);
@@ -3328,39 +3393,253 @@ document.getElementById('newNoteColorPresets').querySelectorAll('.color-btn').fo
 
 let editTextPreState = false;
 editTextContent.addEventListener('focus', () => {
-  if (activeLayer && activeLayer.type === 'text') {
-    pushUndoState('編輯備註文字');
+  if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
+    pushUndoState('編輯文字內容');
   }
 });
 
 editTextContent.addEventListener('input', () => {
-  if (activeLayer && activeLayer.type === 'text') {
+  if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
     activeLayer.text = editTextContent.value;
-    activeLayer.name = `備註: ${activeLayer.text.slice(0, 8)}...`;
+    const prefix = activeLayer.type === 'overrideText' ? '覆寫' : '備註';
+    activeLayer.name = `${prefix}: ${activeLayer.text.slice(0, 8)}...`;
     updateLayersListUI();
     render();
   }
 });
 
 btnTextBold.addEventListener('click', () => {
-  if (activeLayer && activeLayer.type === 'text') {
+  if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
     pushUndoState('粗體切換');
     activeLayer.bold = !activeLayer.bold;
+    activeLayer.fontWeight = activeLayer.bold ? 'bold' : 'normal';
     btnTextBold.style.backgroundColor = activeLayer.bold ? '#e2e8f0' : 'transparent';
+    if (activeLayer.type === 'overrideText' && btnOverrideBold) {
+      btnOverrideBold.style.backgroundColor = activeLayer.bold ? '#e2e8f0' : 'transparent';
+    }
     render();
   }
 });
 
+if (sliderTextFontSize && numTextFontSize) {
+  sliderTextFontSize.addEventListener('input', () => {
+    if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
+      activeLayer.fontSize = parseInt(sliderTextFontSize.value, 10) || 40;
+      numTextFontSize.value = activeLayer.fontSize;
+      if (valTextFontSize) valTextFontSize.textContent = `${activeLayer.fontSize}px`;
+      if (activeLayer.type === 'overrideText' && inputOverrideFontSize && numOverrideFontSize) {
+        inputOverrideFontSize.value = activeLayer.fontSize;
+        numOverrideFontSize.value = activeLayer.fontSize;
+        if (valOverrideFontSize) valOverrideFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
+      render();
+    }
+  });
+
+  numTextFontSize.addEventListener('input', () => {
+    if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
+      activeLayer.fontSize = Math.min(200, Math.max(10, parseInt(numTextFontSize.value, 10) || 40));
+      sliderTextFontSize.value = activeLayer.fontSize;
+      if (valTextFontSize) valTextFontSize.textContent = `${activeLayer.fontSize}px`;
+      if (activeLayer.type === 'overrideText' && inputOverrideFontSize && numOverrideFontSize) {
+        inputOverrideFontSize.value = activeLayer.fontSize;
+        numOverrideFontSize.value = activeLayer.fontSize;
+        if (valOverrideFontSize) valOverrideFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
+      render();
+    }
+  });
+}
+
 textControls.querySelectorAll('.color-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    if (activeLayer && activeLayer.type === 'text') {
+    if (activeLayer && (activeLayer.type === 'text' || activeLayer.type === 'overrideText')) {
       pushUndoState('變更文字顏色');
       activeLayer.color = btn.dataset.color;
       updateColorButtonSelection(textControls, activeLayer.color);
+      if (activeLayer.type === 'overrideText' && overrideColorPresets) {
+        updateColorButtonSelection(overrideColorPresets, activeLayer.color);
+      }
       render();
     }
   });
 });
+
+// --- 🔤 原生字型嵌入與自訂覆寫文字圖層 ---
+if (inputCustomFont) {
+  inputCustomFont.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const fontFileName = file.name;
+    const fontExt = fontFileName.split('.').pop().toLowerCase();
+    let fontFormat = 'truetype';
+    if (fontExt === 'otf') fontFormat = 'opentype';
+    else if (fontExt === 'woff') fontFormat = 'woff';
+    else if (fontExt === 'woff2') fontFormat = 'woff2';
+
+    if (customFontStatus) {
+      customFontStatus.textContent = `⏳ 正在載入並解析字型檔: ${fontFileName}...`;
+    }
+    showToast(`正在載入原生字型: ${fontFileName}...`);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64Data = ev.target.result;
+        const fontId = `EmbeddedPDFFont_${Date.now()}`;
+
+        let styleTag = document.getElementById('dynamic-font-style');
+        if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = 'dynamic-font-style';
+          document.head.appendChild(styleTag);
+        }
+
+        const fontFaceRule = `
+          @font-face {
+            font-family: '${fontId}';
+            src: url('${base64Data}') format('${fontFormat}');
+            font-weight: normal;
+            font-style: normal;
+          }
+          @font-face {
+            font-family: '${fontId}';
+            src: url('${base64Data}') format('${fontFormat}');
+            font-weight: bold;
+            font-style: normal;
+          }
+        `;
+        styleTag.textContent = fontFaceRule;
+
+        try {
+          await document.fonts.load(`40px "${fontId}"`);
+          await document.fonts.load(`bold 40px "${fontId}"`);
+        } catch (fontLoadErr) {
+          console.warn('document.fonts.load 提示:', fontLoadErr);
+        }
+
+        currentEmbeddedFontFamily = fontId;
+        currentEmbeddedFontName = fontFileName;
+
+        if (customFontStatus) {
+          customFontStatus.innerHTML = `✅ 已載入原生字型：<strong style="color: #003FBC;">${fontFileName}</strong>（已鎖定為覆寫文字字型）`;
+        }
+        showToast(`原生字型「${fontFileName}」已成功嵌入！`);
+
+        if (activeLayer && (activeLayer.type === 'overrideText' || activeLayer.type === 'text')) {
+          pushUndoState('套用新嵌入字型');
+          activeLayer.fontFamily = fontId;
+          activeLayer.fontName = fontFileName;
+          render();
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('字型載入失敗:', err);
+      if (customFontStatus) {
+        customFontStatus.textContent = `⚠️ 字型載入失敗: ${err.message}`;
+      }
+      showToast(`字型載入失敗: ${err.message}`);
+    }
+  });
+}
+
+if (inputOverrideFontSize && numOverrideFontSize) {
+  inputOverrideFontSize.addEventListener('input', () => {
+    overrideFontSize = parseInt(inputOverrideFontSize.value, 10) || 40;
+    numOverrideFontSize.value = overrideFontSize;
+    if (valOverrideFontSize) valOverrideFontSize.textContent = `${overrideFontSize}px`;
+    if (activeLayer && activeLayer.type === 'overrideText') {
+      activeLayer.fontSize = overrideFontSize;
+      if (sliderTextFontSize && numTextFontSize) {
+        sliderTextFontSize.value = overrideFontSize;
+        numTextFontSize.value = overrideFontSize;
+        if (valTextFontSize) valTextFontSize.textContent = `${overrideFontSize}px`;
+      }
+      render();
+    }
+  });
+
+  numOverrideFontSize.addEventListener('input', () => {
+    overrideFontSize = Math.min(200, Math.max(10, parseInt(numOverrideFontSize.value, 10) || 40));
+    inputOverrideFontSize.value = overrideFontSize;
+    if (valOverrideFontSize) valOverrideFontSize.textContent = `${overrideFontSize}px`;
+    if (activeLayer && activeLayer.type === 'overrideText') {
+      activeLayer.fontSize = overrideFontSize;
+      if (sliderTextFontSize && numTextFontSize) {
+        sliderTextFontSize.value = overrideFontSize;
+        numTextFontSize.value = overrideFontSize;
+        if (valTextFontSize) valTextFontSize.textContent = `${overrideFontSize}px`;
+      }
+      render();
+    }
+  });
+}
+
+if (btnOverrideBold) {
+  btnOverrideBold.addEventListener('click', () => {
+    overrideIsBold = !overrideIsBold;
+    btnOverrideBold.style.backgroundColor = overrideIsBold ? '#e2e8f0' : 'transparent';
+    if (activeLayer && activeLayer.type === 'overrideText') {
+      pushUndoState('切換粗體');
+      activeLayer.bold = overrideIsBold;
+      activeLayer.fontWeight = overrideIsBold ? 'bold' : 'normal';
+      if (btnTextBold) {
+        btnTextBold.style.backgroundColor = overrideIsBold ? '#e2e8f0' : 'transparent';
+      }
+      render();
+    }
+  });
+}
+
+if (overrideColorPresets) {
+  overrideColorPresets.querySelectorAll('.color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateColorButtonSelection(overrideColorPresets, btn.dataset.color);
+      overrideColor = btn.dataset.color;
+      if (activeLayer && activeLayer.type === 'overrideText') {
+        pushUndoState('變更覆寫文字顏色');
+        activeLayer.color = overrideColor;
+        updateColorButtonSelection(textControls, activeLayer.color);
+        render();
+      }
+    });
+  });
+}
+
+if (btnAddOverrideText) {
+  btnAddOverrideText.addEventListener('click', () => {
+    const text = (inputOverrideText.value || '').trim();
+    if (!text) {
+      showToast('請先輸入覆寫文字內容');
+      return;
+    }
+
+    const fontFamily = currentEmbeddedFontFamily || '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif';
+    const posX = Math.round(canvasWidth / 2);
+    const posY = Math.round(canvasHeight / 2);
+
+    const newLayer = createLayerObject({
+      type: 'overrideText',
+      name: `覆寫: ${text.slice(0, 10)}`,
+      text: text,
+      fontFamily: fontFamily,
+      fontName: currentEmbeddedFontName,
+      fontSize: overrideFontSize,
+      bold: overrideIsBold,
+      fontWeight: overrideIsBold ? 'bold' : 'normal',
+      color: overrideColor,
+      x: posX,
+      y: posY
+    });
+
+    pushUndoState('新增覆寫文字圖層');
+    layers.push(newLayer);
+    setActiveLayer(newLayer);
+    showToast(`已插入覆寫文字「${text.slice(0, 8)}...」到畫布中央，可自由拖曳對齊`);
+  });
+}
 
 // --- 快速變形控制 ---
 btnRotateCCW.addEventListener('click', () => {
@@ -3491,16 +3770,19 @@ btnExportPng.addEventListener('click', () => {
       bufCtx.scale(-1, 1);
     }
 
-    if (layer.type === 'text') {
-      const fontWeight = layer.bold ? 'bold ' : '';
-      bufCtx.font = `${fontWeight}${layer.fontSize}px -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif`;
-      bufCtx.fillStyle = layer.color;
+    if (layer.type === 'text' || layer.type === 'overrideText') {
+      const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+      const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif';
+      bufCtx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
+      bufCtx.fillStyle = layer.color || '#000000';
       bufCtx.textBaseline = 'top';
 
-      const lines = layer.text.split('\n');
+      const lines = (layer.text || '').split('\n');
       const lineHeight = layer.fontSize * 1.35;
-      const startX = -layer.width / 2 + 15;
-      const startY = -layer.height / 2 + 8;
+      const padX = layer.type === 'overrideText' ? 14 : 30;
+      const padY = layer.type === 'overrideText' ? 8 : 15;
+      const startX = -layer.width / 2 + padX / 2;
+      const startY = -layer.height / 2 + padY / 2;
 
       lines.forEach((line, idx) => {
         bufCtx.fillText(line, startX, startY + idx * lineHeight);

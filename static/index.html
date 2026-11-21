@@ -212,9 +212,20 @@
           <!-- 文字物件專用控制 -->
           <div id="textControls" class="control-row hidden">
             <div class="control-label">
-              <span>備註文字內容</span>
+              <span>文字內容</span>
             </div>
             <textarea id="editTextContent" rows="3"></textarea>
+
+            <div class="control-row" style="margin-top: 6px;">
+              <div class="control-label">
+                <span>字體大小</span>
+                <span class="slider-val" id="valTextFontSize">40px</span>
+              </div>
+              <div class="slider-container" style="display: flex; gap: 8px; align-items: center;">
+                <input type="range" id="sliderTextFontSize" min="10" max="200" value="40" style="flex: 1;">
+                <input type="number" id="numTextFontSize" min="10" max="200" value="40" style="width: 58px; padding: 4px; font-size: 12px;">
+              </div>
+            </div>
 
             <div class="text-format-group" style="margin-top: 6px;">
               <button class="btn btn-outline btn-sm" id="btnTextBold" style="font-weight: bold; width: 32px;">B</button>
@@ -358,7 +369,61 @@
         </div>
       </div>
 
-      <!-- 5. 高解析度無損匯出 -->
+      <!-- 5. 🔤 內文修改：原生字型嵌入與文字覆寫 -->
+      <div class="panel-card">
+        <div class="card-title">
+          <span>🔤 內文修改：原生字型嵌入與覆寫</span>
+        </div>
+
+        <!-- 字型選擇器 -->
+        <div class="control-row">
+          <div class="control-label">
+            <span>選擇自訂字型檔 (.ttf / .otf / .woff)</span>
+          </div>
+          <input type="file" id="inputCustomFont" accept=".ttf,.otf,.woff,.woff2" style="font-size: 11px;">
+          <div id="customFontStatus" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+            目前字型：系統預設黑體／細明體（載入自訂字型後自動鎖定）
+          </div>
+        </div>
+
+        <!-- 覆寫文字內容 -->
+        <div class="control-row" style="margin-top: 8px;">
+          <div class="control-label">
+            <span>覆寫文字內容</span>
+          </div>
+          <input type="text" id="inputOverrideText" placeholder="輸入欲覆寫或新增的單據文字..." value="測試商品型號">
+        </div>
+
+        <!-- 字體大小與數值微調 -->
+        <div class="control-row" style="margin-top: 8px;">
+          <div class="control-label">
+            <span>字體大小 (px)</span>
+            <span class="slider-val" id="valOverrideFontSize">40px</span>
+          </div>
+          <div class="slider-container" style="display: flex; gap: 8px; align-items: center;">
+            <input type="range" id="inputOverrideFontSize" min="10" max="200" value="40" style="flex: 1;">
+            <input type="number" id="numOverrideFontSize" min="10" max="200" value="40" style="width: 58px; padding: 4px; font-size: 12px;">
+          </div>
+        </div>
+
+        <!-- 粗體、顏色與插入按鈕 -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnOverrideBold" style="font-weight: bold; width: 32px;" title="粗體切換">B</button>
+            <div class="color-presets" style="margin: 0;" id="overrideColorPresets">
+              <div class="color-btn active" data-color="#000000" style="background: #000000;" title="黑色"></div>
+              <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="紅色"></div>
+              <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="專櫃藍色"></div>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-sm" id="btnAddOverrideText" style="background-color: #003FBC;">
+            ➕ 插入覆寫文字到畫布
+          </button>
+        </div>
+      </div>
+
+      <!-- 6. 高解析度無損匯出 -->
       <div class="panel-card export-card">
         <div class="card-title">
           <span>高解析度無損匯出</span>

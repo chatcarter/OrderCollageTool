@@ -370,6 +370,17 @@ body {
 .badge-img { background: #e0e7ff; color: #4338ca; }
 .badge-stamp { background: #dbeafe; color: #1d4ed8; }
 .badge-text { background: #fef3c7; color: #b45309; }
+.badge-override { background: #f3e8ff; color: #7e22ce; }
+
+.layer-thumb-override {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #7e22ce;
+  background: #fdf4ff;
+}
 
 .layer-actions {
   display: flex;

@@ -80,6 +80,18 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-21 20:25:00] (第 16 版 / v16)
+- **執行項目**：整合「PDF 原生字型嵌入與自訂文字覆寫圖層」系統。
+- **具體進度**：
+  1. **新增「🔤 內文修改：原生字型嵌入與自訂覆寫文字」面板與動態 `@font-face` 載入**：
+     - 於右側面板新增「🔤 內文修改：原生字型嵌入與覆寫」卡片（`#inputCustomFont`、`#customFontStatus`、`#inputOverrideText`、`#inputOverrideFontSize`、`#numOverrideFontSize`、`#valOverrideFontSize`、`#btnOverrideBold`、`#overrideColorPresets`、`#btnAddOverrideText`）。
+     - 支援本機 `.ttf` / `.otf` / `.woff` / `.woff2` 字型選擇，透過 `FileReader` 讀取為 Base64 Data URL 後，以唯一識別碼動態注入 `<head>` 中的 `<style id="dynamic-font-style">`，並使用 `await document.fonts.load()` 確保字型 100% 解析就緒，杜絕 Canvas 繪製時字型退回預設。
+  2. **獨立可編輯文字圖層（`type: 'overrideText'`）與現有畫布生態無縫整合**：
+     - 點擊「➕ 插入覆寫文字到畫布」於畫布中央建立獨立可拖曳文字圖層，記錄文字內容、嵌入字型家族、字體大小、粗細與顏色。
+     - 搭配第 15 版「🧹 局部圈選刪除（塗白）」功能，先將 PDF 訂單或保卡欲修改的舊文字塗白遮除，再將覆寫文字圖層精準拖曳對齊覆蓋，達成視覺一致之無痕改單效果。
+     - 選取文字物件時可即時修改文字、粗細、顏色與字體大小滑桿／數值同步；鍵盤方向鍵支援 `1px`（按住 Shift 為 `10px`）微調定位，並支援 `Delete` 刪除鍵、`Ctrl + Z` 歷史復原與最終高解析 PNG 匯出。
+  3. 建立 `_backup/20261121_202042/` 完整備份，同步更新 `index.html`、`static/index.html`、`static/style.css`、`static/app.js`、`GEMINI.md` 與 `PROJECT_ARCHITECTURE.md`，全專案通過括號平衡驗證，嚴格維持 Windows `CRLF` 換行格式。
+
 ### [2026-11-21 18:38:00]
 - **執行項目**：新增發票號碼局部框選 OCR 與購買日期來源隔離、300DPI 印刷級 A4 畫布與 PDF 6.0x 銳利化升級、新增局部圈選刪除（矩形塗白橡皮擦）、實作全域 Ctrl+Z 歷史復原。
 - **具體進度**：
