@@ -178,30 +178,28 @@ let overrideFontSize = 40;
 let overrideIsBold = false;
 let overrideColor = '#000000';
 
-// 保卡手寫客戶資料生成器控制項 (v19)
+// 保卡手寫客戶資料生成器控制項 (v20)
 const inputHandwritingText = document.getElementById('inputHandwritingText');
-const handwritingPresetGrid = document.getElementById('handwritingPresetGrid');
-const hwPersonaBadge = document.getElementById('hwPersonaBadge');
 const hwStrokeStatus = document.getElementById('hwStrokeStatus');
 const hwColorPresets = document.getElementById('hwColorPresets');
 const hwTipGroup = document.getElementById('hwTipGroup');
-const sliderHwStyle = document.getElementById('sliderHwStyle');
-const valHwStyle = document.getElementById('valHwStyle');
-const sliderHwLigature = document.getElementById('sliderHwLigature');
-const valHwLigature = document.getElementById('valHwLigature');
+const sliderHwQuality = document.getElementById('sliderHwQuality');
+const valHwQuality = document.getElementById('valHwQuality');
+const sliderHwSpacing = document.getElementById('sliderHwSpacing');
+const valHwSpacing = document.getElementById('valHwSpacing');
 const hwMainPreviewCanvas = document.getElementById('hwMainPreviewCanvas');
+const btnHwResample = document.getElementById('btnHwResample');
 const btnAddHandwriting = document.getElementById('btnAddHandwriting');
 
 // 選取手寫圖層專用二次微調控制項
 const handwritingControls = document.getElementById('handwritingControls');
 const editHwText = document.getElementById('editHwText');
-const editHwPersona = document.getElementById('editHwPersona');
 const editHwColorPresets = document.getElementById('editHwColorPresets');
 const editHwTipGroup = document.getElementById('editHwTipGroup');
-const sliderEditHwStyle = document.getElementById('sliderEditHwStyle');
-const valEditHwStyle = document.getElementById('valEditHwStyle');
-const sliderEditHwLigature = document.getElementById('sliderEditHwLigature');
-const valEditHwLigature = document.getElementById('valEditHwLigature');
+const sliderEditHwQuality = document.getElementById('sliderEditHwQuality');
+const valEditHwQuality = document.getElementById('valEditHwQuality');
+const sliderEditHwSpacing = document.getElementById('sliderEditHwSpacing');
+const valEditHwSpacing = document.getElementById('valEditHwSpacing');
 
 // 快速變形控制
 const btnRotateCCW = document.getElementById('btnRotateCCW');
@@ -2081,17 +2079,18 @@ function setActiveLayer(layer) {
       handwritingControls.classList.remove('hidden');
       const opt = layer.hwOptions;
       if (editHwText) editHwText.value = opt.text || '';
-      if (editHwPersona) editHwPersona.value = String(opt.personaId || 0);
       if (editHwColorPresets) updateColorButtonSelection(editHwColorPresets, opt.color || '#1A1A1A');
       if (editHwTipGroup) {
         editHwTipGroup.querySelectorAll('.hw-tip-btn').forEach(b => {
           b.classList.toggle('active', parseFloat(b.dataset.tip) === (opt.tipSize || 0.7));
         });
       }
-      if (sliderEditHwStyle) sliderEditHwStyle.value = opt.styleLevel || 2;
-      if (valEditHwStyle) valEditHwStyle.textContent = `Lv.${opt.styleLevel || 2}`;
-      if (sliderEditHwLigature) sliderEditHwLigature.value = opt.ligatureRatio !== undefined ? opt.ligatureRatio : 10;
-      if (valEditHwLigature) valEditHwLigature.textContent = `${opt.ligatureRatio !== undefined ? opt.ligatureRatio : 10}%`;
+      const q = opt.qualityLevel || 4;
+      const sp = opt.spacingLevel || 5;
+      if (sliderEditHwQuality) sliderEditHwQuality.value = q;
+      if (valEditHwQuality) valEditHwQuality.textContent = formatQualityLabel(q);
+      if (sliderEditHwSpacing) sliderEditHwSpacing.value = sp;
+      if (valEditHwSpacing) valEditHwSpacing.textContent = formatSpacingLabel(sp);
     }
   } else if (layer.type === 'text' || layer.type === 'overrideText') {
     activeTypeName.textContent = layer.type === 'overrideText' ? '原生字型覆寫文字 (獨立圖層)' : '審核備註文字 (獨立圖層)';
@@ -4104,32 +4103,108 @@ function showToast(message) {
 }
 
 // =========================================================================
-// ✍️ 保卡手寫客戶資料生成器 (v19 - 100% 本機向量筆順模擬 + 10 種人格)
+// ✍️ 保卡手寫客戶資料生成器 (v20 - 速乾油性原子筆 ＋ 20 級工整度 ＋ 10 級字距)
 // =========================================================================
 
-const HW_STORAGE_KEY = 'orderCollage_hwSettings_v19';
-
-const HW_PERSONAS = [
-  { id: 0, name: '#1 工整專櫃', slantDeg: -1.5, widthRatio: 0.96, heightRatio: 1.00, roundness: 0.35, letterSpacing: 0.08, lineHeightRatio: 1.48, jitterScale: 0.65, styleOffset: 0, ligatureBias: 0.5 },
-  { id: 1, name: '#2 俐落業務', slantDeg: -5.5, widthRatio: 0.92, heightRatio: 1.02, roundness: 0.45, letterSpacing: 0.03, lineHeightRatio: 1.42, jitterScale: 0.95, styleOffset: 1, ligatureBias: 1.0 },
-  { id: 2, name: '#3 秀氣微傾', slantDeg: -7.5, widthRatio: 0.86, heightRatio: 1.04, roundness: 0.55, letterSpacing: 0.07, lineHeightRatio: 1.50, jitterScale: 0.75, styleOffset: 0, ligatureBias: 0.8 },
-  { id: 3, name: '#4 圓潤自然', slantDeg: -2.0, widthRatio: 1.06, heightRatio: 0.96, roundness: 0.80, letterSpacing: 0.10, lineHeightRatio: 1.52, jitterScale: 0.85, styleOffset: 0, ligatureBias: 0.7 },
-  { id: 4, name: '#5 快寫連筆', slantDeg: -9.5, widthRatio: 0.98, heightRatio: 0.95, roundness: 0.70, letterSpacing: -0.02, lineHeightRatio: 1.38, jitterScale: 1.20, styleOffset: 2, ligatureBias: 1.5 },
-  { id: 5, name: '#6 沉穩大氣', slantDeg: -1.0, widthRatio: 1.08, heightRatio: 1.04, roundness: 0.30, letterSpacing: 0.12, lineHeightRatio: 1.56, jitterScale: 0.70, styleOffset: 0, ligatureBias: 0.4 },
-  { id: 6, name: '#7 輕快隨筆', slantDeg: -4.5, widthRatio: 0.95, heightRatio: 0.98, roundness: 0.60, letterSpacing: 0.05, lineHeightRatio: 1.44, jitterScale: 1.15, styleOffset: 1, ligatureBias: 1.1 },
-  { id: 7, name: '#8 細長清秀', slantDeg: -3.5, widthRatio: 0.82, heightRatio: 1.10, roundness: 0.40, letterSpacing: 0.06, lineHeightRatio: 1.50, jitterScale: 0.72, styleOffset: 0, ligatureBias: 0.6 },
-  { id: 8, name: '#9 豪邁奔放', slantDeg: -6.5, widthRatio: 1.12, heightRatio: 0.98, roundness: 0.50, letterSpacing: 0.04, lineHeightRatio: 1.46, jitterScale: 1.25, styleOffset: 1, ligatureBias: 1.2 },
-  { id: 9, name: '#10 職人手寫', slantDeg: 2.0, widthRatio: 0.94, heightRatio: 1.00, roundness: 0.38, letterSpacing: 0.04, lineHeightRatio: 1.45, jitterScale: 0.80, styleOffset: 0, ligatureBias: 0.5 }
-];
+const HW_STORAGE_KEY = 'orderCollage_hwSettings_v20';
 
 let hwState = {
-  personaId: 0,
   color: '#1A1A1A',
   tipSize: 0.7,
-  styleLevel: 2,
-  ligatureRatio: 10,
+  qualityLevel: 4,
+  spacingLevel: 5,
   seed: 20261122
 };
+
+function formatQualityLabel(lv) {
+  const q = Math.max(1, Math.min(20, Number(lv) || 4));
+  if (q <= 4) return `Lv.${q} (漂亮工整)`;
+  if (q <= 10) return `Lv.${q} (自然日常)`;
+  if (q <= 15) return `Lv.${q} (隨性快寫)`;
+  return `Lv.${q} (普通隨手)`;
+}
+
+function formatSpacingLabel(sp) {
+  const s = Math.max(1, Math.min(10, Number(sp) || 5));
+  if (s <= 2) return `${s} (寬鬆分格)`;
+  if (s <= 4) return `${s} (偏寬)`;
+  if (s <= 6) return `${s} (標準)`;
+  if (s <= 8) return `${s} (偏緊)`;
+  return `${s} (極緊靠)`;
+}
+
+// 20 級工整度物理參數對映 (Lv.1 漂亮工整 ➔ Lv.20 普通隨手)
+function getQualityProfile(qLevel) {
+  const q = Math.max(1, Math.min(20, Number(qLevel) || 4));
+  const t = (q - 1) / 19; // 0.0 -> 1.0
+  if (q <= 4) {
+    // Lv.1 ~ Lv.4: 漂亮工整級（穩重、僅 1~2 度微傾、大小誤差 ±2%、平穩基線）
+    const k = (q - 1) / 3;
+    return {
+      slantDeg: -1.0 - k * 1.2,
+      sizeJitter: 0.02 + k * 0.015,
+      baselineWave: 0.008 + k * 0.008,
+      horizTilt: -0.005 * k,
+      strokeJitter: 0.005 + k * 0.004,
+      roundness: 0.22 + k * 0.08,
+      charRotDeg: 0.7 + k * 0.5,
+      widthRatio: 0.96,
+      heightRatio: 1.00
+    };
+  }
+  if (q <= 10) {
+    // Lv.5 ~ Lv.10: 自然日常級（自然節奏、基線波動、寬高 ±10% 跳動）
+    const k = (q - 5) / 5;
+    return {
+      slantDeg: -2.5 - k * 3.0,
+      sizeJitter: 0.06 + k * 0.06,
+      baselineWave: 0.025 + k * 0.028,
+      horizTilt: -0.012 - k * 0.016,
+      strokeJitter: 0.012 + k * 0.010,
+      roundness: 0.36 + k * 0.18,
+      charRotDeg: 1.8 + k * 1.8,
+      widthRatio: 0.97 + k * 0.03,
+      heightRatio: 0.99
+    };
+  }
+  if (q <= 15) {
+    // Lv.11 ~ Lv.15: 隨性快寫級（右傾 6~10 度、大小落差 ±18%、橫畫微上揚、轉折圓潤）
+    const k = (q - 11) / 4;
+    return {
+      slantDeg: -6.0 - k * 4.0,
+      sizeJitter: 0.14 + k * 0.05,
+      baselineWave: 0.058 + k * 0.026,
+      horizTilt: -0.032 - k * 0.020,
+      strokeJitter: 0.025 + k * 0.012,
+      roundness: 0.60 + k * 0.16,
+      charRotDeg: 4.0 + k * 2.0,
+      widthRatio: 1.01,
+      heightRatio: 0.96
+    };
+  }
+  // Lv.16 ~ Lv.20: 普通隨手級（結構鬆散、高低錯落、左右擺動大、收尾隨性）
+  const k = (q - 16) / 4;
+  return {
+    slantDeg: -8.5 - k * 4.0 * (0.7 + t * 0.3),
+    sizeJitter: 0.20 + k * 0.06,
+    baselineWave: 0.090 + k * 0.038,
+    horizTilt: -0.052 - k * 0.022,
+    strokeJitter: 0.038 + k * 0.016,
+    roundness: 0.78 + k * 0.14,
+    charRotDeg: 6.5 + k * 3.0,
+    widthRatio: 1.03,
+    heightRatio: 0.95
+  };
+}
+
+// 10 級左右字距倍率對映 (1 最寬 1.48x -> 5 標準 1.00x -> 10 最緊靠 0.66x)
+function getSpacingMultiplier(sLevel) {
+  const s = Math.max(1, Math.min(10, Number(sLevel) || 5));
+  if (s <= 5) {
+    return 1.48 - ((s - 1) / 4) * 0.48;
+  }
+  return 1.00 - ((s - 5) / 5) * 0.34;
+}
 
 const hanziStrokeCache = new Map();
 const hanziFetchInFlight = new Map();
@@ -4307,21 +4382,20 @@ async function ensureCharsLoaded(text) {
   }
   if (hwStrokeStatus) hwStrokeStatus.textContent = `載入筆順 (${missing.length}字)...`;
   await Promise.all(missing.map(ch => fetchHanziStrokes(ch)));
-  if (hwStrokeStatus) hwStrokeStatus.textContent = '筆順模擬就緒';
+  if (hwStrokeStatus) hwStrokeStatus.textContent = '油性原子筆就緒';
   scheduleHandwritingPreviewUpdate(20);
 }
 
-// 繪製單筆劃（含起筆略重、中段流暢、收筆漸細的壓感模擬）
-function drawOrganicStroke(tCtx, pts, baseWidth, color, styleLevel, roundness, rng) {
+// 繪製速乾油性原子筆單筆劃（起筆微頓墨點 ＋ 均勻俐落中段 ＋ 乾脆收筆，徹底零牽絲）
+function drawBallpointStroke(tCtx, pts, baseWidth, color, roundness, arcJitter, rng) {
   if (!pts || pts.length < 2) return;
 
-  // 細分折線點為平滑曲線取樣點
   const samples = [];
   if (pts.length === 2) {
     const p0 = pts[0];
     const p1 = pts[1];
-    const midX = (p0[0] + p1[0]) / 2 + (rng() - 0.5) * baseWidth * 0.28 * styleLevel * 0.3;
-    const midY = (p0[1] + p1[1]) / 2 + (rng() - 0.5) * baseWidth * 0.28 * styleLevel * 0.3;
+    const midX = (p0[0] + p1[0]) / 2 + (rng() - 0.5) * arcJitter;
+    const midY = (p0[1] + p1[1]) / 2 + (rng() - 0.5) * arcJitter;
     const steps = 8;
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
@@ -4332,7 +4406,7 @@ function drawOrganicStroke(tCtx, pts, baseWidth, color, styleLevel, roundness, r
       ]);
     }
   } else {
-    const ctrlTension = 0.35 + roundness * 0.45 + (styleLevel - 1) * 0.05;
+    const ctrlTension = 0.30 + roundness * 0.52;
     samples.push(pts[0]);
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i];
@@ -4364,6 +4438,14 @@ function drawOrganicStroke(tCtx, pts, baseWidth, color, styleLevel, roundness, r
     }
   }
 
+  // 原子筆起筆微頓墨點（落筆瞬間的極細微墨點）
+  tCtx.save();
+  tCtx.fillStyle = color;
+  tCtx.globalAlpha = 0.94;
+  tCtx.beginPath();
+  tCtx.arc(samples[0][0], samples[0][1], Math.max(0.7, baseWidth * 0.55), 0, Math.PI * 2);
+  tCtx.fill();
+
   tCtx.strokeStyle = color;
   tCtx.lineCap = 'round';
   tCtx.lineJoin = 'round';
@@ -4371,68 +4453,50 @@ function drawOrganicStroke(tCtx, pts, baseWidth, color, styleLevel, roundness, r
   const total = samples.length - 1;
   for (let i = 0; i < total; i++) {
     const t = i / Math.max(1, total - 1);
-    // 壓感曲線：起筆 1.18x，中段 0.94x，收筆 0.72x
+    // 油性原子筆筆觸：起筆 1.08x，中段均勻俐落 0.96x~1.02x，收筆乾脆 0.80x
     let pressure = 1.0;
-    if (t < 0.18) {
-      pressure = 1.18 - (t / 0.18) * 0.22;
-    } else if (t > 0.80) {
-      pressure = 0.96 - ((t - 0.80) / 0.20) * 0.26;
+    if (t < 0.14) {
+      pressure = 1.08 - (t / 0.14) * 0.08;
+    } else if (t > 0.88) {
+      pressure = 0.98 - ((t - 0.88) / 0.12) * 0.18;
     } else {
-      pressure = 0.96 + (rng() - 0.5) * 0.08;
+      pressure = 0.98 + (rng() - 0.5) * 0.05;
     }
 
-    tCtx.lineWidth = Math.max(0.6, baseWidth * pressure);
-    tCtx.globalAlpha = 0.88 + pressure * 0.10;
+    tCtx.lineWidth = Math.max(0.7, baseWidth * pressure);
+    tCtx.globalAlpha = 0.90 + pressure * 0.06;
     tCtx.beginPath();
     tCtx.moveTo(samples[i][0], samples[i][1]);
     tCtx.lineTo(samples[i + 1][0], samples[i + 1][1]);
     tCtx.stroke();
   }
-  tCtx.globalAlpha = 1.0;
-}
-
-// 繪製筆順間的牽絲過渡細線
-function drawLigatureLine(tCtx, pFrom, pTo, baseWidth, color, alpha, rng) {
-  const dx = pTo[0] - pFrom[0];
-  const dy = pTo[1] - pFrom[1];
-  const cx = (pFrom[0] + pTo[0]) / 2 + dy * 0.16 + (rng() - 0.5) * 3;
-  const cy = (pFrom[1] + pTo[1]) / 2 - dx * 0.16 + (rng() - 0.5) * 3;
-
-  tCtx.save();
-  tCtx.strokeStyle = color;
-  tCtx.lineCap = 'round';
-  tCtx.lineWidth = Math.max(0.45, baseWidth * 0.26);
-  tCtx.globalAlpha = alpha;
-  tCtx.beginPath();
-  tCtx.moveTo(pFrom[0], pFrom[1]);
-  tCtx.quadraticCurveTo(cx, cy, pTo[0], pTo[1]);
-  tCtx.stroke();
   tCtx.restore();
 }
 
 // 核心渲染函式：將多行手寫資料渲染至目標 Canvas（或產生高解析透明底離屏 Canvas）
 function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, maxBoxH = 0) {
   const text = (options.text || '').replace(/\r\n/g, '\n');
-  const persona = HW_PERSONAS[options.personaId || 0] || HW_PERSONAS[0];
   const color = options.color || '#1A1A1A';
   const tipSize = options.tipSize || 0.7;
-  const styleLevel = Math.max(1, Math.min(6, options.styleLevel || 2));
-  const ligatureRatio = Math.max(0, Math.min(40, options.ligatureRatio !== undefined ? options.ligatureRatio : 10));
+  const qualityLevel = Math.max(1, Math.min(20, options.qualityLevel || 4));
+  const spacingLevel = Math.max(1, Math.min(10, options.spacingLevel || 5));
   const baseSeed = options.seed || 20261122;
+
+  const prof = getQualityProfile(qualityLevel);
+  const spacingMult = getSpacingMultiplier(spacingLevel);
 
   const lines = text.split('\n');
   const fontSize = options.fontSize || 68;
-  const lineHeight = fontSize * persona.lineHeightRatio;
+  const lineHeight = fontSize * 1.48;
   const padX = Math.round(fontSize * 0.45);
   const padY = Math.round(fontSize * 0.35);
 
-  // 計算每字前進寬度並量測整體外框
   function getCharAdvance(ch) {
-    if (ch === ' ') return fontSize * 0.42;
-    if (isCJKChar(ch)) return fontSize * persona.widthRatio * (1 + persona.letterSpacing);
-    if (/[0-9A-Z]/.test(ch)) return fontSize * 0.62 * persona.widthRatio * (1 + persona.letterSpacing);
-    if ("iltfjr.,:'\"!|".includes(ch)) return fontSize * 0.40 * persona.widthRatio * (1 + persona.letterSpacing);
-    return fontSize * 0.54 * persona.widthRatio * (1 + persona.letterSpacing);
+    if (ch === ' ') return fontSize * 0.40 * spacingMult;
+    if (isCJKChar(ch)) return fontSize * prof.widthRatio * 1.04 * spacingMult;
+    if (/[0-9A-Z]/.test(ch)) return fontSize * 0.62 * prof.widthRatio * spacingMult;
+    if ("iltfjr.,:'\"!|".includes(ch)) return fontSize * 0.40 * prof.widthRatio * spacingMult;
+    return fontSize * 0.54 * prof.widthRatio * spacingMult;
   }
 
   let maxLineW = fontSize * 2;
@@ -4445,44 +4509,40 @@ function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, ma
   const contentW = Math.ceil(maxLineW + padX * 2);
   const contentH = Math.ceil(Math.max(1, lines.length) * lineHeight + padY * 2);
 
-  // 建立高解析離屏畫布先完整繪製
   const offCanvas = document.createElement('canvas');
   offCanvas.width = Math.max(120, contentW);
   offCanvas.height = Math.max(60, contentH);
   const oCtx = offCanvas.getContext('2d');
 
-  // 筆尖粗細倍率 (0.4mm -> 1.8px, 0.7mm -> 2.7px, 1.1mm -> 3.9px @ 68px)
-  const tipFactor = tipSize <= 0.45 ? 0.026 : (tipSize <= 0.8 ? 0.040 : 0.058);
-  const strokeBaseWidth = Math.max(1.2, fontSize * tipFactor);
+  // 筆尖粗細倍率 (0.4mm 細, 0.7mm 中, 1.1mm 粗)
+  const tipFactor = tipSize <= 0.45 ? 0.025 : (tipSize <= 0.8 ? 0.038 : 0.056);
+  const strokeBaseWidth = Math.max(1.1, fontSize * tipFactor);
 
-  // 傾斜角張力（人格固定傾角 + 筆觸段位加成）
-  const effectiveSlantRad = ((persona.slantDeg - (styleLevel - 1) * 1.1) * Math.PI) / 180;
-  const slantTan = Math.tan(effectiveSlantRad);
-  const effectiveLigatureProb = (ligatureRatio / 100) * (0.65 + (styleLevel - 1) * 0.16) * persona.ligatureBias;
+  const slantTan = Math.tan((prof.slantDeg * Math.PI) / 180);
+  const arcJitter = fontSize * prof.strokeJitter * 1.4;
 
   lines.forEach((line, lineIdx) => {
     let cursorX = padX;
     const baseLineY = padY + lineIdx * lineHeight;
-    let prevCharLastPt = null;
 
     const chars = Array.from(line);
     chars.forEach((ch, charIdx) => {
       const adv = getCharAdvance(ch);
       if (ch === ' ' || ch === '\t') {
         cursorX += adv;
-        prevCharLastPt = null;
         return;
       }
 
-      // 每個字元位置獨立種子：保證同一字重複出現時絕不相同
       const charSeed = (baseSeed + lineIdx * 9973 + charIdx * 313 + ch.charCodeAt(0) * 17) >>> 0;
       const rng = mulberry32(charSeed);
 
-      // 獨立微幅隨機誤差 (±6% 胖瘦、基線起伏、微傾角)
-      const scaleW = 1 + (rng() - 0.5) * 0.12 * persona.jitterScale;
-      const scaleH = 1 + (rng() - 0.5) * 0.12 * persona.jitterScale;
-      const driftY = (rng() - 0.5) * fontSize * 0.065 * persona.jitterScale;
-      const microRot = ((rng() - 0.5) * 4.5 * persona.jitterScale * Math.PI) / 180;
+      // 依工整度產生獨立的大小胖瘦、基線起伏與微旋轉
+      const scaleW = 1 + (rng() - 0.5) * 2 * prof.sizeJitter;
+      const scaleH = 1 + (rng() - 0.5) * 2 * prof.sizeJitter;
+      const rhythmSine = Math.sin(charIdx * 0.85 + lineIdx * 1.7) * fontSize * prof.baselineWave * 0.55;
+      const driftY = rhythmSine + (rng() - 0.5) * fontSize * prof.baselineWave;
+      const driftX = (rng() - 0.5) * fontSize * prof.baselineWave * 0.45;
+      const microRot = ((rng() - 0.5) * 2 * prof.charRotDeg * Math.PI) / 180;
 
       let rawStrokes = null;
       if (HW_ASCII_GLYPHS[ch]) {
@@ -4495,22 +4555,20 @@ function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, ma
         rawStrokes = HW_ASCII_GLYPHS['-'];
       }
 
-      const glyphW = (isCJKChar(ch) ? fontSize : fontSize * 0.72) * persona.widthRatio * scaleW;
-      const glyphH = fontSize * persona.heightRatio * scaleH;
-      const cx = cursorX + adv * 0.48;
+      const glyphW = (isCJKChar(ch) ? fontSize : fontSize * 0.72) * prof.widthRatio * scaleW;
+      const glyphH = fontSize * prof.heightRatio * scaleH;
+      const cx = cursorX + adv * 0.48 + driftX;
       const cy = baseLineY + fontSize * 0.52 + driftY;
 
-      let prevStrokeEnd = null;
-      let firstPtOfChar = null;
-      let lastPtOfChar = null;
-
       const transformedStrokes = rawStrokes.map(stroke => {
-        const sJitterX = (rng() - 0.5) * fontSize * 0.022 * styleLevel;
-        const sJitterY = (rng() - 0.5) * fontSize * 0.022 * styleLevel;
+        const sJitterX = (rng() - 0.5) * fontSize * prof.strokeJitter * 1.1;
+        const sJitterY = (rng() - 0.5) * fontSize * prof.strokeJitter * 1.1;
         return stroke.map(pt => {
-          const lx = (pt[0] - 0.5) * glyphW + (rng() - 0.5) * fontSize * 0.018 * styleLevel;
-          const ly = (pt[1] - 0.5) * glyphH + (rng() - 0.5) * fontSize * 0.018 * styleLevel;
-          // 施加斜體剪切 + 微旋轉
+          const nx = pt[0] - 0.5;
+          const ny = pt[1] - 0.5;
+          const lx = nx * glyphW + (rng() - 0.5) * fontSize * prof.strokeJitter;
+          // 橫畫微幅上揚趨勢（隨快寫/普通等級漸增）
+          const ly = ny * glyphH + nx * glyphH * prof.horizTilt + (rng() - 0.5) * fontSize * prof.strokeJitter;
           const sx = lx - ly * slantTan;
           const rx = sx * Math.cos(microRot) - ly * Math.sin(microRot);
           const ry = sx * Math.sin(microRot) + ly * Math.cos(microRot);
@@ -4518,33 +4576,11 @@ function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, ma
         });
       });
 
-      if (transformedStrokes.length > 0 && transformedStrokes[0].length > 0) {
-        firstPtOfChar = transformedStrokes[0][0];
-      }
-
-      // 跨字微牽絲（僅在段位較高且牽絲 > 0% 時偶爾出現）
-      if (ligatureRatio > 0 && prevCharLastPt && firstPtOfChar && styleLevel >= 3) {
-        const dist = Math.hypot(firstPtOfChar[0] - prevCharLastPt[0], firstPtOfChar[1] - prevCharLastPt[1]);
-        if (dist < fontSize * 0.95 && rng() < effectiveLigatureProb * 0.35) {
-          drawLigatureLine(oCtx, prevCharLastPt, firstPtOfChar, strokeBaseWidth, color, 0.24, rng);
-        }
-      }
-
-      transformedStrokes.forEach((pts, sIdx) => {
-        if (sIdx > 0 && ligatureRatio > 0 && prevStrokeEnd && pts.length > 0) {
-          const dist = Math.hypot(pts[0][0] - prevStrokeEnd[0], pts[0][1] - prevStrokeEnd[1]);
-          if (dist < fontSize * 0.85 && rng() < effectiveLigatureProb) {
-            drawLigatureLine(oCtx, prevStrokeEnd, pts[0], strokeBaseWidth, color, 0.28 + rng() * 0.14, rng);
-          }
-        }
-        drawOrganicStroke(oCtx, pts, strokeBaseWidth, color, styleLevel, persona.roundness, rng);
-        if (pts.length > 0) {
-          prevStrokeEnd = pts[pts.length - 1];
-          lastPtOfChar = prevStrokeEnd;
-        }
+      // 每一筆劃獨立落筆、隨落隨停，徹底零牽絲
+      transformedStrokes.forEach(pts => {
+        drawBallpointStroke(oCtx, pts, strokeBaseWidth, color, prof.roundness, arcJitter, rng);
       });
 
-      prevCharLastPt = lastPtOfChar;
       cursorX += adv;
     });
   });
@@ -4553,7 +4589,6 @@ function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, ma
     return offCanvas;
   }
 
-  // 縮放繪製至預覽目標畫布
   const tCtx = targetCanvas.getContext('2d');
   const dstW = maxBoxW || targetCanvas.width;
   const dstH = maxBoxH || targetCanvas.height;
@@ -4573,11 +4608,10 @@ function renderHandwritingToCanvas(options, targetCanvas = null, maxBoxW = 0, ma
 function saveHwSettings() {
   try {
     localStorage.setItem(HW_STORAGE_KEY, JSON.stringify({
-      personaId: hwState.personaId,
       color: hwState.color,
       tipSize: hwState.tipSize,
-      styleLevel: hwState.styleLevel,
-      ligatureRatio: hwState.ligatureRatio
+      qualityLevel: hwState.qualityLevel,
+      spacingLevel: hwState.spacingLevel
     }));
   } catch (e) {}
 }
@@ -4587,56 +4621,24 @@ function loadHwSettings() {
     const raw = localStorage.getItem(HW_STORAGE_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw);
-    if (saved.personaId !== undefined) hwState.personaId = Number(saved.personaId) || 0;
     if (saved.color) hwState.color = saved.color;
     if (saved.tipSize) hwState.tipSize = Number(saved.tipSize) || 0.7;
-    if (saved.styleLevel) hwState.styleLevel = Number(saved.styleLevel) || 2;
-    if (saved.ligatureRatio !== undefined) hwState.ligatureRatio = Number(saved.ligatureRatio);
+    if (saved.qualityLevel) hwState.qualityLevel = Math.max(1, Math.min(20, Number(saved.qualityLevel) || 4));
+    if (saved.spacingLevel) hwState.spacingLevel = Math.max(1, Math.min(10, Number(saved.spacingLevel) || 5));
   } catch (e) {}
 }
 
 function syncHwUIFromState() {
-  const persona = HW_PERSONAS[hwState.personaId] || HW_PERSONAS[0];
-  if (hwPersonaBadge) hwPersonaBadge.textContent = persona.name;
   if (hwColorPresets) updateColorButtonSelection(hwColorPresets, hwState.color);
   if (hwTipGroup) {
     hwTipGroup.querySelectorAll('.hw-tip-btn').forEach(btn => {
       btn.classList.toggle('active', parseFloat(btn.dataset.tip) === hwState.tipSize);
     });
   }
-  if (sliderHwStyle) sliderHwStyle.value = hwState.styleLevel;
-  if (valHwStyle) valHwStyle.textContent = `Lv.${hwState.styleLevel}`;
-  if (sliderHwLigature) sliderHwLigature.value = hwState.ligatureRatio;
-  if (valHwLigature) valHwLigature.textContent = `${hwState.ligatureRatio}%`;
-
-  if (handwritingPresetGrid) {
-    handwritingPresetGrid.querySelectorAll('.hw-preset-card').forEach(card => {
-      card.classList.toggle('active', Number(card.dataset.personaId) === hwState.personaId);
-    });
-  }
-}
-
-function buildHwPresetGrid() {
-  if (!handwritingPresetGrid) return;
-  handwritingPresetGrid.innerHTML = '';
-  HW_PERSONAS.forEach(p => {
-    const card = document.createElement('div');
-    card.className = `hw-preset-card ${p.id === hwState.personaId ? 'active' : ''}`;
-    card.dataset.personaId = String(p.id);
-    card.innerHTML = `
-      <div class="hw-preset-name">
-        <span>${p.name}</span>
-      </div>
-      <canvas class="hw-preset-canvas" width="220" height="60"></canvas>
-    `;
-    card.addEventListener('click', () => {
-      hwState.personaId = p.id;
-      saveHwSettings();
-      syncHwUIFromState();
-      renderMainHwPreview();
-    });
-    handwritingPresetGrid.appendChild(card);
-  });
+  if (sliderHwQuality) sliderHwQuality.value = hwState.qualityLevel;
+  if (valHwQuality) valHwQuality.textContent = formatQualityLabel(hwState.qualityLevel);
+  if (sliderHwSpacing) sliderHwSpacing.value = hwState.spacingLevel;
+  if (valHwSpacing) valHwSpacing.textContent = formatSpacingLabel(hwState.spacingLevel);
 }
 
 function renderMainHwPreview() {
@@ -4644,48 +4646,23 @@ function renderMainHwPreview() {
   const rawText = inputHandwritingText.value || '王小明';
   renderHandwritingToCanvas({
     text: rawText,
-    personaId: hwState.personaId,
     color: hwState.color,
     tipSize: hwState.tipSize,
-    styleLevel: hwState.styleLevel,
-    ligatureRatio: hwState.ligatureRatio,
+    qualityLevel: hwState.qualityLevel,
+    spacingLevel: hwState.spacingLevel,
     seed: hwState.seed,
-    fontSize: 42
-  }, hwMainPreviewCanvas, 320, 110);
+    fontSize: 44
+  }, hwMainPreviewCanvas, 340, 140);
 }
 
 function renderAllHandwritingPreviews() {
-  if (!inputHandwritingText) return;
-  const rawText = inputHandwritingText.value || '王小明';
-  // 縮圖預覽僅取前兩行前 12 字以維持清晰度與流暢度
-  const sampleText = rawText.split('\n').slice(0, 2).map(l => l.slice(0, 12)).join('\n');
-
-  if (handwritingPresetGrid) {
-    const cards = handwritingPresetGrid.querySelectorAll('.hw-preset-card');
-    cards.forEach(card => {
-      const pid = Number(card.dataset.personaId);
-      const canvasEl = card.querySelector('canvas');
-      if (canvasEl) {
-        renderHandwritingToCanvas({
-          text: sampleText,
-          personaId: pid,
-          color: hwState.color,
-          tipSize: hwState.tipSize,
-          styleLevel: hwState.styleLevel,
-          ligatureRatio: hwState.ligatureRatio,
-          seed: hwState.seed,
-          fontSize: 34
-        }, canvasEl, 220, 60);
-      }
-    });
-  }
   renderMainHwPreview();
 }
 
-function scheduleHandwritingPreviewUpdate(delayMs = 80) {
+function scheduleHandwritingPreviewUpdate(delayMs = 50) {
   clearTimeout(hwPreviewRenderTimer);
   hwPreviewRenderTimer = setTimeout(() => {
-    renderAllHandwritingPreviews();
+    renderMainHwPreview();
   }, delayMs);
 }
 
@@ -4699,8 +4676,6 @@ function rebuildActiveHandwritingLayer(recordUndo = true) {
     fontSize: 68
   });
 
-  const prevRatio = activeLayer.width / Math.max(1, activeLayer.height);
-  const newRatio = newCanvas.width / Math.max(1, newCanvas.height);
   const keepScale = activeLayer.width / Math.max(1, activeLayer.image ? activeLayer.image.width : newCanvas.width);
 
   activeLayer.image = newCanvas;
@@ -4718,15 +4693,14 @@ function rebuildActiveHandwritingLayer(recordUndo = true) {
 function initHandwritingGenerator() {
   if (!inputHandwritingText) return;
   loadHwSettings();
-  buildHwPresetGrid();
   syncHwUIFromState();
 
   ensureCharsLoaded(inputHandwritingText.value);
-  renderAllHandwritingPreviews();
+  renderMainHwPreview();
 
   inputHandwritingText.addEventListener('input', () => {
     ensureCharsLoaded(inputHandwritingText.value);
-    scheduleHandwritingPreviewUpdate(90);
+    scheduleHandwritingPreviewUpdate(80);
   });
 
   if (hwColorPresets) {
@@ -4735,7 +4709,7 @@ function initHandwritingGenerator() {
         hwState.color = btn.dataset.color;
         saveHwSettings();
         syncHwUIFromState();
-        scheduleHandwritingPreviewUpdate(30);
+        scheduleHandwritingPreviewUpdate(20);
       });
     });
   }
@@ -4746,26 +4720,33 @@ function initHandwritingGenerator() {
         hwState.tipSize = parseFloat(btn.dataset.tip) || 0.7;
         saveHwSettings();
         syncHwUIFromState();
-        scheduleHandwritingPreviewUpdate(30);
+        scheduleHandwritingPreviewUpdate(20);
       });
     });
   }
 
-  if (sliderHwStyle) {
-    sliderHwStyle.addEventListener('input', () => {
-      hwState.styleLevel = parseInt(sliderHwStyle.value, 10) || 2;
+  if (sliderHwQuality) {
+    sliderHwQuality.addEventListener('input', () => {
+      hwState.qualityLevel = parseInt(sliderHwQuality.value, 10) || 4;
       saveHwSettings();
       syncHwUIFromState();
-      scheduleHandwritingPreviewUpdate(40);
+      scheduleHandwritingPreviewUpdate(30);
     });
   }
 
-  if (sliderHwLigature) {
-    sliderHwLigature.addEventListener('input', () => {
-      hwState.ligatureRatio = parseInt(sliderHwLigature.value, 10) || 0;
+  if (sliderHwSpacing) {
+    sliderHwSpacing.addEventListener('input', () => {
+      hwState.spacingLevel = parseInt(sliderHwSpacing.value, 10) || 5;
       saveHwSettings();
       syncHwUIFromState();
-      scheduleHandwritingPreviewUpdate(40);
+      scheduleHandwritingPreviewUpdate(30);
+    });
+  }
+
+  if (btnHwResample) {
+    btnHwResample.addEventListener('click', () => {
+      hwState.seed = Math.floor(Math.random() * 10000000) + 1;
+      renderMainHwPreview();
     });
   }
 
@@ -4781,12 +4762,11 @@ function initHandwritingGenerator() {
 
       const hwOptions = {
         text,
-        personaId: hwState.personaId,
         color: hwState.color,
         tipSize: hwState.tipSize,
-        styleLevel: hwState.styleLevel,
-        ligatureRatio: hwState.ligatureRatio,
-        seed: Date.now() % 10000000
+        qualityLevel: hwState.qualityLevel,
+        spacingLevel: hwState.spacingLevel,
+        seed: hwState.seed || (Date.now() % 10000000)
       };
 
       const hwCanvas = renderHandwritingToCanvas({
@@ -4809,7 +4789,7 @@ function initHandwritingGenerator() {
 
       layers.push(newLayer);
       setActiveLayer(newLayer);
-      showToast(`已蓋上保卡（${HW_PERSONAS[hwState.personaId].name}）`);
+      showToast(`已蓋上保卡（${formatQualityLabel(hwState.qualityLevel)}）`);
     });
   }
 
@@ -4819,13 +4799,6 @@ function initHandwritingGenerator() {
       if (!activeLayer || activeLayer.type !== 'handwriting' || !activeLayer.hwOptions) return;
       activeLayer.hwOptions.text = editHwText.value;
       rebuildActiveHandwritingLayer(false);
-    });
-  }
-  if (editHwPersona) {
-    editHwPersona.addEventListener('change', () => {
-      if (!activeLayer || activeLayer.type !== 'handwriting' || !activeLayer.hwOptions) return;
-      activeLayer.hwOptions.personaId = parseInt(editHwPersona.value, 10) || 0;
-      rebuildActiveHandwritingLayer(true);
     });
   }
   if (editHwColorPresets) {
@@ -4850,22 +4823,30 @@ function initHandwritingGenerator() {
       });
     });
   }
-  if (sliderEditHwStyle) {
-    sliderEditHwStyle.addEventListener('input', () => {
+  if (sliderEditHwQuality) {
+    sliderEditHwQuality.addEventListener('input', () => {
       if (!activeLayer || activeLayer.type !== 'handwriting' || !activeLayer.hwOptions) return;
-      const lv = parseInt(sliderEditHwStyle.value, 10) || 2;
-      activeLayer.hwOptions.styleLevel = lv;
-      if (valEditHwStyle) valEditHwStyle.textContent = `Lv.${lv}`;
+      const q = parseInt(sliderEditHwQuality.value, 10) || 4;
+      activeLayer.hwOptions.qualityLevel = q;
+      if (valEditHwQuality) valEditHwQuality.textContent = formatQualityLabel(q);
       rebuildActiveHandwritingLayer(false);
     });
+    sliderEditHwQuality.addEventListener('change', () => {
+      if (!activeLayer || activeLayer.type !== 'handwriting') return;
+      pushUndoState('調整手寫工整度');
+    });
   }
-  if (sliderEditHwLigature) {
-    sliderEditHwLigature.addEventListener('input', () => {
+  if (sliderEditHwSpacing) {
+    sliderEditHwSpacing.addEventListener('input', () => {
       if (!activeLayer || activeLayer.type !== 'handwriting' || !activeLayer.hwOptions) return;
-      const ratio = parseInt(sliderEditHwLigature.value, 10) || 0;
-      activeLayer.hwOptions.ligatureRatio = ratio;
-      if (valEditHwLigature) valEditHwLigature.textContent = `${ratio}%`;
+      const sp = parseInt(sliderEditHwSpacing.value, 10) || 5;
+      activeLayer.hwOptions.spacingLevel = sp;
+      if (valEditHwSpacing) valEditHwSpacing.textContent = formatSpacingLabel(sp);
       rebuildActiveHandwritingLayer(false);
+    });
+    sliderEditHwSpacing.addEventListener('change', () => {
+      if (!activeLayer || activeLayer.type !== 'handwriting') return;
+      pushUndoState('調整手寫左右字距');
     });
   }
 }

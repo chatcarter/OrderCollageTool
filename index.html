@@ -247,24 +247,6 @@
             </div>
             <textarea id="editHwText" rows="3" placeholder="輸入客戶資料..."></textarea>
 
-            <div class="control-row" style="margin-top: 6px;">
-              <div class="control-label">
-                <span>筆跡人格</span>
-              </div>
-              <select id="editHwPersona" class="hw-select">
-                <option value="0">#1 工整專櫃</option>
-                <option value="1">#2 俐落業務</option>
-                <option value="2">#3 秀氣微傾</option>
-                <option value="3">#4 圓潤自然</option>
-                <option value="4">#5 快寫連筆</option>
-                <option value="5">#6 沉穩大氣</option>
-                <option value="6">#7 輕快隨筆</option>
-                <option value="7">#8 細長清秀</option>
-                <option value="8">#9 豪邁奔放</option>
-                <option value="9">#10 職人手寫</option>
-              </select>
-            </div>
-
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; gap: 8px;">
               <div class="color-presets" style="margin: 0;" id="editHwColorPresets">
                 <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色"></div>
@@ -280,21 +262,21 @@
 
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>筆觸段位 (正體 ➔ 潦草)</span>
-                <span class="slider-val" id="valEditHwStyle">Lv.2</span>
+                <span>✍️ 筆跡工整度（Lv.1 漂亮 ➔ Lv.20 普通）</span>
+                <span class="slider-val" id="valEditHwQuality">Lv.4 (漂亮工整)</span>
               </div>
               <div class="slider-container">
-                <input type="range" id="sliderEditHwStyle" min="1" max="6" step="1" value="2">
+                <input type="range" id="sliderEditHwQuality" min="1" max="20" step="1" value="4">
               </div>
             </div>
 
             <div class="control-row" style="margin-top: 4px;">
               <div class="control-label">
-                <span>牽絲過渡細線</span>
-                <span class="slider-val" id="valEditHwLigature">10%</span>
+                <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
+                <span class="slider-val" id="valEditHwSpacing">5 (標準)</span>
               </div>
               <div class="slider-container">
-                <input type="range" id="sliderEditHwLigature" min="0" max="40" step="5" value="10">
+                <input type="range" id="sliderEditHwSpacing" min="1" max="10" step="1" value="5">
               </div>
             </div>
           </div>
@@ -495,11 +477,11 @@
         </div>
       </div>
 
-      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (10 種固定筆跡人格 ＋ 細微參數微調) -->
+      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (速乾油性原子筆 ＋ 20 級美醜工整度 ＋ 10 級字距) -->
       <div class="panel-card" id="cardHandwriting">
         <div class="card-title">
           <span>✍️ 保卡手寫客戶資料生成器</span>
-          <span class="count-badge" id="hwPersonaBadge">#1 工整專櫃</span>
+          <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">油性原子筆就緒</span>
         </div>
 
         <div class="panel-body-box">
@@ -514,16 +496,7 @@ demo@example.com
 台北市信義區忠孝東路五段68號</textarea>
           </div>
 
-          <!-- 10 種固定筆跡人格即時預覽網格 -->
-          <div class="control-row" style="margin-top: 8px;">
-            <div class="control-label">
-              <span>10 種固定筆跡人格（點擊鎖定筆跡）</span>
-              <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">筆順模擬就緒</span>
-            </div>
-            <div class="hw-preset-grid" id="handwritingPresetGrid"></div>
-          </div>
-
-          <!-- 選定筆跡後的細微調整面板 -->
+          <!-- 細微調整面板 -->
           <div class="hw-tweak-panel">
             <!-- 墨水顏色（3 色） -->
             <div class="hw-tweak-row">
@@ -545,25 +518,25 @@ demo@example.com
               </div>
             </div>
 
-            <!-- 筆觸段位滑桿（6 段：正體 Lv.1 -> 潦草 Lv.6） -->
+            <!-- 筆跡美醜 20 級滑桿（Lv.1 漂亮 ➔ Lv.20 普通） -->
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>筆觸段位（正體 Lv.1 ➔ 潦草 Lv.6）</span>
-                <span class="slider-val" id="valHwStyle">Lv.2</span>
+                <span>✍️ 筆跡工整度（Lv.1 漂亮 ➔ Lv.20 普通）</span>
+                <span class="slider-val" id="valHwQuality">Lv.4 (漂亮工整)</span>
               </div>
               <div class="slider-container">
-                <input type="range" id="sliderHwStyle" min="1" max="6" step="1" value="2">
+                <input type="range" id="sliderHwQuality" min="1" max="20" step="1" value="4">
               </div>
             </div>
 
-            <!-- 牽絲過渡細線微調（0% ~ 40%） -->
+            <!-- 左右字距 10 級滑桿（1 最寬 ➔ 10 最緊靠） -->
             <div class="control-row" style="margin-top: 4px;">
               <div class="control-label">
-                <span>牽絲過渡細線微調</span>
-                <span class="slider-val" id="valHwLigature">10%</span>
+                <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
+                <span class="slider-val" id="valHwSpacing">5 (標準)</span>
               </div>
               <div class="slider-container">
-                <input type="range" id="sliderHwLigature" min="0" max="40" step="5" value="10">
+                <input type="range" id="sliderHwSpacing" min="1" max="10" step="1" value="5">
               </div>
             </div>
           </div>
@@ -573,10 +546,15 @@ demo@example.com
             <canvas id="hwMainPreviewCanvas"></canvas>
           </div>
 
-          <!-- 蓋上保卡按鈕 -->
-          <button type="button" class="btn btn-primary btn-full" id="btnAddHandwriting" style="margin-top: 8px; background-color: #003FBC;">
-            ✍️ 蓋上保卡（加入畫布）
-          </button>
+          <!-- 重新抽樣 ＋ 蓋上保卡按鈕 -->
+          <div style="display: flex; gap: 6px; margin-top: 8px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnHwResample" title="同等級下重新隨機微調筆順與起伏">
+              🔄 換個筆順微調
+            </button>
+            <button type="button" class="btn btn-primary" id="btnAddHandwriting" style="flex: 1; background-color: #003FBC;">
+              ✍️ 蓋上保卡（加入畫布）
+            </button>
+          </div>
         </div>
       </div>
 
