@@ -42,6 +42,7 @@
 4. **印章去背規範**：印章去背必須保留乾淨透明底（無雜訊、無反白灰邊），印泥色碼必須精準維持 `#003FBC`。
 5. **PDF 裁切高度**：精準定位「實收訂金金額 / 尚餘尾款 / 總金額(含稅)」所在行，並切除其下之施工條款與確認項目（下緣安全留邊設定為 `+12px`）。
 6. **OCR 輸出格式規範**：單據辨識固定輸出 5 行格式（西元購買日期 `YYYY-MM-DD`、去除 `-` 符號之發票號碼、中文品牌與型號、製造機號、固定賣方統編 `24721268`）。
+7. **雲端版本庫同步規範**：任何功能新增或檔案修改完成並通過檢核後，必須自動執行 `git add .`、`git commit -m "..."` 與 `git push origin main`，確保遠端 GitHub 倉庫（https://github.com/chatcarter/OrderCollageTool.git）永久維持最新同步狀態。
 
 ---
 
@@ -51,6 +52,19 @@
 ---
 
 ## 區塊六：工程修改工作日誌
+
+### [2026-11-21 21:15:00] (第 18 版 / v18)
+- **執行項目**：雲端倉庫綁定與自動同步建置（GitHub Remote & .gitignore）。
+- **具體進度**：
+  1. **建立 `.gitignore` 排除非運行必要與本機敏感素材**：
+     - 新增 `.gitignore`，納入 `_backup/`、`*.bak`、`*.ps1`、`本櫃印章.docx`、`assets/stamp_raw.png`、`啟動拼貼工具.bat`、`.DS_Store`、`Thumbs.db`。
+     - 透過 `git rm --cached` 將上述檔案安全自 Git 追蹤索引中移除，並 100% 完整保留本機磁碟實體原檔。
+  2. **遠端 GitHub 倉庫綁定與分支統一**：
+     - 將本地分支統一重命名為 `main`（`git branch -M main`）。
+     - 綁定遠端倉庫 `origin` 至 `https://github.com/chatcarter/OrderCollageTool.git`。
+     - 於開發手冊與架構文件中正式確立「每次修改後自動執行 `git add .` / `git commit` / `git push origin main`」之永久自動同步規範。
+  3. **首次雲端推送與全專案 CRLF 檢驗**：
+     - 建立 `_backup/20261121_211129/` 備份，全專案檔案通過 CRLF 換行檢查與語法驗證，執行 `git push -u origin main` 完成首次雲端代碼上傳。
 
 ### [2026-11-21 20:50:00] (第 17 版 / v17)
 - **執行項目**：升級「局部圈選刪除（塗白）」為 Windows 小畫家（MS Paint）風格矩形選取框體驗，並放大按鈕視覺規格。

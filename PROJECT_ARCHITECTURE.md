@@ -75,10 +75,24 @@ OrderCollageTool/
 - 修改前強制依系統時間建立 `_backup/YYYYMMDD_HHMMSS/` 備份。
 - 根目錄 `index.html` 與 `static/index.html` 修改時必須保持功能與 DOM ID 同步（僅保留 `static/` 相對路徑差異）。
 - 不得未經授權修改核心運算邏輯與既有功能。
+- 每次修改後自動執行 `git add .` / `git commit` / `git push origin main` 確保 GitHub 遠端倉庫（https://github.com/chatcarter/OrderCollageTool.git）即時同步。
 
 ---
 
 ## 區塊六：工程修改工作日誌
+
+### [2026-11-21 21:15:00] (第 18 版 / v18)
+- **執行項目**：雲端倉庫綁定與自動同步建置（GitHub Remote & .gitignore）。
+- **具體進度**：
+  1. **建立 `.gitignore` 排除非運行必要與本機敏感素材**：
+     - 新增 `.gitignore`，納入 `_backup/`、`*.bak`、`*.ps1`、`本櫃印章.docx`、`assets/stamp_raw.png`、`啟動拼貼工具.bat`、`.DS_Store`、`Thumbs.db`。
+     - 透過 `git rm --cached` 將上述檔案安全自 Git 追蹤索引中移除，並 100% 完整保留本機磁碟實體原檔。
+  2. **遠端 GitHub 倉庫綁定與分支統一**：
+     - 將本地分支統一重命名為 `main`（`git branch -M main`）。
+     - 綁定遠端倉庫 `origin` 至 `https://github.com/chatcarter/OrderCollageTool.git`。
+     - 於開發手冊與架構文件中正式確立「每次修改後自動執行 `git add .` / `git commit` / `git push origin main`」之永久自動同步規範。
+  3. **首次雲端推送與全專案 CRLF 檢驗**：
+     - 建立 `_backup/20261121_211129/` 備份，全專案檔案通過 CRLF 換行檢查與語法驗證，執行 `git push -u origin main` 完成首次雲端代碼上傳。
 
 ### [2026-11-21 20:50:00] (第 17 版 / v17)
 - **執行項目**：升級「局部圈選刪除（塗白）」為 Windows 小畫家（MS Paint）風格矩形選取框體驗，並放大按鈕視覺規格。
