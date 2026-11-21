@@ -86,6 +86,8 @@ let isEraseMode = false;
 let isDrawingEraseBox = false;
 let eraseBoxStart = null;
 let eraseBoxCurrent = null;
+let isMovingEraseBox = false;
+let eraseBoxMoveStart = null;
 
 // --- 歷史復原堆疊 (Undo History Stack) ---
 const MAX_UNDO_STEPS = 20;
@@ -1054,7 +1056,7 @@ function drawOcrBoxOverlay() {
   ctx.restore();
 }
 
-// --- 繪製圖層局部圈選塗白遮除紅框 ---
+// --- 繪製圖層局部圈選塗白遮除框（Windows 小畫家 MS Paint 風格）---
 function drawLayerEraseBox(layer) {
   let box = null;
   if (isDrawingEraseBox && eraseBoxStart && eraseBoxCurrent) {
@@ -1078,34 +1080,65 @@ function drawLayerEraseBox(layer) {
   if (!box || box.w <= 0 || box.h <= 0) return;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+  // 1. 半透明淡藍色選取區域遮罩
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.16)';
   ctx.fillRect(box.x, box.y, box.w, box.h);
 
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 3 / currentZoom;
+  // 2. Windows 小畫家風格黑白相間高對比虛線邊框
+  // 底層黑色實線
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2.5 / currentZoom;
+  ctx.setLineDash([]);
   ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-  ctx.strokeStyle = '#DC2626';
-  ctx.lineWidth = 2 / currentZoom;
-  ctx.setLineDash([8 / currentZoom, 6 / currentZoom]);
+  // 表層白色虛線 (在黑色、文字或彩色照片上皆極清晰)
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2.5 / currentZoom;
+  ctx.setLineDash([6 / currentZoom, 6 / currentZoom]);
   ctx.strokeRect(box.x, box.y, box.w, box.h);
   ctx.setLineDash([]);
 
-  if (box.w > 40 && box.h > 20) {
-    const text = '塗白清除 (Delete)';
+  // 3. 繪製小畫家風格四角與邊界控制小方塊
+  const handleSize = 6 / currentZoom;
+  const halfH = handleSize / 2;
+  const handles = [
+    { x: box.x, y: box.y }, // 左上
+    { x: box.x + box.w / 2, y: box.y }, // 上中
+    { x: box.x + box.w, y: box.y }, // 右上
+    { x: box.x + box.w, y: box.y + box.h / 2 }, // 右中
+    { x: box.x + box.w, y: box.y + box.h }, // 右下
+    { x: box.x + box.w / 2, y: box.y + box.h }, // 下中
+    { x: box.x, y: box.y + box.h }, // 左下
+    { x: box.x, y: box.y + box.h / 2 }, // 左中
+  ];
+  ctx.fillStyle = '#FFFFFF';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1.2 / currentZoom;
+  handles.forEach(h => {
+    ctx.fillRect(h.x - halfH, h.y - halfH, handleSize, handleSize);
+    ctx.strokeRect(h.x - halfH, h.y - halfH, handleSize, handleSize);
+  });
+
+  // 4. 浮動操作提示標籤
+  if (box.w > 40 && box.h > 15) {
+    const text = '✂️ 塗白清除 (按 Delete · 方向鍵微調)';
     ctx.font = `bold ${Math.round(12 / currentZoom)}px -apple-system, sans-serif`;
     const tw = ctx.measureText(text).width;
-    const bh = 22 / currentZoom;
-    const bw = tw + 16 / currentZoom;
-    const by = (box.y - bh - 4 / currentZoom >= -layer.height / 2) ? (box.y - bh - 4 / currentZoom) : (box.y + 4 / currentZoom);
+    const bh = 24 / currentZoom;
+    const bw = tw + 18 / currentZoom;
+    const by = (box.y - bh - 6 / currentZoom >= -layer.height / 2) ? (box.y - bh - 6 / currentZoom) : (box.y + box.h + 6 / currentZoom);
     const bx = Math.max(-layer.width / 2, Math.min(layer.width / 2 - bw, box.x));
 
-    ctx.fillStyle = '#DC2626';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1 / currentZoom;
+    ctx.strokeRect(bx, by, bw, bh);
+
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, bx + 8 / currentZoom, by + bh / 2);
+    ctx.fillText(text, bx + 9 / currentZoom, by + bh / 2);
   }
   ctx.restore();
 }
@@ -1356,8 +1389,24 @@ canvas.addEventListener('mousedown', e => {
     return;
   }
 
-  // 0B. 若處於「局部圈選刪除（塗白）」模式且有選取物件，在該物件上開始畫框
+  // 0B. 局部圈選刪除（塗白）MS Paint 選取框處理
   if (isEraseMode && activeLayer && (activeLayer.type === 'image' || activeLayer.type === 'pdf_order')) {
+    const localP = getLayerLocalCoords(activeLayer, coords.x, coords.y);
+    const box = activeLayer.eraseBox;
+
+    // 檢查是否點擊在已存在的選取框內部 -> 進入拖曳移動選取框模式
+    if (box && localP.x >= box.x && localP.x <= box.x + box.w && localP.y >= box.y && localP.y <= box.y + box.h) {
+      isMovingEraseBox = true;
+      eraseBoxMoveStart = {
+        clickLocalX: localP.x,
+        clickLocalY: localP.y,
+        origBoxX: box.x,
+        origBoxY: box.y
+      };
+      return;
+    }
+
+    // 點在選取框外部 -> 放棄舊框並開始拉出新選取框
     isDrawingEraseBox = true;
     eraseBoxStart = { x: coords.x, y: coords.y };
     eraseBoxCurrent = { ...eraseBoxStart };
@@ -1446,7 +1495,29 @@ window.addEventListener('mousemove', e => {
     return;
   }
 
-  // 0B. 局部塗白框選拖曳繪製
+  // 0B-1. 平移已存在的塗白選取框（MS Paint 風格拖曳移動）
+  if (isMovingEraseBox && activeLayer && activeLayer.eraseBox && eraseBoxMoveStart) {
+    const localP = getLayerLocalCoords(activeLayer, coords.x, coords.y);
+    const deltaX = localP.x - eraseBoxMoveStart.clickLocalX;
+    const deltaY = localP.y - eraseBoxMoveStart.clickLocalY;
+    const hw = activeLayer.width / 2;
+    const hh = activeLayer.height / 2;
+    const box = activeLayer.eraseBox;
+
+    let newX = eraseBoxMoveStart.origBoxX + deltaX;
+    let newY = eraseBoxMoveStart.origBoxY + deltaY;
+
+    // 限制選取框不超出圖片邊界
+    newX = Math.max(-hw, Math.min(hw - box.w, newX));
+    newY = Math.max(-hh, Math.min(hh - box.h, newY));
+
+    box.x = Math.round(newX);
+    box.y = Math.round(newY);
+    render();
+    return;
+  }
+
+  // 0B-2. 局部塗白框選拖曳繪製
   if (isDrawingEraseBox && eraseBoxStart && activeLayer) {
     eraseBoxCurrent = { x: coords.x, y: coords.y };
     render();
@@ -1671,7 +1742,19 @@ window.addEventListener('mousemove', e => {
   }
 
   // 7. 動態調整滑鼠游標樣式
-  if (ocrRegionMode || (isEraseMode && activeLayer)) {
+  if (ocrRegionMode) {
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
+  if (isEraseMode && activeLayer && (activeLayer.type === 'image' || activeLayer.type === 'pdf_order')) {
+    if (activeLayer.eraseBox) {
+      const localP = getLayerLocalCoords(activeLayer, coords.x, coords.y);
+      const box = activeLayer.eraseBox;
+      if (localP.x >= box.x && localP.x <= box.x + box.w && localP.y >= box.y && localP.y <= box.y + box.h) {
+        canvas.style.cursor = 'move';
+        return;
+      }
+    }
     canvas.style.cursor = 'crosshair';
     return;
   }
@@ -1728,7 +1811,15 @@ window.addEventListener('mouseup', () => {
     return;
   }
 
-  // 0B. 局部塗白框選完成
+  // 0B-1. 平移選取框結束
+  if (isMovingEraseBox) {
+    isMovingEraseBox = false;
+    eraseBoxMoveStart = null;
+    render();
+    return;
+  }
+
+  // 0B-2. 局部塗白框選完成
   if (isDrawingEraseBox && eraseBoxStart && eraseBoxCurrent && activeLayer) {
     isDrawingEraseBox = false;
     const p1 = getLayerLocalCoords(activeLayer, eraseBoxStart.x, eraseBoxStart.y);
@@ -1750,10 +1841,10 @@ window.addEventListener('mouseup', () => {
     eraseBoxStart = null;
     eraseBoxCurrent = null;
 
-    if (finalW > 8 && finalH > 8) {
+    if (finalW > 6 && finalH > 6) {
       activeLayer.eraseBox = { x: clampLx, y: clampLy, w: finalW, h: finalH };
       if (btnApplyEraseBox) btnApplyEraseBox.classList.remove('hidden');
-      showToast('已圈選欲刪除區域，請按 Delete 鍵或點擊確認清除');
+      showToast('已圈選範圍：可拖曳或以方向鍵微調，按 Delete 執行塗白');
     } else {
       activeLayer.eraseBox = null;
       if (btnApplyEraseBox) btnApplyEraseBox.classList.add('hidden');
@@ -1814,10 +1905,31 @@ window.addEventListener('keydown', e => {
     }
   }
 
+  // 方向鍵優先微調：若處於塗白選取框存在狀態，優先移動選取框（不移動底層圖片）
+  if (isEraseMode && activeLayer && activeLayer.eraseBox && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    const hw = activeLayer.width / 2;
+    const hh = activeLayer.height / 2;
+    const box = activeLayer.eraseBox;
+    if (e.key === 'ArrowUp') box.y = Math.max(-hh, box.y - step);
+    if (e.key === 'ArrowDown') box.y = Math.min(hh - box.h, box.y + step);
+    if (e.key === 'ArrowLeft') box.x = Math.max(-hw, box.x - step);
+    if (e.key === 'ArrowRight') box.x = Math.min(hw - box.w, box.x + step);
+    render();
+    return;
+  }
+
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (isEraseMode && activeLayer && activeLayer.eraseBox) {
       e.preventDefault();
       applyLayerEraseBox();
+      return;
+    }
+    if (isEraseMode && activeLayer) {
+      // 只要處於圈選塗白模式，即使尚未拉出選取框，也嚴禁誤刪整個圖層！
+      e.preventDefault();
+      showToast('目前處於圈選塗白模式，請先框選欲刪除區域再按 Delete');
       return;
     }
     if (activeLayer) {
@@ -2782,22 +2894,33 @@ function applyDocumentEnhancePureJS(layer) {
   render();
 }
 
-// --- 局部圈選塗白遮除控制 ---
+// --- 局部圈選塗白遮除控制（MS Paint 矩形選取）---
 function toggleEraseMode(active) {
   if (!activeLayer) return;
   isEraseMode = (typeof active === 'boolean') ? active : !isEraseMode;
   if (btnToggleEraseBox) {
     if (isEraseMode) {
-      btnToggleEraseBox.classList.add('active', 'btn-primary');
+      btnToggleEraseBox.classList.add('active');
       btnToggleEraseBox.classList.remove('btn-outline');
       if (eraseNotice) eraseNotice.classList.remove('hidden');
-      if (btnApplyEraseBox) btnApplyEraseBox.classList.remove('hidden');
+      if (activeLayer.eraseBox && btnApplyEraseBox) {
+        btnApplyEraseBox.classList.remove('hidden');
+      } else if (btnApplyEraseBox) {
+        btnApplyEraseBox.classList.add('hidden');
+      }
       canvas.style.cursor = 'crosshair';
+      showToast('已開啟小畫家塗白選取框：請在單據上拉出選取範圍');
     } else {
-      btnToggleEraseBox.classList.remove('active', 'btn-primary');
+      btnToggleEraseBox.classList.remove('active');
       btnToggleEraseBox.classList.add('btn-outline');
       if (eraseNotice) eraseNotice.classList.add('hidden');
       if (btnApplyEraseBox) btnApplyEraseBox.classList.add('hidden');
+      if (activeLayer) activeLayer.eraseBox = null;
+      isDrawingEraseBox = false;
+      isMovingEraseBox = false;
+      eraseBoxStart = null;
+      eraseBoxCurrent = null;
+      eraseBoxMoveStart = null;
       canvas.style.cursor = 'default';
     }
   }
@@ -2813,7 +2936,7 @@ if (btnApplyEraseBox) {
     if (activeLayer && activeLayer.eraseBox) {
       applyLayerEraseBox();
     } else {
-      showToast('請先在物件上拖曳拉出要塗白的紅色虛線範圍');
+      showToast('請先在物件上拖曳拉出要塗白的選取範圍');
     }
   });
 }

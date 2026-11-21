@@ -238,17 +238,20 @@
           </div>
 
           <!-- 局部圈選刪除（塗白橡皮擦 - 適用於 PDF 訂購單與照片） -->
-          <div id="eraseControls" class="control-row hidden" style="border-top: 1px solid #f1f5f9; padding-top: 8px;">
-            <div style="font-size: 12px; font-weight: 700; color: var(--text-main); margin-bottom: 2px;">
-              局部圈選刪除（矩形塗白遮除）
+          <div id="eraseControls" class="control-row hidden" style="border-top: 1px solid #f1f5f9; padding-top: 10px;">
+            <div id="eraseNotice" class="tool-notice hidden" style="margin-bottom: 8px;">
+              <strong>小畫家選取模式</strong>：拖曳拉出虛線框 ➜ 游標移入框內可拖曳平移（或方向鍵 1px 微調） ➜ 按 <strong>Delete</strong> 執行塗白遮除（Esc 退出）。
             </div>
-            <div id="eraseNotice" class="tool-notice hidden">
-              請在單據上拖曳拉出紅色虛線框，按下鍵盤 Delete 鍵或點擊下方按鈕即可塗白遮除該區塊（Esc 取消）。
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn btn-outline btn-sm btn-full" id="btnToggleEraseBox">🧹 局部圈選刪除（塗白）</button>
-              <button class="btn btn-danger btn-sm btn-full hidden" id="btnApplyEraseBox">確認清除圈選區 (Delete)</button>
-            </div>
+            <button type="button" class="btn btn-outline btn-full btn-erase-large" id="btnToggleEraseBox">
+              <span class="erase-btn-icon">🧹</span>
+              <span class="erase-btn-content">
+                <span class="erase-btn-title">局部圈選刪除（塗白橡皮擦）</span>
+                <span class="erase-btn-sub">點此開啟 MS Paint 矩形選取框 · 支援拖曳與方向鍵微調</span>
+              </span>
+            </button>
+            <button type="button" class="btn btn-danger btn-sm btn-full hidden" id="btnApplyEraseBox" style="margin-top: 8px; padding: 10px 14px; font-size: 13px; font-weight: 700;">
+              ✂️ 確認清除圈選範圍 (Delete)
+            </button>
           </div>
 
           <!-- 通用變形控制（快速旋轉、水平翻轉、刪除） -->

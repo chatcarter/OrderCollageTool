@@ -292,6 +292,69 @@ body {
   width: 100%;
 }
 
+/* MS Paint 風格局部圈選刪除大按鈕 */
+.btn-erase-large {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 66px;
+  height: auto;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 2px dashed #94a3b8;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.btn-erase-large:hover {
+  background: #f8fafc;
+  border-color: #64748b;
+  transform: translateY(-1px);
+}
+
+.btn-erase-large.active {
+  background: #eff6ff;
+  border: 2px solid #003FBC;
+  box-shadow: 0 0 0 2px rgba(0, 63, 188, 0.2);
+}
+
+.erase-btn-icon {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.erase-btn-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.erase-btn-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.btn-erase-large.active .erase-btn-title {
+  color: #003FBC;
+}
+
+.erase-btn-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+.btn-erase-large.active .erase-btn-sub {
+  color: #1e40af;
+}
+
 /* Layer Item List */
 .layers-list {
   display: flex;
