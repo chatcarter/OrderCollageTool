@@ -3263,7 +3263,7 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
     }
   }
 
-  // 4. 偵測明細表頭與第 6 欄「數量」右緣（裁除預計交貨日、贈品否、贈品活動訖日）
+  // 4. 偵測第 6 欄「數量」右緣（作為紅框純白挖空起點），並計算紫線安全右邊界（保護上方「注意：...。」與下方「總金額(含稅):...」）(v44)
   const headerIdx = rows.findIndex(r =>
     r.items.some(it => it.str.includes('數量')) &&
     (
@@ -3272,12 +3272,14 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
     )
   );
 
-  let cropRightX = workCanvas.width;
+  let qtyColRightEdgeX = workCanvas.width;
+  let qtyHeaderRow = null;
+  let nextRightColItem = null;
   if (headerIdx >= 0) {
-    const headerRow = rows[headerIdx];
-    const qtyItem = headerRow.items.find(it => it.str.includes('數量'));
-    const rightHeaderCandidates = headerRow.items.filter(it => qtyItem && it.x > qtyItem.right + 4 * scale);
-    const nextRightColItem = rightHeaderCandidates.length > 0 ? rightHeaderCandidates[0] : null;
+    qtyHeaderRow = rows[headerIdx];
+    const qtyItem = qtyHeaderRow.items.find(it => it.str.includes('數量'));
+    const rightHeaderCandidates = qtyHeaderRow.items.filter(it => qtyItem && it.x > qtyItem.right + 4 * scale);
+    nextRightColItem = rightHeaderCandidates.length > 0 ? rightHeaderCandidates[0] : null;
 
     if (qtyItem && nextRightColItem) {
       let maxQtyColRight = qtyItem.right;
@@ -3300,16 +3302,15 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
         Math.max(qtyItem.right, maxQtyColRight) + 18 * scale
       );
       const borderX = scanMaxX > scanMinX + 2
-        ? findPdfVerticalGridLineX(workCanvas, scanMinX, scanMaxX, headerRow.top, headerRow.bottom + 40 * scale, -1)
+        ? findPdfVerticalGridLineX(workCanvas, scanMinX, scanMaxX, qtyHeaderRow.top, qtyHeaderRow.bottom + 40 * scale, -1)
         : -1;
-      cropRightX = borderX >= 0
-        ? Math.min(nextRightColItem.x - 2 * scale, borderX + Math.ceil(scale * 0.6))
+      qtyColRightEdgeX = borderX >= 0
+        ? Math.min(nextRightColItem.x - 2 * scale, borderX + Math.ceil(scale * 0.8))
         : Math.round(fallbackRightX);
-      cropRightX = Math.max(Math.round(workCanvas.width * 0.45), Math.min(workCanvas.width, cropRightX));
+      qtyColRightEdgeX = Math.max(Math.round(workCanvas.width * 0.40), Math.min(workCanvas.width, qtyColRightEdgeX));
     }
   }
 
-  // 5 & 6. 商品明細黑名單過濾贈品列 ＋ 底部收款明細／金額區無縫貼齊
   let bottomStartIdx = -1;
   if (headerIdx >= 0) {
     bottomStartIdx = rows.findIndex((r, idx) =>
@@ -3317,6 +3318,42 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
     );
   }
 
+  const cutoffIdx = rows.findIndex((r, idx) =>
+    (bottomStartIdx >= 0 ? idx >= bottomStartIdx : true) &&
+    /施工確認|注意事項|客戶簽名|訂購人簽名/.test(r.fullText)
+  );
+  const activeEndIdx = cutoffIdx >= 0 ? cutoffIdx : rows.length;
+
+  // 紫線安全裁切右緣：取「注意:...。」與「總金額(含稅):...」兩行最右緣之最大值，再預留 20px 安全白邊
+  let maxNoticeRight = 0;
+  let maxNoticeBottom = 0;
+  let maxTotalRight = 0;
+  for (let i = 0; i < activeEndIdx; i++) {
+    const r = rows[i];
+    if (!/注意事項/.test(r.fullText) && /注意\s*[:：]|若該訂單出貨|超過廠商活動|無贈送贈品/.test(r.fullText)) {
+      r.items.forEach(it => {
+        maxNoticeRight = Math.max(maxNoticeRight, it.right);
+      });
+      maxNoticeBottom = Math.max(maxNoticeBottom, r.bottom);
+    }
+    if (/總金額|含稅|尚餘尾款|實收訂金|訂金金額/.test(r.fullText)) {
+      r.items.forEach(it => {
+        maxTotalRight = Math.max(maxTotalRight, it.right);
+      });
+    }
+  }
+
+  const protectedTextRight = Math.max(maxNoticeRight, maxTotalRight);
+  const safeRightPadPx = 20;
+  let cropRightX = workCanvas.width;
+  if (protectedTextRight > 0) {
+    cropRightX = Math.max(qtyColRightEdgeX + safeRightPadPx, Math.ceil(protectedTextRight + safeRightPadPx));
+    cropRightX = Math.min(workCanvas.width, cropRightX);
+  } else if (qtyColRightEdgeX < workCanvas.width) {
+    cropRightX = workCanvas.width;
+  }
+
+  // 5 & 6. 紅框純白挖空右側三欄（保留上方注意與下方金額）＋ 黑名單過濾贈品列 ＋ 底部收款區無縫貼齊
   if (headerIdx >= 0 && bottomStartIdx > headerIdx) {
     const headerRow = rows[headerIdx];
     const bottomFirstRow = rows[bottomStartIdx];
@@ -3324,11 +3361,11 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
 
     if (itemRows.length > 0) {
       const seqHeader = headerRow.items.find(it => /序號|項次|序|項/.test(it.str));
-      const seqMaxX = seqHeader ? (seqHeader.right + 28 * scale) : (cropRightX * 0.14);
+      const seqMaxX = seqHeader ? (seqHeader.right + 28 * scale) : (qtyColRightEdgeX * 0.16);
 
       const itemBlocks = [];
       itemRows.forEach(r => {
-        const leftItems = r.items.filter(it => it.x < cropRightX);
+        const leftItems = r.items.filter(it => it.x < qtyColRightEdgeX);
         if (leftItems.length === 0) return;
         const firstIt = leftItems[0];
         const isSeqStart = firstIt.x <= seqMaxX && /^\d{1,4}$/.test(firstIt.str.trim());
@@ -3347,8 +3384,8 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
       });
 
       if (itemBlocks.length > 0) {
-        const lineScanLeft = Math.round(cropRightX * 0.06);
-        const lineScanRight = Math.round(cropRightX * 0.94);
+        const lineScanLeft = Math.round(qtyColRightEdgeX * 0.06);
+        const lineScanRight = Math.round(qtyColRightEdgeX * 0.94);
 
         const firstItemTop = itemBlocks[0].rows[0].top;
         const headerBottomMid = Math.round((headerRow.bottom + firstItemTop) * 0.5);
@@ -3374,6 +3411,17 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
         );
         const itemsAreaEndY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(1.0 * scale));
         const paymentSliceStartY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(2.5 * scale));
+
+        // v44 紅框純白挖空：從「數量」欄位右緣起至紫線 cropRightX，垂直從表頭右三欄上緣至最後一筆明細下緣
+        if (nextRightColItem && qtyColRightEdgeX < cropRightX) {
+          const safeTopFloor = maxNoticeBottom > 0 ? Math.ceil(maxNoticeBottom + 2) : 0;
+          const redBoxTopY = Math.max(safeTopFloor, Math.floor(headerRow.top - 3.5 * scale));
+          const redBoxH = Math.max(0, itemsAreaEndY - redBoxTopY);
+          if (redBoxH > 0) {
+            workCtx.fillStyle = '#FFFFFF';
+            workCtx.fillRect(qtyColRightEdgeX, redBoxTopY, cropRightX - qtyColRightEdgeX, redBoxH);
+          }
+        }
 
         for (let b = 0; b < itemBlocks.length; b++) {
           const blk = itemBlocks[b];
@@ -3402,7 +3450,7 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
         const removedGiftCount = itemBlocks.length - keptBlocks.length;
 
         const summaryEndRows = rows.filter((r, idx) =>
-          idx >= bottomStartIdx && /實收訂金|尚餘尾款|總金額|含稅|訂金金額/.test(r.fullText)
+          idx >= bottomStartIdx && idx < activeEndIdx && /實收訂金|尚餘尾款|總金額|含稅|訂金金額/.test(r.fullText)
         );
         const cutoffRows = rows.filter((r, idx) =>
           idx >= bottomStartIdx && /施工確認|注意事項|客戶簽名|訂購人簽名/.test(r.fullText)
@@ -3461,8 +3509,16 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
     }
   }
 
-  // Fallback：維持水平裁切（若命中前 6 欄）與底部裁切
+  // Fallback：維持紫線安全裁切寬度與底部裁切
   const simpleH = Math.max(150, Math.min(workCanvas.height, fallbackCropY));
+  if (qtyHeaderRow && nextRightColItem && qtyColRightEdgeX < cropRightX) {
+    const safeTopFloor = maxNoticeBottom > 0 ? Math.ceil(maxNoticeBottom + 2) : 0;
+    const redBoxTopY = Math.max(safeTopFloor, Math.floor(qtyHeaderRow.top - 3.5 * scale));
+    if (simpleH > redBoxTopY) {
+      workCtx.fillStyle = '#FFFFFF';
+      workCtx.fillRect(qtyColRightEdgeX, redBoxTopY, cropRightX - qtyColRightEdgeX, simpleH - redBoxTopY);
+    }
+  }
   const fallbackCanvas = document.createElement('canvas');
   fallbackCanvas.width = cropRightX;
   fallbackCanvas.height = simpleH;
@@ -8092,8 +8148,9 @@ function syncSummaryTextLayer(forceUpdate = true) {
 
   const margin = 10;
   const usableW = canvasWidth - margin * 2;
-  const baseFullW = orderLayer ? orderLayer.width : usableW;
-  const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
+  // v44: 鎖定下方保卡 70% + 間距 3% + 發票 27% 及左下 5 行大字為畫布原始固定寬度基準，絕不因訂購單尺寸變化縮小
+  const baseFullW = usableW;
+  const baseLeftX = margin;
   const leftColW = Math.round(baseFullW * 0.70);
 
   const cardLeftX = cardLayer ? (cardLayer.x - cardLayer.width / 2) : baseLeftX;
@@ -8182,9 +8239,9 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     currentTopY = orderLayer.y + orderLayer.height / 2 + gapY;
   }
 
-  // 2. 以訂購單寬度為 100% 基準執行黃金比例排版：保卡 70% : 中間白縫 3% : 發票 27% (v32)
-  const baseFullW = orderLayer ? orderLayer.width : usableW;
-  const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
+  // 2. 嚴格鎖定畫布基準寬度執行黃金比例排版：保卡 70% : 中間白縫 3% : 發票 27%（不隨訂購單縮減而縮小）(v32/v44)
+  const baseFullW = usableW;
+  const baseLeftX = margin;
   const baseRightX = baseLeftX + baseFullW;
 
   const leftColW = Math.round(baseFullW * 0.70);
