@@ -73,9 +73,9 @@ let isDraggingDistortCorner = -1; // 0: TL, 1: TR, 2: BR, 3: BL
 // --- 品牌保卡四角透視拉正拖曳狀態 (v21) ---
 let isDraggingCardRectifyCorner = -1; // 0: TL, 1: TR, 2: BR, 3: BL
 
-// --- 畫布下/左邊緣拖曳調整尺寸狀態 ---
+// --- 畫布右邊緣／下邊緣／右下角拖曳調整尺寸狀態 (v35) ---
 let isResizingCanvas = false;
-let canvasResizeEdge = null; // 'bottom' | 'left' | 'bl'
+let canvasResizeEdge = null; // 'bottom' | 'right' | 'br'
 let canvasResizeInitial = null;
 
 // --- 局部 OCR 框選狀態 (機號 / 發票號碼) ---
@@ -1286,19 +1286,20 @@ function applyLayerEraseBox() {
   showToast('已塗白遮除該區塊（可繼續框選或按 Esc 退出）');
 }
 
-// --- 繪製畫布下邊界與左邊界拖曳把手 ---
+// --- 繪製畫布右邊緣、下邊緣與右下角拖曳把手（僅於編輯畫面顯示，匯出與列印時自動隔離）(v35) ---
 function drawCanvasResizeHandles() {
   ctx.save();
   const barLen = 84 / currentZoom;
   const barThick = 10 / currentZoom;
   const cornerSize = 14 / currentZoom;
 
-  // 1. 下邊緣正中央把手
-  const bx = canvasWidth / 2 - barLen / 2;
-  const by = canvasHeight - barThick - 2 / currentZoom;
   ctx.fillStyle = 'rgba(0, 63, 188, 0.85)';
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 2 / currentZoom;
+
+  // 1. 下邊緣正中央把手 (Bottom Handle)
+  const bx = canvasWidth / 2 - barLen / 2;
+  const by = canvasHeight - barThick - 2 / currentZoom;
   ctx.beginPath();
   if (ctx.roundRect) {
     ctx.roundRect(bx, by, barLen, barThick, 5 / currentZoom);
@@ -1308,42 +1309,53 @@ function drawCanvasResizeHandles() {
   ctx.fill();
   ctx.stroke();
 
-  // 2. 左邊緣正中央把手
-  const lx = 2 / currentZoom;
-  const ly = canvasHeight / 2 - barLen / 2;
+  // 2. 右邊緣正中央把手 (Right Handle)
+  const rx = canvasWidth - barThick - 2 / currentZoom;
+  const ry = canvasHeight / 2 - barLen / 2;
   ctx.beginPath();
   if (ctx.roundRect) {
-    ctx.roundRect(lx, ly, barThick, barLen, 5 / currentZoom);
+    ctx.roundRect(rx, ry, barThick, barLen, 5 / currentZoom);
   } else {
-    ctx.rect(lx, ly, barThick, barLen);
+    ctx.rect(rx, ry, barThick, barLen);
   }
   ctx.fill();
   ctx.stroke();
 
-  // 3. 左下角把手
+  // 3. 右下角把手 (Bottom-Right Handle)
   ctx.fillStyle = '#003FBC';
-  ctx.fillRect(2 / currentZoom, canvasHeight - cornerSize - 2 / currentZoom, cornerSize, cornerSize);
-  ctx.strokeRect(2 / currentZoom, canvasHeight - cornerSize - 2 / currentZoom, cornerSize, cornerSize);
+  ctx.fillRect(
+    canvasWidth - cornerSize - 2 / currentZoom,
+    canvasHeight - cornerSize - 2 / currentZoom,
+    cornerSize,
+    cornerSize
+  );
+  ctx.strokeRect(
+    canvasWidth - cornerSize - 2 / currentZoom,
+    canvasHeight - cornerSize - 2 / currentZoom,
+    cornerSize,
+    cornerSize
+  );
 
   ctx.restore();
 }
 
-// --- 畫布下邊界／左邊界／左下角命中測試 ---
+// --- 畫布右邊緣／下邊緣／右下角命中測試 (v35) ---
 function hitTestCanvasResize(x, y) {
-  const edgeThreshold = 16 / currentZoom;
+  const edgeThreshold = 18 / currentZoom;
   const barHalf = 52 / currentZoom;
+  const cornerHit = 24 / currentZoom;
 
-  const nearLeft = x >= 0 && x <= edgeThreshold && y >= 0 && y <= canvasHeight;
+  const nearRight = x >= canvasWidth - edgeThreshold && x <= canvasWidth && y >= 0 && y <= canvasHeight;
   const nearBottom = y >= canvasHeight - edgeThreshold && y <= canvasHeight && x >= 0 && x <= canvasWidth;
 
-  if (nearLeft && nearBottom) {
-    return 'bl';
+  if (Math.hypot(canvasWidth - x, canvasHeight - y) <= cornerHit || (nearRight && nearBottom)) {
+    return 'br';
   }
   if (nearBottom && (Math.abs(x - canvasWidth / 2) <= barHalf || y >= canvasHeight - 10 / currentZoom)) {
     return 'bottom';
   }
-  if (nearLeft && (Math.abs(y - canvasHeight / 2) <= barHalf || x <= 10 / currentZoom)) {
-    return 'left';
+  if (nearRight && (Math.abs(y - canvasHeight / 2) <= barHalf || x >= canvasWidth - 10 / currentZoom)) {
+    return 'right';
   }
   return null;
 }
@@ -1636,33 +1648,44 @@ window.addEventListener('mousemove', e => {
     return;
   }
 
-  // 0C. 畫布下邊界／左邊界／左下角拖曳調整圖紙尺寸
+  // 0C. 畫布右邊緣／下邊緣／右下角拖曳調整圖紙尺寸（固定左上原點 (0,0)，左側物件原地不動，右下角支援 Shift 等比例延伸）(v35)
   if (isResizingCanvas && canvasResizeInitial) {
     const screenDx = (e.clientX - canvasResizeInitial.startClientX) / currentZoom;
     const screenDy = (e.clientY - canvasResizeInitial.startClientY) / currentZoom;
 
-    if (canvasResizeEdge === 'bottom' || canvasResizeEdge === 'bl') {
-      canvasHeight = Math.max(MIN_CANVAS_HEIGHT, Math.round(canvasResizeInitial.height + screenDy));
-      if (exportCropRect.y + exportCropRect.height > canvasHeight) {
-        exportCropRect.y = Math.max(0, canvasHeight - exportCropRect.height);
-        if (exportCropRect.y + exportCropRect.height > canvasHeight) {
-          exportCropRect.height = Math.max(200, canvasHeight - exportCropRect.y);
-        }
+    if (canvasResizeEdge === 'br' && e.shiftKey) {
+      const ratio = canvasResizeInitial.width / Math.max(1, canvasResizeInitial.height);
+      const candW = Math.max(MIN_CANVAS_WIDTH, Math.round(canvasResizeInitial.width + screenDx));
+      const candH = Math.max(MIN_CANVAS_HEIGHT, Math.round(canvasResizeInitial.height + screenDy));
+      if (
+        Math.abs(screenDx) / Math.max(1, canvasResizeInitial.width) >=
+        Math.abs(screenDy) / Math.max(1, canvasResizeInitial.height)
+      ) {
+        canvasWidth = candW;
+        canvasHeight = Math.max(MIN_CANVAS_HEIGHT, Math.round(candW / ratio));
+      } else {
+        canvasHeight = candH;
+        canvasWidth = Math.max(MIN_CANVAS_WIDTH, Math.round(candH * ratio));
+      }
+    } else {
+      if (canvasResizeEdge === 'bottom' || canvasResizeEdge === 'br') {
+        canvasHeight = Math.max(MIN_CANVAS_HEIGHT, Math.round(canvasResizeInitial.height + screenDy));
+      }
+      if (canvasResizeEdge === 'right' || canvasResizeEdge === 'br') {
+        canvasWidth = Math.max(MIN_CANVAS_WIDTH, Math.round(canvasResizeInitial.width + screenDx));
       }
     }
 
-    if (canvasResizeEdge === 'left' || canvasResizeEdge === 'bl') {
-      const newW = Math.max(MIN_CANVAS_WIDTH, Math.round(canvasResizeInitial.width - screenDx));
-      const deltaW = newW - canvasResizeInitial.width;
-      canvasWidth = newW;
-
-      canvasResizeInitial.layers.forEach(item => {
-        item.layer.x = item.x + deltaW;
-      });
-
-      exportCropRect.x = Math.max(0, Math.min(canvasWidth - 200, Math.round(canvasResizeInitial.exportCropX + deltaW)));
+    if (exportCropRect.x + exportCropRect.width > canvasWidth) {
+      exportCropRect.x = Math.max(0, canvasWidth - exportCropRect.width);
       if (exportCropRect.x + exportCropRect.width > canvasWidth) {
         exportCropRect.width = Math.max(200, canvasWidth - exportCropRect.x);
+      }
+    }
+    if (exportCropRect.y + exportCropRect.height > canvasHeight) {
+      exportCropRect.y = Math.max(0, canvasHeight - exportCropRect.height);
+      if (exportCropRect.y + exportCropRect.height > canvasHeight) {
+        exportCropRect.height = Math.max(200, canvasHeight - exportCropRect.y);
       }
     }
 
@@ -1888,13 +1911,13 @@ window.addEventListener('mousemove', e => {
   }
 
   const canvasEdgeHover = hitTestCanvasResize(coords.x, coords.y);
-  if (canvasEdgeHover === 'bl') {
-    canvas.style.cursor = 'nesw-resize';
+  if (canvasEdgeHover === 'br') {
+    canvas.style.cursor = 'nwse-resize';
     return;
   } else if (canvasEdgeHover === 'bottom') {
     canvas.style.cursor = 'ns-resize';
     return;
-  } else if (canvasEdgeHover === 'left') {
+  } else if (canvasEdgeHover === 'right') {
     canvas.style.cursor = 'ew-resize';
     return;
   }
