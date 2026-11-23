@@ -53,6 +53,21 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 01:27:32] (第 40 版 / v40)
+- **執行項目**：**手機預覽圖紙自動滿版 ＋ 雙擊印章雙指縮放調色 ＋ 雙擊文字編輯（v40）** — 完整保留電腦版所有工具列與既有封版辨識排版核心，全面升級手機端中央畫布滿版適配、預設隱藏選取框防誤觸、雙擊專櫃印章進入藍色框編輯（支援單指拖曳、雙指縮放、浮動藍色深淺滑桿），以及雙擊左下 5 行核對文字直接彈窗編輯。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v40`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner` 及 `.mobile-ver-badge` 為 `v40 (2026.11.24)`，並將資源參數更新為 `style.css?v=40`、`card_templates.js?v=40` 與 `app.js?v=40`。
+  2. **手機端中央畫布自動滿版適配（Fit to Screen）＋ 預設防誤觸**：
+     - 升級 `setZoom()` 與 `fitCanvasToViewport()`：手機模式下自動計算 `#canvasViewport` 可用寬高取 `Math.min(scaleW, scaleH)`（最低放寬至 `0.03`），並以動態邊距抵消 CSS `transform: scale()` 的虛擬佈局外溢並垂直水平置中，於匯入 PDF／照片、自動排版後與視窗旋轉（`orientationchange`）自動置中滿版呈現。
+     - `render()` 於 `.is-mobile-mode` 預設隱藏物件藍色選取框與畫布伸縮把手，且預覽狀態下單指滑動絕不拖動訂購單、保卡或發票。
+  3. **手機端雙擊專櫃印章編輯狀態機 ＋ 雙指捏合縮放 ＋ 浮動藍調微調列**：
+     - 實作 `< 350ms` 雙擊（Double-Tap）命中偵測：命中獨立印章圖層，或命中自動合成保卡印章區（透過 `extractBakedStampToStandaloneLayer()` 自動將底卡還原為無印章乾淨版並拆出可編輯 `Multiply` 印章圖層）時，立即進入 `enterMobileStampEditMode()` 顯示藍色虛線框並於下方浮出 `#mobileStampEditBar`（含 `#mobileBlueToneSlider` `-40` ～ `+40` 與 `#inputStampBlueTone` 雙向即時連動、`歸零` 鈕與 `✓ 完成` 鈕）。
+     - 編輯狀態下支援「單指拖曳移動印章（放開即時觸發 v37 紙張光影採樣與 `Multiply`）」與「雙指外擴／內捏等比例縮放印章尺寸（放開保留光影融入）」，單擊畫布空白處或點擊「完成」即安全退出編輯並收起浮動列。
+  4. **手機端雙擊左下 5 行核對文字彈窗編輯**：
+     - 雙擊命中 `text` / `overrideText` 圖層時開啟 `#mobileTextEditModalBackdrop`（預帶目前 5 行內容），確認後標記 `userEdited = true` 並自動觸發 `syncSummaryTextLayer()` 與 `autoArrangeWorkbenchLayout()` 維持 `1.65x` 放大比例與右側發票防壓迫邊界計算。
+  5. 建立 `_backup/20261124_012356/` 備份，通過 `HTML_SYNC_OK=True`、JS 語法平衡 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 01:18:43] (第 39 版 / v39)
 - **執行項目**：**手機多選防漏單修復 ＋「下載 / 分享」雙鍵拆分（v39）** — 徹底修復手機相簿複選保卡與發票時因即時清除 `<input>.value` 導致活體 `FileList` 參考提前清空而漏掉第二張照片之 Bug，並將手機底部動作列拆分為等寬並排之獨立「清空」、「下載」與「分享」按鈕。
 - **具體進度**：

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="style.css?v=39">
+  <link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36/v38: 電腦「...」/ 盲打時間；手機三連擊 / 數字鍵盤) -->
@@ -39,7 +39,7 @@
   <div id="mobileTopBar" class="mobile-top-bar">
     <div class="mobile-top-left">
       <span class="mobile-top-title">拼貼工作台</span>
-      <span class="version-badge mobile-ver-badge">v39</span>
+      <span class="version-badge mobile-ver-badge">v40 (2026.11.24)</span>
     </div>
     <div class="mobile-progress-badges" id="mobileProgressBadges">
       <span class="mobile-step-badge" id="mBadgeOrder">訂購單</span>
@@ -71,7 +71,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v39 (2026.11.24)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v40 (2026.11.24)</span>
     </div>
 
     <div class="header-actions">
@@ -151,10 +151,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v39) -->
+      <!-- 目前版本資訊橫幅 (v40) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v39 (2026.11.24)</span>
+        <span class="version-badge">v40 (2026.11.24)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -791,7 +791,24 @@ demo@example.com
 
   </div>
 
-  <!-- 手機端底部動作列 (v39: 清空 / 下載 / 分享 獨立按鈕，僅 .is-mobile-mode 顯示) -->
+  <!-- 手機端印章編輯中浮動藍色深淺微調列 (v40: 雙擊印章進入編輯時顯示) -->
+  <div id="mobileStampEditBar" class="mobile-stamp-edit-bar hidden">
+    <div class="mobile-stamp-edit-header">
+      <span class="mobile-stamp-edit-title">🖋️ 印章編輯中（單指拖曳 · 雙指縮放）</span>
+      <div class="mobile-stamp-edit-actions">
+        <span class="slider-val" id="mobileBlueToneVal">0</span>
+        <button type="button" class="btn btn-outline btn-sm" id="btnMobileResetBlueTone">歸零</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnMobileDoneEdit">✓ 完成</button>
+      </div>
+    </div>
+    <div class="mobile-stamp-edit-slider-row">
+      <span class="mobile-tone-hint">-40 淡藍</span>
+      <input type="range" id="mobileBlueToneSlider" min="-40" max="40" step="1" value="0">
+      <span class="mobile-tone-hint">+40 深藍</span>
+    </div>
+  </div>
+
+  <!-- 手機端底部動作列 (v39/v40: 清空 / 下載 / 分享 獨立按鈕，僅 .is-mobile-mode 顯示) -->
   <div id="mobileBottomBar" class="mobile-bottom-bar">
     <button type="button" class="btn btn-outline mobile-bottom-btn mobile-btn-clear" id="btnMobileClear">
       🗑️ 清空
@@ -839,6 +856,23 @@ demo@example.com
     </div>
   </div>
 
+  <!-- 手機端 5 行核對文字雙擊編輯彈窗 (v40) -->
+  <div class="stamp-date-modal-backdrop hidden" id="mobileTextEditModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="mobileTextEditModalTitle">
+    <div class="stamp-date-modal-card mobile-text-edit-card">
+      <div class="stamp-date-modal-header">
+        <span id="mobileTextEditModalTitle">✏️ 編輯左下角核對文字</span>
+      </div>
+      <p class="stamp-date-modal-desc">
+        可直接修正日期、發票號碼、機種型號或機號；確認後將自動維持 1.65x 清晰排版且不壓迫右側發票。
+      </p>
+      <textarea id="mobileTextEditTextarea" class="mobile-text-edit-textarea" rows="6"></textarea>
+      <div class="mobile-text-edit-actions">
+        <button type="button" class="btn btn-outline" id="btnCancelMobileTextEdit" style="flex: 1; padding: 10px;">取消</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmMobileTextEdit" style="flex: 1.4; background: #003FBC; font-weight: 700; padding: 10px;">✓ 確認修改</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer"></div>
 
@@ -848,9 +882,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v39) -->
-  <script src="card_templates.js?v=39"></script>
-  <!-- 主互動程式碼 (v39) -->
-  <script src="app.js?v=39"></script>
+  <!-- 品牌保卡智慧模板庫 (v40) -->
+  <script src="card_templates.js?v=40"></script>
+  <!-- 主互動程式碼 (v40) -->
+  <script src="app.js?v=40"></script>
 </body>
 </html>
