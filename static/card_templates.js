@@ -168,14 +168,14 @@
         const g = data[idx + 1];
         const b = data[idx + 2];
 
-        // 紅褐色/暖棕紅色墨跡：R 明顯大於 G 與 B，且非純白高光或純黑陰影
+        // 紅褐色/暖棕紅色墨跡：R 明顯大於 G 與 B，且非純白高光或純黑陰影（放寬暗部容忍度）
         const rgDiff = r - g;
         const rbDiff = r - b;
         if (
-          r >= 68 && r <= 235 &&
-          g <= 180 && b <= 165 &&
-          rgDiff >= 16 && rbDiff >= 24 &&
-          rgDiff <= 150
+          r >= 52 && r <= 240 &&
+          g <= 190 && b <= 175 &&
+          rgDiff >= 12 && rbDiff >= 18 &&
+          rgDiff <= 155
         ) {
           mask[rowOffset + x] = 1;
         }
@@ -809,8 +809,8 @@
       minAspectRatio: 1.3,
       keywords: ['銷貨明細表', '載具號碼', '營業人統編', '發票號碼', '退貨用條碼'],
       regions: {
-        headerZone: { x: 0.02, y: 0.02, w: 0.96, h: 0.36 },
-        invoiceNoZone: { x: 0.02, y: 0.65, w: 0.96, h: 0.17 } // 重點定位：68%~78% 退貨用條碼正上方
+        headerZone: { x: 0.01, y: 0.01, w: 0.98, h: 0.42 },
+        invoiceNoZone: { x: 0.01, y: 0.55, w: 0.98, h: 0.30 } // v25: 中下段 Y: 55% ~ 85% 退貨用條碼上方
       }
     },
     invoice_qr_stub: {
@@ -978,6 +978,63 @@
     return (fallback.match(/\d/g) || []).length >= 4 ? fallback : '';
   }
 
+  /**
+   * 離屏高解析度保卡直接合成專櫃印章（避讓座標 X:84.5%, Y:36.5%, W:21.0% ＋ 光影自適應 ＋ multiply）(v25)
+   */
+  function compositeStampOnOffscreenCard(cleanCardCanvas, stampImg, dateStr, fontSize, offsetY, stampSpec) {
+    if (!cleanCardCanvas || !stampImg) return null;
+    const spec = stampSpec || {
+      centerX: 0.845,
+      centerY: 0.365,
+      widthRatio: 0.210,
+      tiltRangeDeg: 1.5,
+      blendMode: 'multiply'
+    };
+
+    const lighting = sampleStampRegionLighting(
+      cleanCardCanvas,
+      spec.centerX,
+      spec.centerY,
+      spec.widthRatio
+    );
+    const adapted = adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting);
+    const adaptedStamp = adapted.canvas;
+
+    const cw = cleanCardCanvas.width;
+    const ch = cleanCardCanvas.height;
+    const stampedCanvas = document.createElement('canvas');
+    stampedCanvas.width = cw;
+    stampedCanvas.height = ch;
+    const ctx = stampedCanvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // 1. 繪製高清拉正保卡底圖
+    ctx.drawImage(cleanCardCanvas, 0, 0, cw, ch);
+
+    // 2. 以 multiply 正片疊底在避讓座標蓋上光影自適應專櫃章
+    const stampW = Math.round(cw * spec.widthRatio);
+    const stampH = Math.round((stampW * adaptedStamp.height) / Math.max(1, adaptedStamp.width));
+    const cx = cw * spec.centerX;
+    const cy = ch * spec.centerY;
+    const maxTilt = spec.tiltRangeDeg || 1.5;
+    const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
+    const tiltRad = (tiltDeg * Math.PI) / 180;
+
+    ctx.save();
+    ctx.globalCompositeOperation = spec.blendMode || 'multiply';
+    ctx.translate(cx, cy);
+    ctx.rotate(tiltRad);
+    ctx.drawImage(adaptedStamp, -stampW / 2, -stampH / 2, stampW, stampH);
+    ctx.restore();
+
+    return {
+      stampedCanvas,
+      lighting,
+      tiltRad
+    };
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     TEMPLATES: CARD_TEMPLATES,
@@ -988,6 +1045,7 @@
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
     adaptStampCanvasToLighting,
+    compositeStampOnOffscreenCard,
     autoTrimReceiptImage,
     normalizeTaiwanInvoiceNo,
     parseInvoiceHeaderFields,

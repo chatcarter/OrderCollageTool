@@ -603,11 +603,13 @@ function createLayerObject(options) {
     distortCorners: null, // 目標四邊形頂點 [{x,y}, {x,y}, {x,y}, {x,y}] (相對於 baseImg 座標系)
     liveDistortPreview: null,
     liveDistortOffset: null,
-    // 品牌保卡四角透視拉正模式 (v21/v23)
+    // 品牌保卡四角透視拉正模式 (v21/v23/v25)
     cardRectifyMode: false,
     cardQuadCorners: null,
     cardTemplateId: null,
     isRectifiedCard: false,
+    rectifiedCleanCanvas: options.rectifiedCleanCanvas || null,
+    hasBakedStamp: !!options.hasBakedStamp,
     isReceipt: !!options.isReceipt,
     attachedCardId: options.attachedCardId || null,
     stampSpec: options.stampSpec || null,
@@ -2538,25 +2540,114 @@ function importImagePureFrontend(file) {
         const modeValInit = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
         const isManualPanasonicInit = modeValInit && modeValInit.startsWith('panasonic_');
         const isReceiptImg = !isHorizontal && !isManualPanasonicInit && aspectHW > 1.3;
+        const isWarrantyCandidate = isManualPanasonicInit || isHorizontal;
 
         const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
         const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
 
-        // v24: 第一步 — 原圖無損高解析度先行去邊並優先執行高精度 OCR（未壓縮、未縮小）
         let trimmedCanvas = null;
         let activeImg = img;
-        if (isReceiptImg && window.CardTemplates && window.CardTemplates.autoTrimReceiptImage) {
-          trimmedCanvas = window.CardTemplates.autoTrimReceiptImage(img);
-          if (trimmedCanvas) {
-            activeImg = trimmedCanvas; // 維持 1:1 原始像素解析度，僅切除桌邊雜訊
+        let rectifiedCleanCanvas = null;
+        let stampedCardCanvas = null;
+        let cardQuadCorners = null;
+        let cardTemplateId = null;
+        let isRectifiedCard = false;
+        let hasBakedStamp = false;
+
+        // 分支 A：長條型電子發票（原圖 1:1 去邊 ➔ 多區段放大二值化 OCR ➔ 等比例擺放）
+        if (isReceiptImg) {
+          if (window.CardTemplates && window.CardTemplates.autoTrimReceiptImage) {
+            trimmedCanvas = window.CardTemplates.autoTrimReceiptImage(img);
+            if (trimmedCanvas) {
+              activeImg = trimmedCanvas;
+            }
           }
           if (autoSmartEnabled && typeof runReceiptHighResOcr === 'function') {
-            showToast(`正在以原圖高解析度辨識發票資訊: ${file.name}...`);
+            showToast(`正在以高解析度多區段辨識發票資訊: ${file.name}...`);
             await runReceiptHighResOcr(activeImg);
           }
         }
+        // 分支 B：保卡影像（離屏高解析度透視拉正 ➔ 局部白名單 OCR ➔ 立刻離屏蓋章合成 ➔ 縮放 60% 擺放）
+        else if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
+          const detectRes = window.CardTemplates.detectPanasonicCardQuad(img);
+          const tpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
+          const aspectRatio = tpl ? tpl.aspectRatio : 1.48;
+          const offscreenW = Math.max(1480, Math.min(2400, sw || 1480));
 
-        // v24: 第二步 — 依比例配置圖層進場（訂購單 100% 基準之 60% : 3% : 37%）
+          if (detectRes.detected || isManualPanasonicInit) {
+            cardQuadCorners = detectRes.corners;
+            const warped = window.CardTemplates.rectifyPerspectivePureJS(
+              img,
+              detectRes.corners,
+              aspectRatio,
+              offscreenW
+            );
+            if (warped) {
+              rectifiedCleanCanvas = warped;
+              isRectifiedCard = true;
+            }
+          }
+
+          // 若未偵測到明顯紅褐色邊框，仍於離屏高解析度畫布建立標準乾淨副本，確保 OCR 與蓋章絕對執行
+          if (!rectifiedCleanCanvas) {
+            const fbCanvas = document.createElement('canvas');
+            fbCanvas.width = offscreenW;
+            fbCanvas.height = Math.round(offscreenW / (sw / Math.max(1, sh)));
+            const fbCtx = fbCanvas.getContext('2d');
+            fbCtx.imageSmoothingEnabled = true;
+            fbCtx.imageSmoothingQuality = 'high';
+            fbCtx.drawImage(img, 0, 0, fbCanvas.width, fbCanvas.height);
+            rectifiedCleanCanvas = fbCanvas;
+            isRectifiedCard = true;
+            setCardSmartStatus('ℹ️ 未偵測到明顯紅褐色外框，已於離屏高解析直接辨識欄位並執行避讓蓋章。', false);
+          }
+
+          activeImg = rectifiedCleanCanvas;
+
+          // 步驟 B：離屏標準座標局部 OCR（機種 / 機號）
+          const ocrLayerProxy = {
+            type: 'image',
+            warpedImage: rectifiedCleanCanvas,
+            rectifiedCleanCanvas: rectifiedCleanCanvas,
+            cardTemplateId: isManualPanasonicInit ? modeValInit : null
+          };
+          await runCardTargetedOcr(ocrLayerProxy);
+          cardTemplateId = ocrLayerProxy.cardTemplateId;
+
+          // 步驟 C：辨識完成後，立刻在高清拉正保卡上合成專櫃印章（X:84.5%, Y:36.5%, W:21.0%, 光影自適應 + multiply）
+          try {
+            const stampImg = await ensureStampImageLoaded();
+            const activeTpl = resolveCardTemplate(cardTemplateId || modeValInit);
+            const stampSpec = (activeTpl && activeTpl.stampSpec) || {
+              centerX: 0.845,
+              centerY: 0.365,
+              widthRatio: 0.210,
+              tiltRangeDeg: 1.5,
+              blendMode: 'multiply'
+            };
+            const dateStr = (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
+            const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
+            const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
+
+            const baked = window.CardTemplates.compositeStampOnOffscreenCard(
+              rectifiedCleanCanvas,
+              stampImg,
+              dateStr,
+              fontSize,
+              offsetY,
+              stampSpec
+            );
+            if (baked && baked.stampedCanvas) {
+              stampedCardCanvas = baked.stampedCanvas;
+              activeImg = stampedCardCanvas;
+              hasBakedStamp = true;
+            }
+          } catch (stampErr) {
+            console.error('離屏保卡自動蓋章失敗:', stampErr);
+          }
+        }
+
+        // 步驟 D：依訂購單 100% 基準之 60% : 3% : 37% 比例進場擺放
         const effW = activeImg.width;
         const effH = activeImg.height;
         const effHorizontal = effW >= effH;
@@ -2565,15 +2656,15 @@ function importImagePureFrontend(file) {
         const orderRef = [...layers].reverse().find(l => l.type === 'pdf_order');
         const refFullW = orderRef ? orderRef.width : (canvasWidth - 20);
 
-        if (effHorizontal) {
+        if (effHorizontal || isWarrantyCandidate) {
           displayW = Math.round(refFullW * 0.60);
-          const aspect = effW / effH;
+          const aspect = effW / Math.max(1, effH);
           displayH = Math.round(displayW / aspect);
           posX = 10 + displayW / 2;
           posY = canvasHeight - 40 - displayH / 2;
         } else {
           displayW = Math.round(refFullW * 0.37);
-          const aspect = effW / effH;
+          const aspect = effW / Math.max(1, effH);
           displayH = Math.round(displayW / aspect);
           posX = canvasWidth - 10 - displayW / 2;
           posY = canvasHeight / 2;
@@ -2584,39 +2675,38 @@ function importImagePureFrontend(file) {
           name: file.name,
           image: activeImg,
           rawImage: img,
+          warpedImage: stampedCardCanvas || rectifiedCleanCanvas,
           croppedImage: trimmedCanvas,
+          rectifiedCleanCanvas: rectifiedCleanCanvas,
+          hasBakedStamp: hasBakedStamp,
           isReceipt: isReceiptImg,
           width: displayW,
           height: displayH,
           x: posX,
           y: posY
         });
+        newLayer.cardQuadCorners = cardQuadCorners;
+        newLayer.cardTemplateId = cardTemplateId;
+        newLayer.isRectifiedCard = isRectifiedCard;
 
         pushUndoState('匯入圖片');
         layers.push(newLayer);
         setActiveLayer(newLayer);
-        render();
-
-        showToast(trimmedCanvas ? `已完成發票高解析辨識與去邊: ${file.name}` : `已載入原圖: ${file.name}`);
-
-        if (autoSmartEnabled && window.CardTemplates) {
-          const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
-          const detectRes = window.CardTemplates.detectPanasonicCardQuad(img);
-          const isManualPanasonic = modeVal && modeVal.startsWith('panasonic_');
-
-          if (isManualPanasonic || (isHorizontal && detectRes.detected)) {
-            newLayer.cardQuadCorners = detectRes.corners;
-            await applyCardRectifyAndOcr(newLayer, true);
-          } else if (isHorizontal && !detectRes.detected) {
-            setCardSmartStatus(
-              'ℹ️ 未偵測到明顯國際牌紅褐色外框，已維持原圖進場；若為保卡可手動選擇聯別並點擊「📐 四角偵測與拉正」或「💮 重新自動蓋章」。',
-              false
-            );
-          }
-        }
 
         if (autoLayoutEnabled && typeof autoArrangeWorkbenchLayout === 'function') {
           autoArrangeWorkbenchLayout(false);
+        } else if (typeof syncSummaryTextLayer === 'function') {
+          syncSummaryTextLayer(false);
+        } else {
+          render();
+        }
+
+        if (hasBakedStamp) {
+          showToast(`已完成保卡拉正、OCR 與自動蓋章: ${file.name}`);
+        } else if (trimmedCanvas) {
+          showToast(`已完成發票高解析辨識與去邊: ${file.name}`);
+        } else {
+          showToast(`已載入原圖: ${file.name}`);
         }
 
         resolve();
@@ -5282,8 +5372,8 @@ async function getWarrantyLineOcrWorker() {
 
 async function runCardTargetedOcr(layer) {
   if (!layer || layer.type !== 'image' || !window.CardTemplates) return;
-  // v24: 優先使用高解析度拉正原圖，無損保留細小英數筆劃
-  const srcCanvas = layer.warpedImage || layer.croppedImage || layer.rawImage || layer.image;
+  // v25: 優先使用未蓋章的高清拉正畫布，避免印章與雜訊干擾欄位辨識
+  const srcCanvas = layer.rectifiedCleanCanvas || layer.warpedImage || layer.croppedImage || layer.rawImage || layer.image;
   if (!srcCanvas) return;
 
   const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
@@ -5361,8 +5451,8 @@ async function runCardTargetedOcr(layer) {
       cachedReceiptOcrInfo.brand = '國際';
     }
 
-    if ((!switchAutoLayout || switchAutoLayout.checked) && typeof autoArrangeWorkbenchLayout === 'function') {
-      autoArrangeWorkbenchLayout(false);
+    if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
+      syncSummaryTextLayer(true);
     }
 
     setCardSmartStatus(
@@ -5454,8 +5544,10 @@ async function applyCardRectifyAndOcr(targetLayer = null, autoStampAfter = false
 
   pushUndoState('保卡透視自動拉正');
 
+  layer.rectifiedCleanCanvas = rectifiedCanvas;
   layer.warpedImage = rectifiedCanvas;
   layer.image = rectifiedCanvas;
+  layer.hasBakedStamp = false;
   layer.scanEnhance = false;
   layer.cardRectifyMode = false;
   layer.isRectifiedCard = true;
@@ -5529,89 +5621,47 @@ async function autoStampWarrantyCard(targetLayer = null) {
     return;
   }
 
-  // v23: 取樣目標蓋章區域紙張空白亮度與色溫，自適應壓低偏暗照片之印章明度與飽和度，消除螢光感
-  const cardImgSrc = cardLayer.warpedImage || cardLayer.image || cardLayer.croppedImage || cardLayer.rawImage;
-  let stampCanvas;
-  let lightingNote = '';
-  if (window.CardTemplates && window.CardTemplates.sampleStampRegionLighting && window.CardTemplates.adaptStampCanvasToLighting) {
-    const lighting = window.CardTemplates.sampleStampRegionLighting(
-      cardImgSrc,
-      stampSpec.centerX,
-      stampSpec.centerY,
-      stampSpec.widthRatio
+  // v25: 取得未蓋章之高清乾淨保卡底圖（避免重複點擊時疊章），直接離屏合成專櫃印章
+  let cleanCanvas = cardLayer.rectifiedCleanCanvas;
+  if (!cleanCanvas) {
+    const rawSrc = cardLayer.warpedImage || cardLayer.croppedImage || cardLayer.image || cardLayer.rawImage;
+    if (!rawSrc) return;
+    cleanCanvas = document.createElement('canvas');
+    cleanCanvas.width = rawSrc.width;
+    cleanCanvas.height = rawSrc.height;
+    cleanCanvas.getContext('2d').drawImage(rawSrc, 0, 0);
+    cardLayer.rectifiedCleanCanvas = cleanCanvas;
+  }
+
+  if (window.CardTemplates && window.CardTemplates.compositeStampOnOffscreenCard) {
+    const baked = window.CardTemplates.compositeStampOnOffscreenCard(
+      cleanCanvas,
+      stampImg,
+      dateStr,
+      fontSize,
+      offsetY,
+      stampSpec
     );
-    const adapted = window.CardTemplates.adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting);
-    stampCanvas = adapted.canvas;
-    lightingNote = lighting.avgL < 190 ? ` · 暗部油墨融合 L=${lighting.avgL}` : '';
-  } else {
-    stampCanvas = document.createElement('canvas');
-    stampCanvas.width = stampImg.width;
-    stampCanvas.height = stampImg.height;
-    const sCtx = stampCanvas.getContext('2d');
-    sCtx.imageSmoothingEnabled = true;
-    sCtx.imageSmoothingQuality = 'high';
-    sCtx.drawImage(stampImg, 0, 0);
-    sCtx.fillStyle = '#003FBC';
-    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
-    sCtx.textAlign = 'center';
-    sCtx.textBaseline = 'middle';
-    sCtx.fillText(dateStr, 942, 719 + offsetY);
+    if (baked && baked.stampedCanvas) {
+      pushUndoState('保卡避讓自動蓋章');
+      // 清除任何舊版分離式附著印章，統一由高清保卡合成呈現
+      layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
+      cardLayer.warpedImage = baked.stampedCanvas;
+      cardLayer.image = baked.stampedCanvas;
+      cardLayer.hasBakedStamp = true;
+      cardLayer.isRectifiedCard = true;
+      setActiveLayer(cardLayer);
+
+      if (!switchAutoLayout || switchAutoLayout.checked) {
+        autoArrangeWorkbenchLayout(false);
+      } else {
+        render();
+      }
+      const lightingNote = baked.lighting && baked.lighting.avgL < 190 ? ` · 暗部油墨融合 L=${baked.lighting.avgL}` : '';
+      showToast(`已於保卡合成專櫃印章 (${dateStr}${lightingNote})`);
+      return;
+    }
   }
-
-  // 依保卡寬度 21.0% (v23 放大 1.2x) 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
-  const displayW = Math.round(cardLayer.width * stampSpec.widthRatio);
-  const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
-
-  const localDx = (stampSpec.centerX - 0.5) * cardLayer.width;
-  const localDy = (stampSpec.centerY - 0.5) * cardLayer.height;
-  const cosR = Math.cos(cardLayer.rotation || 0);
-  const sinR = Math.sin(cardLayer.rotation || 0);
-  const posX = Math.round(cardLayer.x + localDx * cosR - localDy * sinR);
-  const posY = Math.round(cardLayer.y + localDx * sinR + localDy * cosR);
-
-  // 自然微幅傾角 (-1.5° ~ +1.5°)
-  const maxTilt = stampSpec.tiltRangeDeg || 1.5;
-  const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
-  const tiltRad = (tiltDeg * Math.PI) / 180;
-
-  // 若同一張保卡先前已自動蓋過附著印章，先行替換避免重複堆疊
-  layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
-
-  const newStamp = createLayerObject({
-    type: 'stamp',
-    name: `專櫃印章-避讓 (${dateStr})`,
-    image: stampCanvas,
-    rawImage: stampCanvas,
-    width: displayW,
-    height: displayH,
-    x: posX,
-    y: posY,
-    rotation: (cardLayer.rotation || 0) + tiltRad,
-    attachedCardId: cardLayer.id,
-    stampSpec: {
-      centerX: stampSpec.centerX,
-      centerY: stampSpec.centerY,
-      widthRatio: stampSpec.widthRatio,
-      tiltRad: tiltRad
-    },
-    blendMode: stampSpec.blendMode || 'multiply'
-  });
-
-  pushUndoState('日期框避讓自動蓋章');
-  const cardIdx = layers.indexOf(cardLayer);
-  if (cardIdx >= 0) {
-    layers.splice(cardIdx + 1, 0, newStamp);
-  } else {
-    layers.push(newStamp);
-  }
-  setActiveLayer(newStamp);
-
-  if (!switchAutoLayout || switchAutoLayout.checked) {
-    autoArrangeWorkbenchLayout(false);
-  } else {
-    render();
-  }
-  showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」自動蓋章 (${dateStr}${lightingNote})`);
 }
 
 function initSmartWarrantyModule() {
@@ -5696,7 +5746,12 @@ function initSmartWarrantyModule() {
         else lines.push(`機號  ${serialVal}`);
       }
       inputNewNote.value = lines.join('\n');
-      showToast('已將機種與機號帶入單據備註欄');
+      if (modelVal) cachedReceiptOcrInfo.model = modelVal;
+      if (serialVal) cachedReceiptOcrInfo.serialNo = serialVal;
+      if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
+        syncSummaryTextLayer(true);
+      }
+      showToast('已將機種與機號帶入單據備註與畫布 5 行核對字');
     });
   }
 
@@ -5713,8 +5768,10 @@ function initSmartWarrantyModule() {
   }
 
   const syncSidebarCardInputsToFiveLine = () => {
-    if ((!switchAutoLayout || switchAutoLayout.checked) && typeof autoArrangeWorkbenchLayout === 'function' && layers.length > 0) {
-      autoArrangeWorkbenchLayout(false);
+    if (inputCardModel) cachedReceiptOcrInfo.model = inputCardModel.value.trim();
+    if (inputCardSerial) cachedReceiptOcrInfo.serialNo = inputCardSerial.value.trim();
+    if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
+      syncSummaryTextLayer(true);
     }
   };
   if (inputCardModel) inputCardModel.addEventListener('input', syncSidebarCardInputsToFiveLine);
@@ -5756,10 +5813,10 @@ async function runReceiptHighResOcr(fullResSource) {
     let invoiceZoneEngText = '';
 
     if (tplA && window.CardTemplates.createEnhancedOcrCropCanvas) {
-      // 1. 頂部區域 (0%~38%): 銷貨明細表 / 營業人統編 / 載具號碼下方日期
+      // 1. 頂部區域 (Y: 1%~43%): 銷貨明細表 / 營業人統編 / 載具號碼下方 YYYY-MM-DD HH:mm:ss 日期
       const headerCrop = window.CardTemplates.createEnhancedOcrCropCanvas(fullCanvas, tplA.regions.headerZone, 2.0);
-      // 2. 中下段重點區 (65%~82%，鎖定 68%~78% 退貨用條碼正上方): 發票號碼：ZE-93731662
-      const invCrop = window.CardTemplates.createEnhancedOcrCropCanvas(fullCanvas, tplA.regions.invoiceNoZone, 2.5);
+      // 2. 中下段重點區 (Y: 55%~85%，退貨用條碼上方): 獨立放大 2.2x 二值化辨識 發票號碼：ZE-93731662
+      const invCrop = window.CardTemplates.createEnhancedOcrCropCanvas(fullCanvas, tplA.regions.invoiceNoZone, 2.2);
 
       const [hRes, iChiRes, iEngRes] = await Promise.all([
         window.Tesseract.recognize(headerCrop, 'eng+chi_tra'),
@@ -5793,28 +5850,28 @@ async function runReceiptHighResOcr(fullResSource) {
       }
     }
 
-    // 結合現有 PDF 訂購單資訊補助
-    let pdfText = '';
-    layers.forEach(l => {
-      if (l.type === 'pdf_order' && l.rawPdfText) pdfText += '\n' + l.rawPdfText;
-    });
-    const combinedParsed = parseReceiptAndWarrantyText(headerText + '\n' + invoiceZoneText + '\n' + fullText, pdfText);
+    // v25 購買日期來源隔離：發票購買日期僅允許從「發票單據」擷取，嚴格排除訂購單製表日期
+    const receiptOnlyText = headerText + '\n' + invoiceZoneText + '\n' + fullText;
+    const receiptOnlyParsed = parseReceiptAndWarrantyText(receiptOnlyText, '');
 
-    if (hdrParsed.dateStr) cachedReceiptOcrInfo.date = hdrParsed.dateStr;
-    else if (combinedParsed.date) cachedReceiptOcrInfo.date = combinedParsed.date;
-
-    if (invNo) cachedReceiptOcrInfo.invoiceNo = invNo;
-    else if (combinedParsed.invoiceNo && !combinedParsed.invoiceNo.includes('請確認')) {
-      cachedReceiptOcrInfo.invoiceNo = combinedParsed.invoiceNo;
+    if (hdrParsed.dateStr) {
+      cachedReceiptOcrInfo.date = hdrParsed.dateStr;
+    } else {
+      // 僅接受從發票文字真實辨識出的 YYYY-MM-DD（確認非預設系統當日日期）
+      const hasRealDateInReceipt = /(20\d{2}|1\d{2})[-/.年]\d{1,2}[-/.月]\d{1,2}/.test(receiptOnlyText);
+      if (hasRealDateInReceipt && receiptOnlyParsed.date) {
+        cachedReceiptOcrInfo.date = receiptOnlyParsed.date;
+      }
     }
 
-    if (hdrParsed.sellerTaxId) cachedReceiptOcrInfo.sellerTaxId = hdrParsed.sellerTaxId;
-
-    if (combinedParsed.brand && !combinedParsed.brand.includes('品牌') && !cachedReceiptOcrInfo.brand) {
-      cachedReceiptOcrInfo.brand = combinedParsed.brand;
+    if (invNo) {
+      cachedReceiptOcrInfo.invoiceNo = invNo;
+    } else if (receiptOnlyParsed.invoiceNo && !receiptOnlyParsed.invoiceNo.includes('請確認')) {
+      cachedReceiptOcrInfo.invoiceNo = receiptOnlyParsed.invoiceNo;
     }
-    if (combinedParsed.model && !combinedParsed.model.includes('請確認') && !cachedReceiptOcrInfo.model) {
-      cachedReceiptOcrInfo.model = combinedParsed.model;
+
+    if (hdrParsed.sellerTaxId) {
+      cachedReceiptOcrInfo.sellerTaxId = hdrParsed.sellerTaxId;
     }
 
     if (cardSmartStatus && (cachedReceiptOcrInfo.date || cachedReceiptOcrInfo.invoiceNo)) {
@@ -5824,6 +5881,9 @@ async function runReceiptHighResOcr(fullResSource) {
       );
     }
 
+    if (typeof syncSummaryTextLayer === 'function') {
+      syncSummaryTextLayer(true);
+    }
     if (!switchAutoLayout || switchAutoLayout.checked) {
       autoArrangeWorkbenchLayout(false);
     }
@@ -5845,11 +5905,7 @@ function buildAutoFiveLineNoteText() {
     brandName = '國際';
   }
 
-  let dateStr = cachedReceiptOcrInfo.date || '';
-  if (!dateStr) {
-    const now = new Date();
-    dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  }
+  let dateStr = cachedReceiptOcrInfo.date || 'YYYY-MM-DD';
   const invoiceNo = cachedReceiptOcrInfo.invoiceNo || 'XXXXXXXXXX';
   const sellerTaxId = cachedReceiptOcrInfo.sellerTaxId || '24721268';
 
@@ -5860,6 +5916,84 @@ function buildAutoFiveLineNoteText() {
     `機號 ${cardSerial}`,
     `賣方統編 ${sellerTaxId}`
   ].join('\n');
+}
+
+/**
+ * v25: 即時同步 OCR 辨識結果與手動修正欄位至畫布左下角 5 行核對文字圖層
+ */
+function syncSummaryTextLayer(forceUpdate = true) {
+  if (layers.length === 0) return null;
+
+  const orderLayer = [...layers].reverse().find(l => l.type === 'pdf_order') || null;
+  const cardLayer = [...layers].reverse().find(l =>
+    l.type === 'image' && (l.isRectifiedCard || l.cardTemplateId || (!l.isReceipt && l.width >= l.height))
+  ) || null;
+  const receiptLayer = [...layers].reverse().find(l =>
+    l.type === 'image' && l !== cardLayer && (l.isReceipt || l.height > l.width)
+  ) || null;
+
+  if (!cardLayer && !receiptLayer && !orderLayer) return null;
+
+  const autoText = buildAutoFiveLineNoteText();
+  let noteLayer = layers.find(l => l.isAutoFiveLineNote);
+
+  if (!noteLayer) {
+    noteLayer = createLayerObject({
+      type: 'text',
+      name: '5行核對資訊',
+      text: autoText,
+      color: '#0F172A',
+      bold: true,
+      fontSize: 60,
+      isAutoFiveLineNote: true,
+      userEdited: false
+    });
+    layers.push(noteLayer);
+  } else if (forceUpdate || !noteLayer.userEdited) {
+    noteLayer.text = autoText;
+    if (forceUpdate) noteLayer.userEdited = false;
+  }
+
+  if (inputNewNote && (forceUpdate || !noteLayer.userEdited)) {
+    inputNewNote.value = noteLayer.text;
+  }
+
+  const margin = 10;
+  const usableW = canvasWidth - margin * 2;
+  const baseFullW = orderLayer ? orderLayer.width : usableW;
+  const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
+  const leftColW = Math.round(baseFullW * 0.60);
+
+  const cardLeftX = cardLayer ? (cardLayer.x - cardLayer.width / 2) : baseLeftX;
+  const cardBottomY = cardLayer ? (cardLayer.y + cardLayer.height / 2) : (orderLayer ? (orderLayer.y + orderLayer.height / 2 + 24) : 20);
+  const noteTopY = cardLayer ? (cardBottomY + 24) : cardBottomY;
+
+  const receiptBottomY = receiptLayer ? (receiptLayer.y + receiptLayer.height / 2) : (noteTopY + 420);
+  const targetLimitY = receiptLayer ? Math.max(noteTopY + 180, receiptBottomY) : (noteTopY + 420);
+  const availH = Math.max(160, targetLimitY - noteTopY);
+  const maxNoteW = cardLayer ? cardLayer.width : leftColW;
+
+  let bestFontSize = 62;
+  for (let fs = 66; fs >= 30; fs -= 2) {
+    const box = measureFiveLineBox(noteLayer.text, fs, noteLayer.bold);
+    if (box.height <= availH && box.width <= maxNoteW) {
+      bestFontSize = fs;
+      break;
+    }
+    bestFontSize = fs;
+  }
+
+  const finalBox = measureFiveLineBox(noteLayer.text, bestFontSize, noteLayer.bold);
+  noteLayer.fontSize = bestFontSize;
+  noteLayer.width = finalBox.width;
+  noteLayer.height = finalBox.height;
+  noteLayer.rotation = 0;
+  noteLayer.x = Math.round(cardLeftX + finalBox.width / 2);
+  noteLayer.y = Math.round(noteTopY + finalBox.height / 2);
+
+  updateLayersListUI();
+  render();
+  return noteLayer;
 }
 
 /**
@@ -5976,54 +6110,10 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
   // 4. 左側空白處「零拉長」自動填入 5 行核心核對文字（保卡正下方、對齊保卡左緣）
   let noteBottomY = cardBottomY;
   if (cardLayer || receiptLayer) {
-    let noteLayer = layers.find(l => l.isAutoFiveLineNote);
-    const autoText = buildAutoFiveLineNoteText();
-
-    if (!noteLayer) {
-      noteLayer = createLayerObject({
-        type: 'text',
-        name: '5行核對資訊',
-        text: autoText,
-        color: '#0F172A',
-        bold: true,
-        fontSize: 60,
-        isAutoFiveLineNote: true,
-        userEdited: false
-      });
-      layers.push(noteLayer);
-    } else if (!noteLayer.userEdited) {
-      noteLayer.text = autoText;
+    const syncedNote = syncSummaryTextLayer(false);
+    if (syncedNote) {
+      noteBottomY = syncedNote.y + syncedNote.height / 2;
     }
-
-    if (inputNewNote && !noteLayer.userEdited) {
-      inputNewNote.value = noteLayer.text;
-    }
-
-    const noteTopY = cardLayer ? (cardBottomY + 24) : currentTopY;
-    // 計算「零拉長」可用高度：不超過右側發票底線（若無發票則給足 420px）
-    const targetLimitY = receiptLayer ? Math.max(noteTopY + 180, receiptBottomY) : (noteTopY + 420);
-    const availH = Math.max(160, targetLimitY - noteTopY);
-    const maxNoteW = cardLayer ? cardLayer.width : leftColW;
-
-    let bestFontSize = 62;
-    for (let fs = 66; fs >= 30; fs -= 2) {
-      const box = measureFiveLineBox(noteLayer.text, fs, noteLayer.bold);
-      if (box.height <= availH && box.width <= maxNoteW) {
-        bestFontSize = fs;
-        break;
-      }
-      bestFontSize = fs;
-    }
-
-    const finalBox = measureFiveLineBox(noteLayer.text, bestFontSize, noteLayer.bold);
-    noteLayer.fontSize = bestFontSize;
-    noteLayer.width = finalBox.width;
-    noteLayer.height = finalBox.height;
-    noteLayer.rotation = 0;
-    noteLayer.x = Math.round(cardLeftX + finalBox.width / 2);
-    noteLayer.y = Math.round(noteTopY + finalBox.height / 2);
-
-    noteBottomY = noteLayer.y + noteLayer.height / 2;
   }
 
   // 5. 白底畫布自適應延伸高度（三物件與文字絕不截斷、互不重疊）
