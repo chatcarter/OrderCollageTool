@@ -2534,42 +2534,48 @@ function importImagePureFrontend(file) {
         const sh = img.height;
 
         const isHorizontal = sw >= sh;
-        let activeImg = img;
-        let isReceiptImg = false;
-        let trimmedCanvas = null;
-
-        // v23: 若為長條型電子發票（直立圖且非保卡），執行加強邊緣自動去背裁切 (內縮 1.5% 安全邊距)
+        const aspectHW = sh / Math.max(1, sw);
         const modeValInit = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
         const isManualPanasonicInit = modeValInit && modeValInit.startsWith('panasonic_');
-        if (!isHorizontal && !isManualPanasonicInit && window.CardTemplates && window.CardTemplates.autoTrimReceiptImage) {
-          isReceiptImg = true;
+        const isReceiptImg = !isHorizontal && !isManualPanasonicInit && aspectHW > 1.3;
+
+        const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
+        const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
+
+        // v24: 第一步 — 原圖無損高解析度先行去邊並優先執行高精度 OCR（未壓縮、未縮小）
+        let trimmedCanvas = null;
+        let activeImg = img;
+        if (isReceiptImg && window.CardTemplates && window.CardTemplates.autoTrimReceiptImage) {
           trimmedCanvas = window.CardTemplates.autoTrimReceiptImage(img);
           if (trimmedCanvas) {
-            activeImg = trimmedCanvas;
+            activeImg = trimmedCanvas; // 維持 1:1 原始像素解析度，僅切除桌邊雜訊
+          }
+          if (autoSmartEnabled && typeof runReceiptHighResOcr === 'function') {
+            showToast(`正在以原圖高解析度辨識發票資訊: ${file.name}...`);
+            await runReceiptHighResOcr(activeImg);
           }
         }
 
+        // v24: 第二步 — 依比例配置圖層進場（訂購單 100% 基準之 60% : 3% : 37%）
         const effW = activeImg.width;
         const effH = activeImg.height;
         const effHorizontal = effW >= effH;
         let displayW, displayH, posX, posY;
 
+        const orderRef = [...layers].reverse().find(l => l.type === 'pdf_order');
+        const refFullW = orderRef ? orderRef.width : (canvasWidth - 20);
+
         if (effHorizontal) {
-          displayW = Math.round(canvasWidth * 0.59);
+          displayW = Math.round(refFullW * 0.60);
           const aspect = effW / effH;
           displayH = Math.round(displayW / aspect);
-
-          const marginX = 10;
-          const marginY = Math.round(canvasHeight * (40 / 1700));
-          posX = marginX + displayW / 2;
-          posY = canvasHeight - marginY - displayH / 2;
+          posX = 10 + displayW / 2;
+          posY = canvasHeight - 40 - displayH / 2;
         } else {
-          displayW = Math.round((canvasWidth - 20) * 0.37);
+          displayW = Math.round(refFullW * 0.37);
           const aspect = effW / effH;
           displayH = Math.round(displayW / aspect);
-
-          const marginX = 10;
-          posX = canvasWidth - marginX - displayW / 2;
+          posX = canvasWidth - 10 - displayW / 2;
           posY = canvasHeight / 2;
         }
 
@@ -2591,10 +2597,7 @@ function importImagePureFrontend(file) {
         setActiveLayer(newLayer);
         render();
 
-        showToast(trimmedCanvas ? `已自動去邊裁切發票: ${file.name}` : `已載入原圖: ${file.name}`);
-
-        const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
-        const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
+        showToast(trimmedCanvas ? `已完成發票高解析辨識與去邊: ${file.name}` : `已載入原圖: ${file.name}`);
 
         if (autoSmartEnabled && window.CardTemplates) {
           const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
@@ -2604,13 +2607,6 @@ function importImagePureFrontend(file) {
           if (isManualPanasonic || (isHorizontal && detectRes.detected)) {
             newLayer.cardQuadCorners = detectRes.corners;
             await applyCardRectifyAndOcr(newLayer, true);
-          } else if (isReceiptImg) {
-            if (autoLayoutEnabled && typeof autoArrangeWorkbenchLayout === 'function') {
-              autoArrangeWorkbenchLayout(false);
-            }
-            if (typeof runReceiptQuickOcr === 'function') {
-              await runReceiptQuickOcr(newLayer);
-            }
           } else if (isHorizontal && !detectRes.detected) {
             setCardSmartStatus(
               'ℹ️ 未偵測到明顯國際牌紅褐色外框，已維持原圖進場；若為保卡可手動選擇聯別並點擊「📐 四角偵測與拉正」或「💮 重新自動蓋章」。',
@@ -4164,6 +4160,16 @@ btnClearCanvas.addEventListener('click', () => {
   if (confirm('確定要清空畫布上的所有物件嗎？')) {
     pushUndoState('清空畫布');
     layers = [];
+    if (typeof cachedReceiptOcrInfo !== 'undefined') {
+      cachedReceiptOcrInfo.date = '';
+      cachedReceiptOcrInfo.invoiceNo = '';
+      cachedReceiptOcrInfo.brand = '';
+      cachedReceiptOcrInfo.model = '';
+      cachedReceiptOcrInfo.serialNo = '';
+      cachedReceiptOcrInfo.sellerTaxId = '24721268';
+    }
+    if (inputCardModel) inputCardModel.value = '';
+    if (inputCardSerial) inputCardSerial.value = '';
     setActiveLayer(null);
     render();
     showToast('畫布已清空');
@@ -5261,9 +5267,23 @@ function resolveCardTemplate(modeVal) {
   return window.CardTemplates.TEMPLATES.panasonic_slip1;
 }
 
+let warrantyEngLineWorker = null;
+async function getWarrantyLineOcrWorker() {
+  if (!window.Tesseract || typeof window.Tesseract.createWorker !== 'function') return null;
+  if (warrantyEngLineWorker) return warrantyEngLineWorker;
+  const worker = await window.Tesseract.createWorker('eng');
+  await worker.setParameters({
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+    tessedit_pageseg_mode: '7'
+  });
+  warrantyEngLineWorker = worker;
+  return warrantyEngLineWorker;
+}
+
 async function runCardTargetedOcr(layer) {
   if (!layer || layer.type !== 'image' || !window.CardTemplates) return;
-  const srcCanvas = layer.warpedImage || layer.croppedImage || layer.image || layer.rawImage;
+  // v24: 優先使用高解析度拉正原圖，無損保留細小英數筆劃
+  const srcCanvas = layer.warpedImage || layer.croppedImage || layer.rawImage || layer.image;
   if (!srcCanvas) return;
 
   const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
@@ -5288,25 +5308,58 @@ async function runCardTargetedOcr(layer) {
     return;
   }
 
-  setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在高精度辨識機種與機號...`, true);
+  setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在高解析白名單辨識機種與機號...`, true);
 
   try {
-    const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.model, 2.5);
-    const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.serial, 2.5);
+    // 稍微內縮上下 4% 避開欄框線與下方條碼雜訊，並放大 3.0 倍進行二值化
+    const tightenRegion = r => ({
+      x: r.x + r.w * 0.01,
+      y: r.y + r.h * 0.04,
+      w: r.w * 0.98,
+      h: r.h * 0.90
+    });
+    const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tightenRegion(tpl.ocrRegions.model), 3.0);
+    const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tightenRegion(tpl.ocrRegions.serial), 3.0);
 
-    const [modelRes, serialRes] = await Promise.all([
-      window.Tesseract.recognize(modelCrop, 'eng'),
-      window.Tesseract.recognize(serialCrop, 'eng')
-    ]);
+    let rawModel = '';
+    let rawSerial = '';
+    try {
+      const worker = await getWarrantyLineOcrWorker();
+      if (worker) {
+        const modelRes = await worker.recognize(modelCrop);
+        const serialRes = await worker.recognize(serialCrop);
+        rawModel = (modelRes && modelRes.data && modelRes.data.text) || '';
+        rawSerial = (serialRes && serialRes.data && serialRes.data.text) || '';
+      }
+    } catch (wErr) {
+      console.warn('白名單單行 Worker 改採標準辨識:', wErr);
+    }
 
-    const rawModel = (modelRes && modelRes.data && modelRes.data.text) || '';
-    const rawSerial = (serialRes && serialRes.data && serialRes.data.text) || '';
+    if (!rawModel || !rawSerial) {
+      const [mFallback, sFallback] = await Promise.all([
+        rawModel ? Promise.resolve(null) : window.Tesseract.recognize(modelCrop, 'eng'),
+        rawSerial ? Promise.resolve(null) : window.Tesseract.recognize(serialCrop, 'eng')
+      ]);
+      if (!rawModel && mFallback && mFallback.data) rawModel = mFallback.data.text || '';
+      if (!rawSerial && sFallback && sFallback.data) rawSerial = sFallback.data.text || '';
+    }
 
-    const modelClean = rawModel.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
-    const serialClean = rawSerial.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // 徹底過濾條碼亂碼（如 VLILOULUVOIDI）
+    const modelClean = window.CardTemplates.filterWarrantyModelResult
+      ? window.CardTemplates.filterWarrantyModelResult(rawModel)
+      : rawModel.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    const serialClean = window.CardTemplates.filterWarrantySerialResult
+      ? window.CardTemplates.filterWarrantySerialResult(rawSerial)
+      : rawSerial.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     if (inputCardModel) inputCardModel.value = modelClean;
     if (inputCardSerial) inputCardSerial.value = serialClean;
+
+    if (typeof cachedReceiptOcrInfo !== 'undefined') {
+      if (modelClean) cachedReceiptOcrInfo.model = modelClean;
+      if (serialClean) cachedReceiptOcrInfo.serialNo = serialClean;
+      cachedReceiptOcrInfo.brand = '國際';
+    }
 
     if ((!switchAutoLayout || switchAutoLayout.checked) && typeof autoArrangeWorkbenchLayout === 'function') {
       autoArrangeWorkbenchLayout(false);
@@ -5384,11 +5437,13 @@ async function applyCardRectifyAndOcr(targetLayer = null, autoStampAfter = false
 
   setCardSmartStatus('⏳ 正在執行四角梯形透視自動拉正...', true);
 
+  // v24: 依原圖高解析度進行透視拉正 (至少 1800px，最高保留至 2600px 無損細字)
+  const highResOutW = Math.max(1800, Math.min(2600, baseImg.width || 1800));
   const rectifiedCanvas = window.CardTemplates.rectifyPerspectivePureJS(
     baseImg,
     layer.cardQuadCorners,
     aspectRatio,
-    1800
+    highResOutW
   );
 
   if (!rectifiedCanvas) {
@@ -5656,6 +5711,14 @@ function initSmartWarrantyModule() {
       autoArrangeWorkbenchLayout(true);
     });
   }
+
+  const syncSidebarCardInputsToFiveLine = () => {
+    if ((!switchAutoLayout || switchAutoLayout.checked) && typeof autoArrangeWorkbenchLayout === 'function' && layers.length > 0) {
+      autoArrangeWorkbenchLayout(false);
+    }
+  };
+  if (inputCardModel) inputCardModel.addEventListener('input', syncSidebarCardInputsToFiveLine);
+  if (inputCardSerial) inputCardSerial.addEventListener('input', syncSidebarCardInputsToFiveLine);
 }
 
 // =============================================================================
@@ -5672,43 +5735,100 @@ let cachedReceiptOcrInfo = {
 };
 
 /**
- * 匯入電子發票後快速執行背景 OCR 擷取購買日期與發票號碼
+ * v24: 原圖無損高解析度先行 OCR — 針對 Type A（銷貨明細表／載具明細型）進行分區精準辨識
  */
-async function runReceiptQuickOcr(receiptLayer) {
-  if (!receiptLayer || !receiptLayer.image || !window.Tesseract) return;
+async function runReceiptHighResOcr(fullResSource) {
+  if (!fullResSource || !window.Tesseract) return;
   try {
-    const src = receiptLayer.image;
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = src.width;
-    tempCanvas.height = src.height;
-    tempCanvas.getContext('2d').drawImage(src, 0, 0);
+    const sw = fullResSource.width;
+    const sh = fullResSource.height;
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = sw;
+    fullCanvas.height = sh;
+    fullCanvas.getContext('2d').drawImage(fullResSource, 0, 0);
 
-    const res = await window.Tesseract.recognize(tempCanvas, 'eng+chi_tra');
-    const txt = (res && res.data && res.data.text) ? res.data.text : '';
-    if (!txt.trim()) return;
+    const tplA = window.CardTemplates && window.CardTemplates.INVOICE_TEMPLATES
+      ? window.CardTemplates.INVOICE_TEMPLATES.invoice_detail_slip
+      : null;
 
+    let headerText = '';
+    let invoiceZoneText = '';
+    let invoiceZoneEngText = '';
+
+    if (tplA && window.CardTemplates.createEnhancedOcrCropCanvas) {
+      // 1. 頂部區域 (0%~38%): 銷貨明細表 / 營業人統編 / 載具號碼下方日期
+      const headerCrop = window.CardTemplates.createEnhancedOcrCropCanvas(fullCanvas, tplA.regions.headerZone, 2.0);
+      // 2. 中下段重點區 (65%~82%，鎖定 68%~78% 退貨用條碼正上方): 發票號碼：ZE-93731662
+      const invCrop = window.CardTemplates.createEnhancedOcrCropCanvas(fullCanvas, tplA.regions.invoiceNoZone, 2.5);
+
+      const [hRes, iChiRes, iEngRes] = await Promise.all([
+        window.Tesseract.recognize(headerCrop, 'eng+chi_tra'),
+        window.Tesseract.recognize(invCrop, 'eng+chi_tra'),
+        window.Tesseract.recognize(invCrop, 'eng')
+      ]);
+      headerText = (hRes && hRes.data && hRes.data.text) || '';
+      invoiceZoneText = (iChiRes && iChiRes.data && iChiRes.data.text) || '';
+      invoiceZoneEngText = (iEngRes && iEngRes.data && iEngRes.data.text) || '';
+    }
+
+    // 若分區仍缺少關鍵字或為非典型版面，補跑一次原圖全幅高解析掃描
+    let fullText = '';
+    const hdrParsed = (window.CardTemplates && window.CardTemplates.parseInvoiceHeaderFields)
+      ? window.CardTemplates.parseInvoiceHeaderFields(headerText, '')
+      : { sellerTaxId: '', dateStr: '' };
+    let invNo = (window.CardTemplates && window.CardTemplates.normalizeTaiwanInvoiceNo)
+      ? window.CardTemplates.normalizeTaiwanInvoiceNo(invoiceZoneEngText + '\n' + invoiceZoneText + '\n' + headerText)
+      : '';
+
+    if (!hdrParsed.dateStr || !invNo) {
+      const fullRes = await window.Tesseract.recognize(fullCanvas, 'eng+chi_tra');
+      fullText = (fullRes && fullRes.data && fullRes.data.text) || '';
+      if (!hdrParsed.dateStr || !hdrParsed.sellerTaxId) {
+        const fallbackHdr = window.CardTemplates.parseInvoiceHeaderFields(headerText, fullText);
+        if (!hdrParsed.dateStr && fallbackHdr.dateStr) hdrParsed.dateStr = fallbackHdr.dateStr;
+        if (!hdrParsed.sellerTaxId && fallbackHdr.sellerTaxId) hdrParsed.sellerTaxId = fallbackHdr.sellerTaxId;
+      }
+      if (!invNo && window.CardTemplates && window.CardTemplates.normalizeTaiwanInvoiceNo) {
+        invNo = window.CardTemplates.normalizeTaiwanInvoiceNo(fullText);
+      }
+    }
+
+    // 結合現有 PDF 訂購單資訊補助
     let pdfText = '';
     layers.forEach(l => {
       if (l.type === 'pdf_order' && l.rawPdfText) pdfText += '\n' + l.rawPdfText;
     });
+    const combinedParsed = parseReceiptAndWarrantyText(headerText + '\n' + invoiceZoneText + '\n' + fullText, pdfText);
 
-    const parsed = parseReceiptAndWarrantyText(txt, pdfText);
-    if (parsed.date) cachedReceiptOcrInfo.date = parsed.date;
-    if (parsed.invoiceNo && !parsed.invoiceNo.includes('請確認')) {
-      cachedReceiptOcrInfo.invoiceNo = parsed.invoiceNo;
+    if (hdrParsed.dateStr) cachedReceiptOcrInfo.date = hdrParsed.dateStr;
+    else if (combinedParsed.date) cachedReceiptOcrInfo.date = combinedParsed.date;
+
+    if (invNo) cachedReceiptOcrInfo.invoiceNo = invNo;
+    else if (combinedParsed.invoiceNo && !combinedParsed.invoiceNo.includes('請確認')) {
+      cachedReceiptOcrInfo.invoiceNo = combinedParsed.invoiceNo;
     }
-    if (parsed.brand && !parsed.brand.includes('品牌')) {
-      cachedReceiptOcrInfo.brand = parsed.brand;
+
+    if (hdrParsed.sellerTaxId) cachedReceiptOcrInfo.sellerTaxId = hdrParsed.sellerTaxId;
+
+    if (combinedParsed.brand && !combinedParsed.brand.includes('品牌') && !cachedReceiptOcrInfo.brand) {
+      cachedReceiptOcrInfo.brand = combinedParsed.brand;
     }
-    if (parsed.model && !parsed.model.includes('請確認')) {
-      cachedReceiptOcrInfo.model = parsed.model;
+    if (combinedParsed.model && !combinedParsed.model.includes('請確認') && !cachedReceiptOcrInfo.model) {
+      cachedReceiptOcrInfo.model = combinedParsed.model;
+    }
+
+    if (cardSmartStatus && (cachedReceiptOcrInfo.date || cachedReceiptOcrInfo.invoiceNo)) {
+      setCardSmartStatus(
+        `✅ 發票高解析 OCR 完成（Type A）\n日期：${cachedReceiptOcrInfo.date || '-'} ｜ 發票號碼：${cachedReceiptOcrInfo.invoiceNo || '-'} ｜ 統編：${cachedReceiptOcrInfo.sellerTaxId}`,
+        false
+      );
     }
 
     if (!switchAutoLayout || switchAutoLayout.checked) {
       autoArrangeWorkbenchLayout(false);
     }
   } catch (err) {
-    console.warn('發票背景快速 OCR 略過:', err);
+    console.warn('發票原圖高解析 OCR 略過:', err);
   }
 }
 
@@ -5789,7 +5909,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
 
   let currentTopY = margin;
 
-  // 1. 上方區塊：訂購單頂部橫向滿版擺放（左右各保留 10px 白邊）
+  // 1. 上方區塊：訂購單頂部橫向滿版擺放（左右各保留 10px 白邊，作為 100% 基準總寬度）
   if (orderLayer && orderLayer.image) {
     const oImg = orderLayer.image;
     const oAspect = oImg.width / Math.max(1, oImg.height);
@@ -5801,12 +5921,17 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     currentTopY = orderLayer.y + orderLayer.height / 2 + gapY;
   }
 
-  // 2. 下方左欄（59% 寬度）：保卡，與右側發票上緣對齊
-  const leftColW = Math.round(usableW * 0.59);
-  const rightColW = Math.round(usableW * 0.37);
+  // 2. 以訂購單寬度為 100% 基準執行黃金比例排版：保卡 60% : 中間白縫 3% : 發票 37%
+  const baseFullW = orderLayer ? orderLayer.width : usableW;
+  const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
+  const baseRightX = baseLeftX + baseFullW;
+
+  const leftColW = Math.round(baseFullW * 0.60);
+  const gapX = Math.round(baseFullW * 0.03);
+  const rightColW = baseFullW - leftColW - gapX; // 精準 37%
 
   let cardBottomY = currentTopY;
-  let cardLeftX = margin;
+  let cardLeftX = baseLeftX;
 
   if (cardLayer && cardLayer.image) {
     const cImg = cardLayer.image;
@@ -5814,7 +5939,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     cardLayer.width = leftColW;
     cardLayer.height = Math.round(leftColW / cAspect);
     cardLayer.rotation = 0;
-    cardLayer.x = Math.round(margin + cardLayer.width / 2);
+    cardLayer.x = Math.round(baseLeftX + cardLayer.width / 2);
     cardLayer.y = Math.round(currentTopY + cardLayer.height / 2);
     cardLeftX = cardLayer.x - cardLayer.width / 2;
     cardBottomY = cardLayer.y + cardLayer.height / 2;
@@ -5835,7 +5960,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     });
   }
 
-  // 3. 下方右欄（37% 寬度）：發票，上緣與保卡對齊
+  // 3. 下方右欄（37% 寬度）：發票，右緣切齊訂購單右緣、上緣對齊保卡上緣、完整呈現不裁切
   let receiptBottomY = currentTopY;
   if (receiptLayer && receiptLayer.image) {
     const rImg = receiptLayer.image;
@@ -5843,7 +5968,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     receiptLayer.width = rightColW;
     receiptLayer.height = Math.round(rightColW / rAspect);
     receiptLayer.rotation = 0;
-    receiptLayer.x = Math.round(canvasWidth - margin - receiptLayer.width / 2);
+    receiptLayer.x = Math.round(baseRightX - receiptLayer.width / 2);
     receiptLayer.y = Math.round(currentTopY + receiptLayer.height / 2);
     receiptBottomY = receiptLayer.y + receiptLayer.height / 2;
   }

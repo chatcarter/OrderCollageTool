@@ -1,6 +1,6 @@
 // =============================================================================
-// OrderCollageTool - 品牌保卡智慧模板庫 (card_templates.js)
-// v21: 首波建置「國際牌 Panasonic 雙聯單」並預留四大品牌擴充架構
+// OrderCollageTool - 品牌保卡與發票智慧模板庫 (card_templates.js)
+// v24: 國際牌雙聯單 + 發票雙型態架構 (首波 Type A 銷貨明細表) + 高解析 Regex 防呆
 // =============================================================================
 
 (function (global) {
@@ -767,7 +767,23 @@
     rw = Math.max(40, Math.min(sw - rx, rw - insetX * 2));
     rh = Math.max(40, Math.min(sh - ry, rh - insetY * 2));
 
-    // 若裁切結果跟原圖幾乎一模一樣 (>97%) 仍適度做 1.5% 邊緣淨化
+    // 若裁切結果跟原圖幾乎一模一樣 (>97%) 仍適度做安全淨化
+    const insetRatioX = isAlreadyWhiteScan ? -0.008 : 0.012;
+    const insetRatioY = isAlreadyWhiteScan ? -0.008 : 0.008;
+    const invScale = 1 / scale;
+
+    let rx = Math.round(x0 * invScale);
+    let ry = Math.round(y0 * invScale);
+    let rw = Math.round(spanW * invScale);
+    let rh = Math.round(spanH * invScale);
+
+    const insetX = Math.round(rw * insetRatioX);
+    const insetY = Math.min(28, Math.round(rh * insetRatioY));
+    rx = Math.max(0, rx + insetX);
+    ry = Math.max(0, ry + insetY);
+    rw = Math.max(40, Math.min(sw - rx, rw - insetX * 2));
+    rh = Math.max(40, Math.min(sh - ry, rh - insetY * 2));
+
     const outCanvas = document.createElement('canvas');
     outCanvas.width = rw;
     outCanvas.height = rh;
@@ -779,15 +795,203 @@
     return outCanvas;
   }
 
+  // ===========================================================================
+  // 發票辨識雙型態架構 (v24)
+  // Type A: invoice_detail_slip (銷貨明細表 / 載具明細型)
+  // Type B: invoice_qr_stub (雙 QR Code 電子發票證明聯正本 — 預留擴充接口)
+  // ===========================================================================
+  const INVOICE_TEMPLATES = {
+    invoice_detail_slip: {
+      id: 'invoice_detail_slip',
+      typeCode: 'Type A',
+      label: '銷貨明細表／載具明細型',
+      enabled: true,
+      minAspectRatio: 1.3,
+      keywords: ['銷貨明細表', '載具號碼', '營業人統編', '發票號碼', '退貨用條碼'],
+      regions: {
+        headerZone: { x: 0.02, y: 0.02, w: 0.96, h: 0.36 },
+        invoiceNoZone: { x: 0.02, y: 0.65, w: 0.96, h: 0.17 } // 重點定位：68%~78% 退貨用條碼正上方
+      }
+    },
+    invoice_qr_stub: {
+      id: 'invoice_qr_stub',
+      typeCode: 'Type B',
+      label: '雙 QR Code 電子發票證明聯（預留擴充）',
+      enabled: false,
+      comingSoon: true,
+      minAspectRatio: 1.2
+    }
+  };
+
+  /**
+   * 修正易混淆英數（用於發票號碼數字區與統編數字區）
+   */
+  function fixDigitConfusions(str) {
+    return (str || '')
+      .toUpperCase()
+      .replace(/[OQDU]/g, '0')
+      .replace(/[IL|!]/g, '1')
+      .replace(/Z/g, '2')
+      .replace(/S/g, '5')
+      .replace(/G/g, '6')
+      .replace(/B/g, '8');
+  }
+
+  function fixLetterConfusions(str) {
+    return (str || '')
+      .toUpperCase()
+      .replace(/0/g, 'O')
+      .replace(/1/g, 'I')
+      .replace(/2/g, 'Z')
+      .replace(/5/g, 'S')
+      .replace(/8/g, 'B');
+  }
+
+  /**
+   * 台灣電子發票號碼正規化與 Regex 校驗 ([A-Z]{2}\d{8})，自動去除 '-'
+   */
+  function normalizeTaiwanInvoiceNo(rawText) {
+    if (!rawText) return '';
+    const cleaned = rawText.replace(/\r/g, '\n');
+
+    // 1. 優先鎖定「發票號碼」關鍵字同行或下一行
+    const lines = cleaned.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/發票號碼|發票號|號碼[:：]/.test(line)) {
+        const scope = (line + ' ' + (lines[i + 1] || '')).toUpperCase();
+        const exact = scope.match(/([A-Z]{2})\s*[-—–]?\s*(\d{8})/);
+        if (exact) return `${exact[1]}${exact[2]}`;
+
+        // 容許英數混淆修復（如 ZE-9373I662 / ZEO-93731662）
+        const fuzzy = scope.match(/([A-Z0-9]{2})\s*[-—–]?\s*([A-Z0-9]{8})/);
+        if (fuzzy) {
+          const pfx = fixLetterConfusions(fuzzy[1]);
+          const num = fixDigitConfusions(fuzzy[2]);
+          if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
+            return `${pfx}${num}`;
+          }
+        }
+      }
+    }
+
+    // 2. 全域搜尋標準 [A-Z]{2}-?\d{8}
+    const upper = cleaned.toUpperCase();
+    const m1 = upper.match(/\b([A-Z]{2})\s*[-—–]?\s*(\d{8})\b/);
+    if (m1) return `${m1[1]}${m1[2]}`;
+
+    // 3. 容許連字號格式下之模糊字元修正
+    const m2 = upper.match(/\b([A-Z0-9]{2})\s*[-—–]\s*([A-Z0-9]{8})\b/);
+    if (m2) {
+      const pfx = fixLetterConfusions(m2[1]);
+      const num = fixDigitConfusions(m2[2]);
+      if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
+        return `${pfx}${num}`;
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * 從發票 OCR 文字中擷取賣方統編 (\d{8}) 與購買日期 (YYYY-MM-DD)
+   */
+  function parseInvoiceHeaderFields(headerText, fullText = '') {
+    const scope = (headerText + '\n' + fullText).replace(/\r/g, '\n');
+
+    // 1. 賣方統編（營業人統編後方 8 碼純數字）
+    let sellerTaxId = '';
+    const taxMatch = scope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,6}([0-9OILSB]{8})/i);
+    if (taxMatch) {
+      const fixed = fixDigitConfusions(taxMatch[1]);
+      if (/^\d{8}$/.test(fixed)) sellerTaxId = fixed;
+    }
+
+    // 2. 購買日期（載具號碼下方日期列，格式 YYYY-MM-DD）
+    let dateStr = '';
+    const lines = scope.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (/載具/.test(lines[i])) {
+        const near = lines.slice(i, i + 4).join(' ');
+        const adNear = near.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+        if (adNear) {
+          dateStr = `${adNear[1]}-${adNear[2].padStart(2, '0')}-${adNear[3].padStart(2, '0')}`;
+          break;
+        }
+      }
+    }
+    if (!dateStr) {
+      const ad = scope.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+      if (ad) {
+        dateStr = `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}`;
+      } else {
+        const roc = scope.match(/(1\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+        if (roc) {
+          dateStr = `${parseInt(roc[1], 10) + 1911}-${roc[2].padStart(2, '0')}-${roc[3].padStart(2, '0')}`;
+        }
+      }
+    }
+
+    return { sellerTaxId, dateStr };
+  }
+
+  /**
+   * 過濾保卡 OCR 機種／機號中的條碼雜訊（如 VLILOULUVOIDI）(v24)
+   */
+  function filterWarrantyModelResult(rawText) {
+    if (!rawText) return '';
+    const lines = rawText.toUpperCase().split(/\r?\n/).map(s => s.replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '')).filter(Boolean);
+    // 排除疑似條碼雜訊（全是 I/L/O/U/V/D 無數字，或超過 5 碼卻完全沒有數字）
+    const valid = lines.filter(tok => {
+      if (tok.length < 4) return false;
+      const hasDigit = /\d/.test(tok);
+      const hasLetter = /[A-Z]/.test(tok);
+      if (!hasDigit || !hasLetter) return false;
+      const barcodeChars = (tok.match(/[ILUV]/g) || []).length;
+      if (barcodeChars / tok.length > 0.65 && (tok.match(/\d/g) || []).length <= 1) return false;
+      return true;
+    });
+    if (valid.length > 0) {
+      // 優先選帶連字號的家電型號（如 NR-D505XV-W）
+      const withHyphen = valid.find(v => /^[A-Z]{2,4}-[A-Z0-9]{3,}/.test(v));
+      return withHyphen || valid[0];
+    }
+    const fallback = rawText.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    return /\d/.test(fallback) ? fallback : '';
+  }
+
+  function filterWarrantySerialResult(rawText) {
+    if (!rawText) return '';
+    const lines = rawText.toUpperCase().split(/\r?\n/).map(s => s.replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+    // 機號至少須含 4 位以上數字（徹底剔除如 VLILOULUVOIDI 等純英文條碼誤判）
+    const valid = lines.filter(tok => {
+      if (tok.length < 5) return false;
+      const digitCount = (tok.match(/\d/g) || []).length;
+      if (digitCount < 4) return false;
+      return true;
+    });
+    if (valid.length > 0) {
+      valid.sort((a, b) => (b.match(/\d/g) || []).length - (a.match(/\d/g) || []).length);
+      return valid[0];
+    }
+    const fallback = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return (fallback.match(/\d/g) || []).length >= 4 ? fallback : '';
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     TEMPLATES: CARD_TEMPLATES,
+    INVOICE_TEMPLATES,
     detectPanasonicCardQuad,
     detectPanasonicSlipType,
     createEnhancedOcrCropCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
     adaptStampCanvasToLighting,
-    autoTrimReceiptImage
+    autoTrimReceiptImage,
+    normalizeTaiwanInvoiceNo,
+    parseInvoiceHeaderFields,
+    filterWarrantyModelResult,
+    filterWarrantySerialResult
   };
 })(window);
