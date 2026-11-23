@@ -53,6 +53,23 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 21:22:01] (第 26 版 / v26)
+- **執行項目**：實作保卡「保底必蓋專櫃章機制」與純 Base64 消除 `Tainted Canvas` 錯誤、雙重驗證排除木紋桌面干擾、導入單一序列排隊 OCR 與熱感應紙動態對比拉伸（取代全域 Otsu），並強制同步左下角 5 行核對文字與畫布即時進度提示。
+- **具體進度**：
+  1. **版本徽章同步更新為 `v26 (2026.11.23)`**：
+     - 同步更新 `index.html`、`static/index.html` 頂部 `#headerVersionBadge` 與右側 `#panelVersionBanner`，並新增畫布右上角即時狀態浮動條 `#canvasOcrStatusPill`（`.canvas-ocr-pill`）。
+  2. **保卡保底必蓋機制 ＋ 純 Base64 零污染 ＋ 排除木紋桌面干擾**：
+     - 移除 `ensureStampImageLoaded()`、`updateStampPreview()` 與 `btnAddStamp` 中會導致 `file:///` 下 `getImageData()` 報錯之 `assets/stamp_clean.png` 備援路徑，強制 100% 僅使用內嵌 `STAMP_CLEAN_BASE64`。
+     - 將蓋章與 OCR 徹底解耦：在 `importImagePureFrontend()` 中同時支援橫向照與直拍照片內含的橫向保卡，先完成離屏拉正或紙張輪廓裁切（`detectRes.paperBox`），並**先於避讓座標（`X: 84.5%`、`Y: 36.5%`、`W: 21.0%`）完成光影自適應專櫃章合成**，絕不因 OCR 失敗而漏蓋。
+     - 升級 `detectPanasonicCardQuad()` 加入「鄰近淺米白／淺灰卡片紙張（`lum >= 138, chroma <= 44`）」雙重驗證，徹底過濾整片暖棕色木紋桌面像素誤判。
+  3. **單一序列排隊 OCR 與動態對比拉伸（Stretch Min-Max Luminance）**：
+     - 建立 `enqueueOcrTask()` 單一序列排隊器與共用 Worker（`workerBlobURL: false`），取代多 Worker 平行互搶崩潰；辨識進度與本機模式受限提示（`⚠️ 本機模式 OCR 受限，建議使用線上版或雙擊文字手動編輯`）即時顯示於 `#canvasOcrStatusPill` 與 `#cardSmartStatus`。
+     - 在 `createEnhancedOcrCropCanvas()` 棄用單一全域 Otsu 二值化，改為 `2%~88%` 分位動態對比拉伸（`Math.pow(norm, 1.35)`），完整保留熱感應紙淡灰筆畫（`2026-04-17`、`ZE-93731662`）。
+     - 放寬 `normalizeTaiwanInvoiceNo()` 支援數字內含空格（`/([A-Z]{2})\s*[-—–]?\s*(\d[\d\s]{6,10}\d)/`，涵蓋 `Y: 50%~88%`），並於 `parseInvoiceHeaderFields()` 放寬日期與 `detectPanasonicSlipType()` 第二聯下方雙欄密度判定。
+  4. **強制刷新左下角 5 行核對文字**：
+     - 移除 `runCardTargetedOcr()`、`runReceiptHighResOcr()` 與 `syncSummaryTextLayer()` 中 `layers.length > 0` 限制，確保每張單據完成 OCR 後立即同步更新左下角 5 行大字（保留雙擊編輯後的 `userEdited` 保護）。
+  5. 建立 `_backup/20261123_211737/` 完整備份，全專案通過雙份 HTML 同步檢核、括號平衡驗證（`syntaxErrors = 0`）與 `CRLF` 換行檢核，並推送至 GitHub。
+
 ### [2026-11-23 21:07:14] (第 25 版 / v25)
 - **執行項目**：重構保卡為「離屏高解析度透視拉正 ➔ 局部白名單 OCR ➔ 立刻合成專櫃章 ➔ 縮放 60% 擺放」管線、升級發票多區段局部放大 OCR 與購買日期來源優先權鎖定，並建立 `syncSummaryTextLayer()` 即時寫入左下角 5 行核對文字。
 - **具體進度**：

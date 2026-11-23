@@ -158,29 +158,90 @@
     wCtx.drawImage(srcImg, 0, 0, w, h);
     const data = wCtx.getImageData(0, 0, w, h).data;
 
-    // 1. 標記紅褐色外框候選像素 (Panasonic 花邊外框特徵)
-    const mask = new Uint8Array(w * h);
-    for (let y = 2; y < h - 2; y++) {
+    // 1. 建立「淺米白／淺灰保卡底紙」遮罩 + 「紅褐色外框」候選遮罩（雙重驗證徹底排除木紋桌面干擾）(v26)
+    const paperMask = new Uint8Array(w * h);
+    const borderRawMask = new Uint8Array(w * h);
+
+    for (let y = 1; y < h - 1; y++) {
       const rowOffset = y * w;
-      for (let x = 2; x < w - 2; x++) {
+      for (let x = 1; x < w - 1; x++) {
         const idx = (rowOffset + x) * 4;
         const r = data[idx];
         const g = data[idx + 1];
         const b = data[idx + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const chroma = Math.max(r, g, b) - Math.min(r, g, b);
 
-        // 紅褐色/暖棕紅色墨跡：R 明顯大於 G 與 B，且非純白高光或純黑陰影（放寬暗部容忍度）
+        // 卡片內部底紙：高亮度且低飽和度（淺米白 / 淺灰白紙，木紋桌面飽和度通常較高且較暗）
+        if (lum >= 138 && chroma <= 44) {
+          paperMask[rowOffset + x] = 1;
+        }
+
         const rgDiff = r - g;
         const rbDiff = r - b;
         if (
-          r >= 52 && r <= 240 &&
-          g <= 190 && b <= 175 &&
-          rgDiff >= 12 && rbDiff >= 18 &&
+          r >= 58 && r <= 238 &&
+          g <= 188 && b <= 172 &&
+          rgDiff >= 14 && rbDiff >= 20 &&
           rgDiff <= 155
         ) {
+          borderRawMask[rowOffset + x] = 1;
+        }
+      }
+    }
+
+    // 1b. 僅保留鄰近存在「淺色紙張」的紅褐色像素（木桌中央的暖棕色像素周圍無白紙，直接剔除）
+    const mask = new Uint8Array(w * h);
+    const searchRad = 10;
+    for (let y = searchRad; y < h - searchRad; y++) {
+      const rowOffset = y * w;
+      for (let x = searchRad; x < w - searchRad; x++) {
+        if (!borderRawMask[rowOffset + x]) continue;
+        let paperHits = 0;
+        // 採十字與對角線快速取樣鄰域內是否有卡片紙張
+        for (let step = 3; step <= searchRad; step += 3) {
+          if (paperMask[(y - step) * w + x]) paperHits++;
+          if (paperMask[(y + step) * w + x]) paperHits++;
+          if (paperMask[y * w + (x - step)]) paperHits++;
+          if (paperMask[y * w + (x + step)]) paperHits++;
+        }
+        if (paperHits >= 2) {
           mask[rowOffset + x] = 1;
         }
       }
     }
+
+    // 計算淺色紙張主體外框作為備援（當光線極端無法抓到紅褐色邊框時，仍可精準切除木桌背景）
+    let pMinX = w, pMaxX = 0, pMinY = h, pMaxY = 0, pCount = 0;
+    for (let y = 2; y < h - 2; y++) {
+      let rowHits = 0;
+      for (let x = 2; x < w - 2; x++) {
+        if (paperMask[y * w + x]) rowHits++;
+      }
+      if (rowHits > w * 0.18) {
+        if (y < pMinY) pMinY = y;
+        if (y > pMaxY) pMaxY = y;
+        pCount += rowHits;
+      }
+    }
+    for (let x = 2; x < w - 2; x++) {
+      let colHits = 0;
+      for (let y = 2; y < h - 2; y++) {
+        if (paperMask[y * w + x]) colHits++;
+      }
+      if (colHits > h * 0.18) {
+        if (x < pMinX) pMinX = x;
+        if (x > pMaxX) pMaxX = x;
+      }
+    }
+    const hasPaperBox = pCount > 50 && (pMaxX - pMinX) > w * 0.28 && (pMaxY - pMinY) > h * 0.25;
+    const invScalePaper = 1 / scale;
+    const paperBox = hasPaperBox ? {
+      x: Math.max(0, Math.round(pMinX * invScalePaper)),
+      y: Math.max(0, Math.round(pMinY * invScalePaper)),
+      w: Math.min(sw, Math.round((pMaxX - pMinX) * invScalePaper)),
+      h: Math.min(sh, Math.round((pMaxY - pMinY) * invScalePaper))
+    } : null;
 
     // 2. 5x5 鄰域密度濾波（剔除孤立雜訊點，只保留連續邊框點）
     const densePts = [];
@@ -200,8 +261,8 @@
       }
     }
 
-    if (densePts.length < Math.max(40, (w * h) * 0.002)) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    if (densePts.length < Math.max(35, (w * h) * 0.0015)) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', paperBox };
     }
 
     // 3. 計算極值四頂點（使用 1.5% 分位點排除極端離群雜點）
@@ -209,7 +270,6 @@
     let minDiff = Infinity, maxDiff = -Infinity;
     let tl = null, br = null, tr = null, bl = null;
 
-    // 先算邊界分位以過濾明顯遠離主體的噪點
     const xs = densePts.map(p => p.x).sort((a, b) => a - b);
     const ys = densePts.map(p => p.y).sort((a, b) => a - b);
     const trim = Math.floor(densePts.length * 0.005);
@@ -222,8 +282,8 @@
       p => p.x >= minAllowX && p.x <= maxAllowX && p.y >= minAllowY && p.y <= maxAllowY
     );
 
-    if (filtered.length < 30) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    if (filtered.length < 25) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', paperBox };
     }
 
     for (let i = 0; i < filtered.length; i++) {
@@ -237,14 +297,14 @@
     }
 
     if (!tl || !tr || !br || !bl) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+      return { corners: fallbackCorners, detected: false, confidence: 'low', paperBox };
     }
 
     // 檢查偵測到的四邊形是否具備合理寬高
     const spanW = Math.max(tr.x, br.x) - Math.min(tl.x, bl.x);
     const spanH = Math.max(bl.y, br.y) - Math.min(tl.y, tr.y);
     if (spanW < w * 0.25 || spanH < h * 0.25) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+      return { corners: fallbackCorners, detected: false, confidence: 'low', paperBox };
     }
 
     // 轉回原圖座標系
@@ -254,11 +314,12 @@
       y: Math.max(0, Math.min(sh, Math.round(p.y * invScale)))
     }));
 
-    return { corners, detected: true, confidence: 'high' };
+    return { corners, detected: true, confidence: 'high', paperBox };
   }
 
   /**
-   * 裁切並強化對比（灰階二值化）以供 Tesseract.js 高精度局部辨識
+   * 裁切並進行「自適應動態對比拉伸（Stretch Min-Max Luminance）」(v26)
+   * 棄用全域 Otsu 二值化，避免黑條碼導致熱感應紙淡灰文字被洗成純白
    */
   function createEnhancedOcrCropCanvas(srcCanvas, region, upscale = 2.5) {
     const sw = srcCanvas.width;
@@ -281,11 +342,10 @@
     cCtx.fillRect(0, 0, outW, outH);
     cCtx.drawImage(srcCanvas, rx, ry, rw, rh, 0, 0, outW, outH);
 
-    // 灰階與自適應對比強化（去除淡底色與表格細線干擾）
+    // 計算灰階直方圖並使用局部動態對比拉伸 (2% ~ 90% 分位拉伸 + 柔和灰階保留)
     const imgData = cCtx.getImageData(0, 0, outW, outH);
     const d = imgData.data;
 
-    // 計算灰階直方圖以求 Otsu 閾值
     const hist = new Int32Array(256);
     const total = outW * outH;
     const grays = new Uint8Array(total);
@@ -296,34 +356,29 @@
       hist[g]++;
     }
 
-    let sumAll = 0;
-    for (let t = 0; t < 256; t++) sumAll += t * hist[t];
-
-    let sumB = 0;
-    let wB = 0;
-    let maxVar = 0;
-    let threshold = 140;
+    // 找出背景白點 (約 88% 分位) 與最暗墨跡點 (約 2% 分位)
+    let pLow = 0;
+    let pHigh = 240;
+    const lowTarget = Math.floor(total * 0.02);
+    const highTarget = Math.floor(total * 0.88);
+    let acc = 0;
     for (let t = 0; t < 256; t++) {
-      wB += hist[t];
-      if (wB === 0) continue;
-      const wF = total - wB;
-      if (wF === 0) break;
-      sumB += t * hist[t];
-      const mB = sumB / wB;
-      const mF = (sumAll - sumB) / wF;
-      const varBetween = wB * wF * (mB - mF) * (mB - mF);
-      if (varBetween > maxVar) {
-        maxVar = varBetween;
-        threshold = t;
-      }
+      acc += hist[t];
+      if (acc >= lowTarget && pLow === 0) pLow = t;
+      if (acc >= highTarget) { pHigh = t; break; }
     }
 
-    // 稍微偏暗一點保留細筆劃，並採用柔和強化避免斷裂
-    const cut = Math.min(200, Math.max(85, threshold + 10));
+    const span = Math.max(28, pHigh - pLow);
     for (let i = 0; i < total; i++) {
       const p = i * 4;
       const g = grays[i];
-      const val = g < cut ? Math.max(0, Math.round((g / cut) * 65)) : 255;
+      // 動態對比拉伸至 [0, 1]，並針對暗色筆畫適度加濃 (gamma 1.25 -> 壓深灰階筆畫)
+      let norm = (g - pLow) / span;
+      if (norm <= 0) norm = 0;
+      else if (norm >= 1) norm = 1;
+      else norm = Math.pow(norm, 1.35);
+
+      const val = Math.max(0, Math.min(255, Math.round(norm * 255)));
       d[p] = val;
       d[p + 1] = val;
       d[p + 2] = val;
@@ -362,18 +417,18 @@
   }
 
   /**
-   * 自動偵測拉正後的國際牌保卡屬於第一聯（S203J01）或第二聯（S203B01）
+   * 自動偵測拉正後的國際牌保卡屬於第一聯（S203J01）或第二聯（S203B01）(v26)
    */
-  async function detectPanasonicSlipType(warpedCanvas) {
-    // 1. 若 Tesseract.js 可用，嘗試辨識左下角表單編號（S203J01 / S203B01）與上方區域
-    if (global.Tesseract) {
+  async function detectPanasonicSlipType(warpedCanvas, sharedWorker = null) {
+    // 1. 若有共用 Worker，依序辨識左下角表單編號（S203J01 / S203B01）與左上聯別標題
+    if (sharedWorker) {
       try {
         const codeCrop = createEnhancedOcrCropCanvas(
           warpedCanvas,
-          { x: 0.01, y: 0.84, w: 0.24, h: 0.15 },
-          2.5
+          { x: 0.01, y: 0.84, w: 0.25, h: 0.15 },
+          2.2
         );
-        const res = await global.Tesseract.recognize(codeCrop, 'eng');
+        const res = await sharedWorker.recognize(codeCrop);
         const txt = ((res && res.data && res.data.text) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (txt.includes('J01') || txt.includes('203J') || txt.includes('S203J')) {
           return { templateId: 'panasonic_slip1', reason: `表單編號 (${txt})` };
@@ -386,14 +441,20 @@
       }
     }
 
-    // 2. 版面墨跡密度比對（第一聯上方中左 X:41%~65% 為機號欄；第二聯該處多為空白或條款標題）
-    const slip1SerialDensity = measureInkDensity(warpedCanvas, CARD_TEMPLATES.panasonic_slip1.ocrRegions.serial);
+    // 2. 版面墨跡密度比對：第二聯左下 (Y:33.5%~47.5%) 有獨立型號+機號，而第一聯右下無此雙欄或上方有大量條碼
+    const slip2ModelDensity = measureInkDensity(warpedCanvas, CARD_TEMPLATES.panasonic_slip2.ocrRegions.model);
     const slip2SerialDensity = measureInkDensity(warpedCanvas, CARD_TEMPLATES.panasonic_slip2.ocrRegions.serial);
+    const slip2LowerAvg = (slip2ModelDensity + slip2SerialDensity) / 2;
 
-    if (slip1SerialDensity >= slip2SerialDensity * 0.95) {
-      return { templateId: 'panasonic_slip1', reason: '版面欄位結構（第一聯）' };
+    const slip1ModelDensity = measureInkDensity(warpedCanvas, CARD_TEMPLATES.panasonic_slip1.ocrRegions.model);
+    const slip1SerialDensity = measureInkDensity(warpedCanvas, CARD_TEMPLATES.panasonic_slip1.ocrRegions.serial);
+    const slip1UpperAvg = (slip1ModelDensity + slip1SerialDensity) / 2;
+
+    // 第二聯上方區域 (Y:13%~20%) 多為空白或客戶名，下方 (Y:33.5%~47.5%) 密集有字時優先判為第二聯
+    if (slip2LowerAvg >= 0.035 && slip2LowerAvg >= slip1UpperAvg * 0.90) {
+      return { templateId: 'panasonic_slip2', reason: '版面欄位結構（第二聯）' };
     }
-    return { templateId: 'panasonic_slip2', reason: '版面欄位結構（第二聯）' };
+    return { templateId: 'panasonic_slip1', reason: '版面欄位結構（第一聯）' };
   }
 
   /**
@@ -809,8 +870,8 @@
       minAspectRatio: 1.3,
       keywords: ['銷貨明細表', '載具號碼', '營業人統編', '發票號碼', '退貨用條碼'],
       regions: {
-        headerZone: { x: 0.01, y: 0.01, w: 0.98, h: 0.42 },
-        invoiceNoZone: { x: 0.01, y: 0.55, w: 0.98, h: 0.30 } // v25: 中下段 Y: 55% ~ 85% 退貨用條碼上方
+        headerZone: { x: 0.01, y: 0.01, w: 0.98, h: 0.44 },
+        invoiceNoZone: { x: 0.01, y: 0.50, w: 0.98, h: 0.38 } // v26: 中下段 Y: 50% ~ 88% 涵蓋退貨條碼上方發票號碼
       }
     },
     invoice_qr_stub: {
@@ -848,72 +909,69 @@
   }
 
   /**
-   * 台灣電子發票號碼正規化與 Regex 校驗 ([A-Z]{2}\d{8})，自動去除 '-'
+   * 台灣電子發票號碼正規化與 Regex 校驗 ([A-Z]{2}\d{8})，容許數字中間斷開空格並自動去除 '-' (v26)
    */
   function normalizeTaiwanInvoiceNo(rawText) {
     if (!rawText) return '';
     const cleaned = rawText.replace(/\r/g, '\n');
 
-    // 1. 優先鎖定「發票號碼」關鍵字同行或下一行
+    function extractFromText(scopeText) {
+      const upper = scopeText.toUpperCase();
+      // 1. 放寬比對：允許 8 碼數字中間被 OCR 斷出空格 (如 ZE-9373 1662)
+      const relaxed = upper.match(/([A-Z]{2})\s*[-—–]?\s*(\d[\d\s]{6,10}\d)/);
+      if (relaxed) {
+        const digits = relaxed[2].replace(/\s+/g, '');
+        if (/^\d{8}$/.test(digits)) return `${relaxed[1]}${digits}`;
+      }
+      // 2. 容許英數混淆修復（如 ZE-9373I662 / ZEO-9373 1662）
+      const fuzzy = upper.match(/([A-Z0-9]{2})\s*[-—–]?\s*([A-Z0-9][A-Z0-9\s]{6,10}[A-Z0-9])/);
+      if (fuzzy) {
+        const pfx = fixLetterConfusions(fuzzy[1]);
+        const num = fixDigitConfusions(fuzzy[2].replace(/\s+/g, ''));
+        if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
+          return `${pfx}${num}`;
+        }
+      }
+      return '';
+    }
+
+    // 優先鎖定「發票號碼」關鍵字同行或下一行
     const lines = cleaned.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/發票號碼|發票號|號碼[:：]/.test(line)) {
-        const scope = (line + ' ' + (lines[i + 1] || '')).toUpperCase();
-        const exact = scope.match(/([A-Z]{2})\s*[-—–]?\s*(\d{8})/);
-        if (exact) return `${exact[1]}${exact[2]}`;
-
-        // 容許英數混淆修復（如 ZE-9373I662 / ZEO-93731662）
-        const fuzzy = scope.match(/([A-Z0-9]{2})\s*[-—–]?\s*([A-Z0-9]{8})/);
-        if (fuzzy) {
-          const pfx = fixLetterConfusions(fuzzy[1]);
-          const num = fixDigitConfusions(fuzzy[2]);
-          if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
-            return `${pfx}${num}`;
-          }
-        }
+        const scope = line + ' ' + (lines[i + 1] || '');
+        const hit = extractFromText(scope);
+        if (hit) return hit;
       }
     }
 
-    // 2. 全域搜尋標準 [A-Z]{2}-?\d{8}
-    const upper = cleaned.toUpperCase();
-    const m1 = upper.match(/\b([A-Z]{2})\s*[-—–]?\s*(\d{8})\b/);
-    if (m1) return `${m1[1]}${m1[2]}`;
-
-    // 3. 容許連字號格式下之模糊字元修正
-    const m2 = upper.match(/\b([A-Z0-9]{2})\s*[-—–]\s*([A-Z0-9]{8})\b/);
-    if (m2) {
-      const pfx = fixLetterConfusions(m2[1]);
-      const num = fixDigitConfusions(m2[2]);
-      if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
-        return `${pfx}${num}`;
-      }
-    }
-
-    return '';
+    // 全域搜尋（支援數字內含空格）
+    return extractFromText(cleaned);
   }
 
   /**
-   * 從發票 OCR 文字中擷取賣方統編 (\d{8}) 與購買日期 (YYYY-MM-DD)
+   * 從發票 OCR 文字中擷取賣方統編 (\d{8}) 與購買日期 (YYYY-MM-DD) (v26)
    */
   function parseInvoiceHeaderFields(headerText, fullText = '') {
     const scope = (headerText + '\n' + fullText).replace(/\r/g, '\n');
 
-    // 1. 賣方統編（營業人統編後方 8 碼純數字）
+    // 1. 賣方統編（營業人統編後方 8 碼純數字，容許空格）
     let sellerTaxId = '';
-    const taxMatch = scope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,6}([0-9OILSB]{8})/i);
+    const taxMatch = scope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,8}([0-9OILSB\s]{8,11})/i);
     if (taxMatch) {
-      const fixed = fixDigitConfusions(taxMatch[1]);
+      const fixed = fixDigitConfusions(taxMatch[1].replace(/\s+/g, ''));
       if (/^\d{8}$/.test(fixed)) sellerTaxId = fixed;
     }
 
-    // 2. 購買日期（載具號碼下方日期列，格式 YYYY-MM-DD）
+    // 2. 購買日期（載具號碼下方日期列，放寬支援 202\d 及空白間隔，格式化為 YYYY-MM-DD）
     let dateStr = '';
+    const dateRegex = /(202\d|20\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/;
     const lines = scope.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (/載具/.test(lines[i])) {
-        const near = lines.slice(i, i + 4).join(' ');
-        const adNear = near.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+        const near = lines.slice(i, i + 5).join(' ');
+        const adNear = near.match(dateRegex);
         if (adNear) {
           dateStr = `${adNear[1]}-${adNear[2].padStart(2, '0')}-${adNear[3].padStart(2, '0')}`;
           break;
@@ -921,11 +979,11 @@
       }
     }
     if (!dateStr) {
-      const ad = scope.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+      const ad = scope.match(dateRegex);
       if (ad) {
         dateStr = `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}`;
       } else {
-        const roc = scope.match(/(1\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+        const roc = scope.match(/(1\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
         if (roc) {
           dateStr = `${parseInt(roc[1], 10) + 1911}-${roc[2].padStart(2, '0')}-${roc[3].padStart(2, '0')}`;
         }
@@ -936,45 +994,48 @@
   }
 
   /**
-   * 過濾保卡 OCR 機種／機號中的條碼雜訊（如 VLILOULUVOIDI）(v24)
+   * 過濾保卡 OCR 機種／機號中的條碼雜訊（放寬空格與破折號容錯）(v26)
    */
   function filterWarrantyModelResult(rawText) {
     if (!rawText) return '';
-    const lines = rawText.toUpperCase().split(/\r?\n/).map(s => s.replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '')).filter(Boolean);
-    // 排除疑似條碼雜訊（全是 I/L/O/U/V/D 無數字，或超過 5 碼卻完全沒有數字）
+    const lines = rawText.toUpperCase()
+      .split(/\r?\n/)
+      .map(s => s.replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, ''))
+      .filter(Boolean);
     const valid = lines.filter(tok => {
       if (tok.length < 4) return false;
       const hasDigit = /\d/.test(tok);
       const hasLetter = /[A-Z]/.test(tok);
       if (!hasDigit || !hasLetter) return false;
       const barcodeChars = (tok.match(/[ILUV]/g) || []).length;
-      if (barcodeChars / tok.length > 0.65 && (tok.match(/\d/g) || []).length <= 1) return false;
+      if (barcodeChars / tok.length > 0.70 && (tok.match(/\d/g) || []).length <= 1) return false;
       return true;
     });
     if (valid.length > 0) {
-      // 優先選帶連字號的家電型號（如 NR-D505XV-W）
       const withHyphen = valid.find(v => /^[A-Z]{2,4}-[A-Z0-9]{3,}/.test(v));
       return withHyphen || valid[0];
     }
-    const fallback = rawText.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    const fallback = rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
     return /\d/.test(fallback) ? fallback : '';
   }
 
   function filterWarrantySerialResult(rawText) {
     if (!rawText) return '';
-    const lines = rawText.toUpperCase().split(/\r?\n/).map(s => s.replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+    const lines = rawText.toUpperCase()
+      .split(/\r?\n/)
+      .map(s => s.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, ''))
+      .filter(Boolean);
     // 機號至少須含 4 位以上數字（徹底剔除如 VLILOULUVOIDI 等純英文條碼誤判）
     const valid = lines.filter(tok => {
       if (tok.length < 5) return false;
       const digitCount = (tok.match(/\d/g) || []).length;
-      if (digitCount < 4) return false;
-      return true;
+      return digitCount >= 4;
     });
     if (valid.length > 0) {
       valid.sort((a, b) => (b.match(/\d/g) || []).length - (a.match(/\d/g) || []).length);
       return valid[0];
     }
-    const fallback = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const fallback = rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '');
     return (fallback.match(/\d/g) || []).length >= 4 ? fallback : '';
   }
 

@@ -969,3 +969,33 @@ input:checked + .switch-slider:before {
   box-shadow: 0 4px 16px rgba(0, 63, 188, 0.18);
   transform-origin: center center;
 }
+
+
+/* 畫布右上角即時 OCR 狀態浮動條 (v26) */
+.canvas-ocr-pill {
+  position: sticky;
+  top: 10px;
+  float: right;
+  margin-right: 12px;
+  z-index: 40;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+  pointer-events: none;
+  max-width: 440px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-ocr-pill.warning {
+  background: rgba(180, 83, 9, 0.94);
+  color: #fffbeb;
+}
+.canvas-ocr-pill.success {
+  background: rgba(21, 128, 61, 0.92);
+  color: #f0fdf4;
+}
