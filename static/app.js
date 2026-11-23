@@ -5627,14 +5627,10 @@ async function runCardTargetedOcr(layer) {
     setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在序列辨識機種與機號...`, true);
 
     try {
-      // v29: 移除過度縮窄高度的 tightenRegion，改為上下各外擴 1.5% 卡片高度留白並使用 PSM = 6
-      const expandRegion = r => {
-        const ny = Math.max(0, r.y - 0.015);
-        const nh = Math.min(1 - ny, r.h + 0.030);
-        return { x: r.x, y: ny, w: r.w, h: nh };
-      };
-      const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, expandRegion(tpl.ocrRegions.model), 3.0);
-      const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, expandRegion(tpl.ocrRegions.serial), 3.0);
+      // v30: 直接採用已精準隔離「機種」與「機號」橫格的模板座標（嚴禁向下越界重疊到機號列），搭配 PSM = 6
+      const isolateRegion = r => ({ x: r.x, y: r.y, w: r.w, h: r.h });
+      const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, isolateRegion(tpl.ocrRegions.model), 3.0);
+      const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, isolateRegion(tpl.ocrRegions.serial), 3.0);
 
       let rawModel = '';
       let rawSerial = '';

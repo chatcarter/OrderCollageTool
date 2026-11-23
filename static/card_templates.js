@@ -44,89 +44,84 @@
   ];
 
   /**
-   * 各品牌保卡模板詳細規格
+   * 國際牌保證書封版專屬核心規格（獨立隔離，後續新增 LG / Samsung 等品牌僅新增獨立條目）(v30)
+   */
+  const PANASONIC_STAMP_SPEC = Object.freeze({
+    centerX: 0.845,
+    centerY: 0.365,
+    widthRatio: 0.210,
+    tiltRangeDeg: 1.5,
+    blendMode: 'multiply'
+  });
+
+  const PANASONIC_WARRANTY_CONFIG = Object.freeze({
+    brandId: 'panasonic',
+    aspectRatio: 1.48,
+    borderColorType: 'panasonic_reddish_brown',
+    stampSpec: PANASONIC_STAMP_SPEC,
+    detectRegions: Object.freeze({
+      formCode: Object.freeze({ x: 0.01, y: 0.85, w: 0.24, h: 0.14 }),
+      leftVertical: Object.freeze({ x: 0.01, y: 0.15, w: 0.08, h: 0.70 })
+    }),
+    slip1Regions: Object.freeze({
+      model: Object.freeze({ label: '機種（型號）', x: 0.115, y: 0.130, w: 0.245, h: 0.070 }),
+      serial: Object.freeze({ label: '機號（序號）', x: 0.410, y: 0.130, w: 0.240, h: 0.070 })
+    }),
+    slip2Regions: Object.freeze({
+      model: Object.freeze({ label: '機種（型號）', x: 0.055, y: 0.305, w: 0.280, h: 0.068 }),
+      serial: Object.freeze({ label: '機號（序號）', x: 0.055, y: 0.382, w: 0.280, h: 0.068 })
+    })
+  });
+
+  /**
+   * 各品牌保卡模板詳細規格（以品牌獨立封裝，供未來擴充多品牌互不干擾）
    */
   const CARD_TEMPLATES = {
     panasonic_slip1: {
       id: 'panasonic_slip1',
-      brandId: 'panasonic',
+      brandId: PANASONIC_WARRANTY_CONFIG.brandId,
       brand: 'Panasonic',
       brandZh: '國際牌',
       label: '國際牌 第一聯（公司聯 / 經銷商聯 S203J01）',
       shortLabel: '國際牌 第一聯（公司聯）',
       formCode: 'S203J01',
-      aspectRatio: 1.48,
-      borderColorType: 'panasonic_reddish_brown',
+      aspectRatio: PANASONIC_WARRANTY_CONFIG.aspectRatio,
+      borderColorType: PANASONIC_WARRANTY_CONFIG.borderColorType,
       ocrRegions: {
-        model: {
-          label: '機種（型號）',
-          x: 0.115,
-          y: 0.130,
-          w: 0.245,
-          h: 0.070
-        },
-        serial: {
-          label: '機號（序號）',
-          x: 0.410,
-          y: 0.130,
-          w: 0.240,
-          h: 0.070
-        }
+        model: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.model },
+        serial: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.serial }
       },
-      // 偵測聯別用的輔助區域
       detectRegions: {
-        formCode: { x: 0.01, y: 0.85, w: 0.24, h: 0.14 },
-        leftVertical: { x: 0.01, y: 0.15, w: 0.08, h: 0.70 }
+        formCode: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.formCode },
+        leftVertical: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.leftVertical }
       },
-      // 日期框空白避讓自動蓋印參數（兩聯通用，v23 放大 1.2x 為 21.0%）
-      stampSpec: {
-        centerX: 0.845,
-        centerY: 0.365,
-        widthRatio: 0.210,
-        tiltRangeDeg: 1.5,
-        blendMode: 'multiply'
-      }
+      stampSpec: { ...PANASONIC_STAMP_SPEC }
     },
 
     panasonic_slip2: {
       id: 'panasonic_slip2',
-      brandId: 'panasonic',
+      brandId: PANASONIC_WARRANTY_CONFIG.brandId,
       brand: 'Panasonic',
       brandZh: '國際牌',
       label: '國際牌 第二聯（顧客聯 S203B01）',
       shortLabel: '國際牌 第二聯（顧客聯）',
       formCode: 'S203B01',
-      aspectRatio: 1.48,
-      borderColorType: 'panasonic_reddish_brown',
+      aspectRatio: PANASONIC_WARRANTY_CONFIG.aspectRatio,
+      borderColorType: PANASONIC_WARRANTY_CONFIG.borderColorType,
       ocrRegions: {
-        model: {
-          label: '機種（型號）',
-          x: 0.105,
-          y: 0.335,
-          w: 0.250,
-          h: 0.070
-        },
-        serial: {
-          label: '機號（序號）',
-          x: 0.105,
-          y: 0.405,
-          w: 0.250,
-          h: 0.070
-        }
+        model: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.model },
+        serial: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.serial }
       },
       detectRegions: {
-        formCode: { x: 0.01, y: 0.85, w: 0.24, h: 0.14 },
-        leftVertical: { x: 0.01, y: 0.15, w: 0.08, h: 0.70 }
+        formCode: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.formCode },
+        leftVertical: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.leftVertical }
       },
-      stampSpec: {
-        centerX: 0.845,
-        centerY: 0.365,
-        widthRatio: 0.210,
-        tiltRangeDeg: 1.5,
-        blendMode: 'multiply'
-      }
+      stampSpec: { ...PANASONIC_STAMP_SPEC }
     }
   };
+
+  // 別名映射：供外部查詢 panasonic_warranty 封版設定（預設對應第二聯顧客聯座標與共用封版比例）
+  CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
 
   /**
    * 偵測國際牌保卡最外圍紅褐色花邊外框的四個頂點 [TL, TR, BR, BL]
@@ -1032,7 +1027,7 @@
   }
 
   /**
-   * 過濾保卡 OCR 機種／機號中的條碼雜訊（支援 PSM 6 行內萃取型號 token）(v29)
+   * 過濾保卡 OCR 機種／機號中的條碼雜訊（排除誤讀進機號之純數字＋邊線 I，支援 PSM 6）(v30)
    */
   function filterWarrantyModelResult(rawText) {
     if (!rawText) return '';
@@ -1054,11 +1049,15 @@
       .filter(Boolean);
     const valid = lines.filter(tok => {
       if (tok.length < 4) return false;
-      const hasDigit = /\d/.test(tok);
+      // 嚴格剔除誤讀到的機號＋垂直邊線雜訊（例：02926020033I）
+      if (/^\d{7,}[IL|]?$/.test(tok)) return false;
+      const digitsOnly = (tok.match(/\d/g) || []).length;
+      if (!tok.includes('-') && digitsOnly / tok.length >= 0.80) return false;
+      const hasDigit = digitsOnly > 0;
       const hasLetter = /[A-Z]/.test(tok);
       if (!hasDigit || !hasLetter) return false;
       const barcodeChars = (tok.match(/[ILUV]/g) || []).length;
-      if (barcodeChars / tok.length > 0.70 && (tok.match(/\d/g) || []).length <= 1) return false;
+      if (barcodeChars / tok.length > 0.70 && digitsOnly <= 1) return false;
       return true;
     });
     if (valid.length > 0) {
@@ -1066,14 +1065,16 @@
       return withHyphen || valid[0];
     }
     const fallback = upperRaw.replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
-    return /\d/.test(fallback) ? fallback : '';
+    if (/^\d{7,}[IL|]?$/.test(fallback)) return '';
+    return (/\d/.test(fallback) && /[A-Z]/.test(fallback)) ? fallback : '';
   }
 
   function filterWarrantySerialResult(rawText) {
     if (!rawText) return '';
+    const stripBorderI = tok => (/^\d{10,13}[IL]$/.test(tok) ? tok.slice(0, -1) : tok);
     const lines = rawText.toUpperCase()
       .split(/\r?\n/)
-      .map(s => s.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, ''))
+      .map(s => stripBorderI(s.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '')))
       .filter(Boolean);
     // 機號至少須含 4 位以上數字（徹底剔除如 VLILOULUVOIDI 等純英文條碼誤判）
     const valid = lines.filter(tok => {
@@ -1085,7 +1086,7 @@
       valid.sort((a, b) => (b.match(/\d/g) || []).length - (a.match(/\d/g) || []).length);
       return valid[0];
     }
-    const fallback = rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '');
+    const fallback = stripBorderI(rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, ''));
     return (fallback.match(/\d/g) || []).length >= 4 ? fallback : '';
   }
 
@@ -1235,22 +1236,48 @@
   }
 
   /**
-   * v29: Noise-Filtered Text-Anchored Crop — 過濾雜訊字框後，以內部有效文字群外推熱感應紙真實邊界
-   * 左右各外擴 12% * textW，上方標題上擴 0.8x 行高（切除上方折角），下方下擴 1.2x 行高，驗證 1.4 <= H/W <= 3.2
+   * v30: 純文字地標強制比例外擴一刀裁切常數配置（完全獨立集中，徹底放棄背景色／紙張外框偵測）
+   */
+  const RECEIPT_LANDMARK_CROP_CONFIG = Object.freeze({
+    bodyExpandXRatio: 0.15,        // 左右各強制外擴 0.15 * bodyW（約實體 2 公分紙邊留白）
+    headerFallbackHalfW: 1.10,     // 僅抓到頂部標題宏匯廣場時，以 headerCenterX ± 1.10 * headerW 為左右邊界
+    topExpandHeaderH: 0.45,        // 鎖定頂部標題（宏匯廣場/HONHUI PLAZA/銷貨明細表）往上外擴 0.45 * headerHeight
+    bottomExpandLineH: 1.5,        // 優先地標①（最底行 機:/序:/帳:/櫃:/商品退換貨請持本聯/請妥善保管）往下外擴 1.5 * lineHeight
+    invFallbackExtendW: 0.75,      // 備援地標②（發票號碼/退貨用條碼下緣）往下外擴 0.75 * bodyW（約 4 公分）
+    minCropSizePx: 50              // 移除 H/W 比例拒切限制：只要 cropW > 50 && cropH > 50 即強制裁切
+  });
+
+  /**
+   * v30: 純文字地標強制比例外擴一刀裁切（徹底放棄背景色與外框偵測，只要 cropW > 50 && cropH > 50 即強制一刀裁切）
    */
   function computeTextAnchoredReceiptCrop(srcImg, ocrData, preScale = 1) {
     if (!srcImg || !ocrData) return null;
     const sw = srcImg.width;
     const sh = srcImg.height;
     const invScale = 1 / Math.max(0.05, preScale);
+    const cfg = RECEIPT_LANDMARK_CROP_CONFIG;
 
-    // 收集有效文字行或單詞（優先使用 lines，不足 3 行則降級 words）
-    const rawItems = (Array.isArray(ocrData.lines) && ocrData.lines.length >= 3)
-      ? ocrData.lines
-      : (Array.isArray(ocrData.words) ? ocrData.words : []);
+    // 收集有效文字行或單詞（支援 lines、words 及 blocks 遞迴展開）
+    let lineItems = Array.isArray(ocrData.lines) ? ocrData.lines : [];
+    let wordItems = Array.isArray(ocrData.words) ? ocrData.words : [];
+    if (lineItems.length === 0 && wordItems.length === 0 && Array.isArray(ocrData.blocks)) {
+      const flatLines = [];
+      const flatWords = [];
+      ocrData.blocks.forEach(blk => {
+        (blk.paragraphs || []).forEach(para => {
+          (para.lines || []).forEach(ln => {
+            flatLines.push(ln);
+            (ln.words || []).forEach(wd => flatWords.push(wd));
+          });
+        });
+      });
+      lineItems = flatLines;
+      wordItems = flatWords;
+    }
+    const rawItems = lineItems.length >= 2 ? lineItems : (wordItems.length > 0 ? wordItems : lineItems);
 
-    const minBoxW = Math.max(8, sw * 0.015);
-    const minBoxH = Math.max(6, sh * 0.005);
+    const minBoxW = Math.max(6, sw * 0.010);
+    const minBoxH = Math.max(5, sh * 0.004);
 
     const candidates = [];
     for (let i = 0; i < rawItems.length; i++) {
@@ -1258,7 +1285,7 @@
       const txt = (item && item.text ? item.text : '').trim();
       const b = item && item.bbox;
       if (!txt || !b) continue;
-      if (typeof item.confidence === 'number' && item.confidence < 32) continue;
+      if (typeof item.confidence === 'number' && item.confidence < 25) continue;
 
       const x0 = b.x0 * invScale;
       const y0 = b.y0 * invScale;
@@ -1267,10 +1294,8 @@
       const bw = x1 - x0;
       const bh = y1 - y0;
 
-      // 過濾極小孤立雜訊點與跨圖異常大框
       if (bw < minBoxW || bh < minBoxH) continue;
-      if (bw > sw * 0.92 || bh > sh * 0.14) continue;
-      // 必須包含實際中英數印刷字元（剔除純標點／雜線）
+      if (bw > sw * 0.94 || bh > sh * 0.16) continue;
       const coreChars = txt.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '');
       if (coreChars.length === 0) continue;
 
@@ -1287,9 +1312,9 @@
       });
     }
 
-    if (candidates.length < 3) return null;
+    if (candidates.length === 0) return null;
 
-    // 空間聚類去離群：剔除偏離主體文字直欄之桌面邊緣雜訊點
+    // 空間聚類去離群：剔除偏離主體文字直欄之桌面邊緣孤立雜訊點
     let boxes = candidates;
     if (candidates.length >= 5) {
       const sortedX0 = [...candidates].map(b => b.x0).sort((a, b) => a - b);
@@ -1298,42 +1323,69 @@
       const qHighX1 = sortedX1[Math.floor(sortedX1.length * 0.85)];
       const spanGuard = Math.max(sw * 0.14, (qHighX1 - qLowX0) * 0.35);
       const clustered = candidates.filter(b => b.x0 >= qLowX0 - spanGuard && b.x1 <= qHighX1 + spanGuard);
-      if (clustered.length >= 3) boxes = clustered;
+      if (clustered.length >= 1) boxes = clustered;
     }
-
-    if (boxes.length < 3) return null;
 
     // 計算有效文字行高代表值（中位數）
     const heights = boxes.map(b => b.bh).sort((a, b) => a - b);
     const medianH = heights[Math.floor(heights.length / 2)] || 24;
 
-    // 1. 左右紙張邊界外推（Width Anchors: ±12% * textW）
-    const minX0 = Math.min(...boxes.map(b => b.x0));
-    const maxX1 = Math.max(...boxes.map(b => b.x1));
-    const textW = maxX1 - minX0;
-    if (textW < sw * 0.12) return null;
+    // 鎖定頂部標題地標（宏匯廣場 / HONHUI PLAZA / 銷貨明細表）
+    const upperBoxes = boxes.filter(b => b.y0 < sh * 0.60).sort((a, b) => a.y0 - b.y0);
+    const headerLandmark =
+      upperBoxes.find(b => /宏匯|HONHUI|PLAZA|銷貨明細|明細表/i.test(b.text)) ||
+      upperBoxes[0] ||
+      [...boxes].sort((a, b) => a.y0 - b.y0)[0];
 
-    const cropX0 = Math.max(0, Math.round(minX0 - 0.12 * textW));
-    const cropX1 = Math.min(sw, Math.round(maxX1 + 0.12 * textW));
+    // 1. 左右寬度強制裁切（X 軸）：優先取主體文字行（聯合(連)/發票金額/發票號碼...），否則用頂部標題外擴 1.10 * headerW
+    const bodyLandmarkBoxes = boxes.filter(b => /聯合|發票金額|發票號碼|營業人|載具|統編|合計|金額|點|[A-Z]{2}\s*[-—–]?\s*\d{8}/i.test(b.text));
+    const widthRefBoxes = bodyLandmarkBoxes.length >= 2 ? bodyLandmarkBoxes : boxes;
 
-    // 2. 上下紙張邊界外推（Height Anchors: 頂部 +0.8x 行高切除折角、底部 +1.2x 行高）
-    const upperBoxes = boxes.filter(b => b.y0 < sh * 0.55).sort((a, b) => a.y0 - b.y0);
-    const headerAnchor = upperBoxes.find(b => /宏匯|銷貨明細|明細表|營業人|電子發票/.test(b.text)) || upperBoxes[0] || boxes[0];
-    const topAnchorH = Math.max(medianH, Math.min(medianH * 2.2, headerAnchor.bh));
-    const cropY0 = Math.max(0, Math.round(headerAnchor.y0 - 0.8 * topAnchorH));
+    let cropX0, cropX1, bodyW;
+    if (widthRefBoxes.length >= 2) {
+      const minX = Math.min(...widthRefBoxes.map(b => b.x0));
+      const maxX = Math.max(...widthRefBoxes.map(b => b.x1));
+      bodyW = Math.max(cfg.minCropSizePx, maxX - minX);
+      cropX0 = Math.max(0, Math.round(minX - cfg.bodyExpandXRatio * bodyW));
+      cropX1 = Math.min(sw, Math.round(maxX + cfg.bodyExpandXRatio * bodyW));
+    } else {
+      const headerW = Math.max(40, headerLandmark.x1 - headerLandmark.x0);
+      const headerCenterX = (headerLandmark.x0 + headerLandmark.x1) / 2;
+      cropX0 = Math.max(0, Math.round(headerCenterX - cfg.headerFallbackHalfW * headerW));
+      cropX1 = Math.min(sw, Math.round(headerCenterX + cfg.headerFallbackHalfW * headerW));
+      bodyW = Math.max(headerW * 1.5, cropX1 - cropX0);
+    }
 
+    // 2. 頂部高度強制裁切（Y 軸上緣）：鎖定頂部標題 topY 往上外擴 0.45 * headerHeight（切除折角）
+    const headerHeight = Math.max(medianH, Math.min(medianH * 2.5, headerLandmark.bh));
+    const cropY0 = Math.max(0, Math.round(headerLandmark.y0 - cfg.topExpandHeaderH * headerHeight));
+
+    // 3. 底部高度強制裁切（Y 軸下緣）：優先地標①（機:/序:/帳:/櫃:/商品退換貨/請妥善保管）➔ 備援地標②（發票號碼/退貨用條碼）
     const sortedByBottom = [...boxes].sort((a, b) => b.y1 - a.y1);
-    const bottomAnchor = sortedByBottom.find(b => /退換貨|請持本聯|本聯|店[:：]\d|機[:：]|序[:：]/.test(b.text)) || sortedByBottom[0];
-    const botAnchorH = Math.max(medianH, Math.min(medianH * 2.0, bottomAnchor.bh));
-    const cropY1 = Math.min(sh, Math.round(bottomAnchor.y1 + 1.2 * botAnchorH));
+    const bottomPriority1 = sortedByBottom.find(b =>
+      /機[:：]|序[:：]|帳[:：]|櫃[:：]|商品退換貨|請持本聯|請妥善保管|退換貨/i.test(b.text)
+    );
+    const invFallback2 = sortedByBottom.find(b =>
+      /發票號碼|退貨用條碼|退貨條碼|[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/i.test(b.text)
+    );
+
+    let cropY1;
+    let bottomMethod = 'fallback_last_line';
+    if (bottomPriority1) {
+      const lineH = Math.max(medianH, Math.min(medianH * 2.0, bottomPriority1.bh));
+      cropY1 = Math.min(sh, Math.round(bottomPriority1.y1 + cfg.bottomExpandLineH * lineH));
+      bottomMethod = 'priority1_bottom_line';
+    } else if (invFallback2) {
+      cropY1 = Math.min(sh, Math.round(invFallback2.y1 + cfg.invFallbackExtendW * bodyW));
+      bottomMethod = 'fallback2_invoice_no';
+    } else {
+      const lowestBox = sortedByBottom[0];
+      cropY1 = Math.min(sh, Math.round(lowestBox.y1 + Math.max(cfg.bottomExpandLineH * medianH, 0.75 * bodyW)));
+    }
 
     const cropW = cropX1 - cropX0;
     const cropH = cropY1 - cropY0;
-    if (cropW < sw * 0.18 || cropH < sh * 0.25) return null;
-
-    // 3. 驗證合理熱感應紙高寬比（1.4 <= H/W <= 3.2）
-    const hwRatio = cropH / Math.max(1, cropW);
-    if (hwRatio < 1.4 || hwRatio > 3.2) return null;
+    if (cropW <= cfg.minCropSizePx || cropH <= cfg.minCropSizePx) return null;
 
     const outCanvas = document.createElement('canvas');
     outCanvas.width = cropW;
@@ -1345,7 +1397,7 @@
 
     return {
       canvas: outCanvas,
-      method: 'text_anchors',
+      method: `landmark_forced_${bottomMethod}`,
       box: { x: cropX0, y: cropY0, w: cropW, h: cropH },
       anchorCount: boxes.length
     };
@@ -1353,6 +1405,8 @@
 
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
+    PANASONIC_WARRANTY_CONFIG,
+    RECEIPT_LANDMARK_CROP_CONFIG,
     TEMPLATES: CARD_TEMPLATES,
     INVOICE_TEMPLATES,
     detectPanasonicCardQuad,

@@ -53,6 +53,23 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 22:17:50] (第 30 版 / v30)
+- **執行項目**：**國際牌封版收尾（v30）** — 實作「純文字地標強制比例外擴一刀裁切演算法」、將發票寬高比例參數獨立集中至 `RECEIPT_LANDMARK_CROP_CONFIG`、精準上移收緊國際牌保卡第二聯「機種／機號」座標隔離，並透過 `PANASONIC_WARRANTY_CONFIG` 封裝國際牌專屬核心參數為後續品牌擴充預留乾淨介面。
+- **具體進度**：
+  1. **版本徽章同步更新為 `v30 (2026.11.23)` 並升級防快取參數**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner`，並將 `card_templates.js?v=30` 與 `app.js?v=30` 查詢參數更新至 `v=30`。
+  2. **純文字地標強制比例外擴一刀裁切（`RECEIPT_LANDMARK_CROP_CONFIG` ＋ `computeTextAnchoredReceiptCrop`）**：
+     - 徹底放棄偵測發票紙張外框與背景色，完全以 OCR 文字地標（含 `lines`/`words`/`blocks` 展開）為比例尺強制一刀裁切：
+       - **X 軸左右**：優先取主體文字群寬度 `bodyW` 外擴 `±0.15 * bodyW`（約 2 公分紙邊）；若僅抓到頂部標題 `宏匯廣場`/`HONHUI PLAZA`，則以 `headerCenterX ± 1.10 * headerW` 界定左右。
+       - **Y 軸上緣**：鎖定頂部標題上擴 `0.45 * headerHeight` 一刀切除上方折角。
+       - **Y 軸下緣**：優先地標①（`機:`/`序:`/`帳:`/`櫃:`/`商品退換貨請持本聯`/`請妥善保管`）下擴 `1.5 * lineHeight`；備援地標②（`發票號碼`/`退貨用條碼`）下擴 `0.75 * bodyW`。
+     - 移除 `1.35 ~ 3.3` 拒切比例限制，只要 `cropW > 50 && cropH > 50` 即強制執行裁切，維持直向原比例縮放為訂購單 `37%` 擺入右下欄（絕不壓扁與蓋章）。
+  3. **精準修正國際牌第二聯「機種／機號」座標徹底分離與雜訊過濾**：
+     - 將 `panasonic_slip2`（`panasonic_warranty`）之 `model` 掃描框上移鎖定為 `x: 0.055, y: 0.305, w: 0.280, h: 0.068`，`serial` 鎖定下方為 `x: 0.055, y: 0.382, w: 0.280, h: 0.068`，並於 `runCardTargetedOcr()` 取消垂直外擴避免 `model` 向下溢位掃到機號列；於 `filterWarrantyModelResult()` 明確排除純數字＋垂直邊線雜訊（如 `02926020033I`），穩定輸出 `NR-D505XV-W` 與 `02926020033`。
+  4. **國際牌模板獨立隔離封版**：
+     - 建立凍結常數 `PANASONIC_STAMP_SPEC` 與 `PANASONIC_WARRANTY_CONFIG`，完整封裝 `1.48:1` 比例、避讓蓋章參數（`X: 84.5%, Y: 36.5%, W: 21.0%`）與兩聯 OCR 座標，並提供 `CARD_TEMPLATES.panasonic_warranty` 別名介面供後續新增 LG / Samsung 等獨立模板條目時互不干擾。
+  5. 建立 `_backup/20261123_221549/` 完整備份，通過雙份 HTML 同步、語法平衡（`syntaxErrors = 0`）與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 22:01:30] (第 29 版 / v29)
 - **執行項目**：升級 `1280px` 高對比灰階預掃描＋發票文字指紋與結構編號 `100%` 單據鎖定、徹底移除 `detectRes.detected` 搶判保卡條款、新增圖片訂購單（`order_sheet`）三角色防重疊、升級過濾雜訊字框之內部有效文字群外推熱感應紙邊界裁切，以及放寬保卡局部裁切並以 `PSM = 6` 完整讀取機種／機號。
 - **具體進度**：
