@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="static/style.css?v=38">
+  <link rel="stylesheet" href="static/style.css?v=39">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36/v38: 電腦「...」/ 盲打時間；手機三連擊 / 數字鍵盤) -->
@@ -39,7 +39,7 @@
   <div id="mobileTopBar" class="mobile-top-bar">
     <div class="mobile-top-left">
       <span class="mobile-top-title">拼貼工作台</span>
-      <span class="version-badge mobile-ver-badge">v38</span>
+      <span class="version-badge mobile-ver-badge">v39</span>
     </div>
     <div class="mobile-progress-badges" id="mobileProgressBadges">
       <span class="mobile-step-badge" id="mBadgeOrder">訂購單</span>
@@ -71,7 +71,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v38 (2026.11.24)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v39 (2026.11.24)</span>
     </div>
 
     <div class="header-actions">
@@ -151,10 +151,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v38) -->
+      <!-- 目前版本資訊橫幅 (v39) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v38 (2026.11.24)</span>
+        <span class="version-badge">v39 (2026.11.24)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -791,16 +791,19 @@ demo@example.com
 
   </div>
 
-  <!-- 手機端底部動作列 (v38: 僅 .is-mobile-mode 顯示) -->
+  <!-- 手機端底部動作列 (v39: 清空 / 下載 / 分享 獨立按鈕，僅 .is-mobile-mode 顯示) -->
   <div id="mobileBottomBar" class="mobile-bottom-bar">
     <button type="button" class="btn btn-outline mobile-bottom-btn mobile-btn-clear" id="btnMobileClear">
-      🗑️ 清空重來
+      🗑️ 清空
     </button>
     <button type="button" class="btn btn-outline mobile-bottom-btn mobile-btn-stamp hidden" id="btnMobileStampShortcut">
       🖋️ 蓋上專櫃印章
     </button>
-    <button type="button" class="btn btn-primary mobile-bottom-btn mobile-btn-export" id="btnMobileExport">
-      📤 儲存 / 傳送圖片
+    <button type="button" class="btn btn-outline mobile-bottom-btn mobile-btn-download" id="btnMobileDownload">
+      ⬇️ 下載
+    </button>
+    <button type="button" class="btn btn-primary mobile-bottom-btn mobile-btn-share" id="btnMobileShare">
+      📤 分享
     </button>
   </div>
 
@@ -845,9 +848,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v38) -->
-  <script src="static/card_templates.js?v=38"></script>
-  <!-- 主互動程式碼 (v38) -->
-  <script src="static/app.js?v=38"></script>
+  <!-- 品牌保卡智慧模板庫 (v39) -->
+  <script src="static/card_templates.js?v=39"></script>
+  <!-- 主互動程式碼 (v39) -->
+  <script src="static/app.js?v=39"></script>
 </body>
 </html>

@@ -53,6 +53,17 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 01:18:43] (第 39 版 / v39)
+- **執行項目**：**手機多選防漏單修復 ＋「下載 / 分享」雙鍵拆分（v39）** — 徹底修復手機相簿複選保卡與發票時因即時清除 `<input>.value` 導致活體 `FileList` 參考提前清空而漏掉第二張照片之 Bug，並將手機底部動作列拆分為等寬並排之獨立「清空」、「下載」與「分享」按鈕。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v39`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner` 為 `v39 (2026.11.24)`、手機頂部 `.mobile-ver-badge` 為 `v39`，並將資源參數更新為 `style.css?v=39`、`card_templates.js?v=39` 與 `app.js?v=39`。
+  2. **修復手機端相簿多選少一張 Bug（`Array.from` 瞬間靜態快照）**：
+     - 於 `#mobilePhotoInput`、`#mobilePdfInput` 及桌面端 `#fileInput` 的 `change` 監聽器第一行即刻執行 `const pickedFiles = Array.from(e.target.files || []);`，在清空 `e.target.value = ''` 之前鎖定完整靜態檔案陣列；並同步於 `handleFiles(fileList)` 入口進行 `Array.from(fileList || [])` 二次快照與 `importImagePureFrontend` 異常安全 `resolve()` 防呆，確保 iOS Safari / Android Chrome 在日期彈窗或非同步解碼期間複選「保卡 ＋ 發票」絕不遺漏任何一張，並同步點亮 `[保卡]` 與 `[發票]` 進度綠燈。
+  3. **手機底部動作列拆分為「清空」、「下載」、「分享」獨立按鈕**：
+     - 調整 `index.html`、`static/index.html`、`static/style.css` 與 `static/app.js`：`#btnMobileClear`（「🗑️ 清空」）、`#btnMobileDownload`（「⬇️ 下載」，強制走 `buildExportPngBlob()` ➔ `triggerPngBlobDownload()` 直接下載 300DPI 無損 PNG 至手機本機不彈分享選單）、`#btnMobileShare`（「📤 分享」，優先呼叫 `navigator.share({ files: [...] })` 喚起原生分享傳送 LINE，不支援時自動降級下載），採 `flex: 1 1 0` 等寬俐落排列（並保留未建檔品牌保卡動態 `#btnMobileStampShortcut` 快捷鈕）。
+  4. 建立 `_backup/20261124_011121/` 備份，通過 `HTML_SYNC_OK=True`、`STALE_EXPORT_REFS=0`、JS 語法檢查 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 00:34:44] (第 38 版 / v38)
 - **執行項目**：**手機端極簡自動模式 ＋ PDF／相簿雙軌分流上傳（v38）** — 在 100% 保留電腦版既有功能、比例與微調工具列前提下，新增自動手機裝置偵測切換極簡 4 區塊佈局、雙軌獨立選檔（PDF 檔案 App / 相簿多選）、完整三件組／單獨蓋保卡雙模式、觸控雙指縮放＋單指拖曳印章即時光影配色，以及手機隱形鎖三連擊／虛擬數字鍵盤解鎖。
 - **具體進度**：

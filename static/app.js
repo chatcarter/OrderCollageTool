@@ -114,7 +114,8 @@ const btnMobileSelectPdf = document.getElementById('btnMobileSelectPdf');
 const btnMobileSelectPhotos = document.getElementById('btnMobileSelectPhotos');
 const btnMobileClear = document.getElementById('btnMobileClear');
 const btnMobileStampShortcut = document.getElementById('btnMobileStampShortcut');
-const btnMobileExport = document.getElementById('btnMobileExport');
+const btnMobileDownload = document.getElementById('btnMobileDownload');
+const btnMobileShare = document.getElementById('btnMobileShare');
 const btnMobileSwitchDesktop = document.getElementById('btnMobileSwitchDesktop');
 const btnHeaderSwitchMobile = document.getElementById('btnHeaderSwitchMobile');
 const mBadgeOrder = document.getElementById('mBadgeOrder');
@@ -2615,11 +2616,14 @@ function deleteActiveLayer() {
   if (activeLayer) deleteLayer(activeLayer);
 }
 
-// --- 檔案匯入處理 (純前端解析) ---
+// --- 檔案匯入處理 (純前端解析；第一時間轉靜態陣列快照防手機多選參考釋放) ---
 async function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
+
   let hasImageFile = false;
-  for (let i = 0; i < fileList.length; i++) {
-    const extCheck = fileList[i].name.split('.').pop().toLowerCase();
+  for (let i = 0; i < files.length; i++) {
+    const extCheck = (files[i].name || '').split('.').pop().toLowerCase();
     if (['jpg', 'jpeg', 'png', 'webp'].includes(extCheck)) {
       hasImageFile = true;
       break;
@@ -2630,9 +2634,9 @@ async function handleFiles(fileList) {
     openStampDatePromptIfNeeded();
   }
 
-  for (let i = 0; i < fileList.length; i++) {
-    const file = fileList[i];
-    const ext = file.name.split('.').pop().toLowerCase();
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const ext = (file.name || '').split('.').pop().toLowerCase();
 
     if (ext === 'pdf') {
       await importPdfPureFrontend(file);
@@ -3072,7 +3076,15 @@ function importImagePureFrontend(file) {
 
         resolve();
       };
+      img.onerror = () => {
+        showToast(`圖片解碼失敗: ${file.name}`);
+        resolve();
+      };
       img.src = e.target.result;
+    };
+    reader.onerror = () => {
+      showToast(`檔案讀取失敗: ${file.name}`);
+      resolve();
     };
     reader.readAsDataURL(file);
   });
@@ -4675,9 +4687,10 @@ canvasViewport.addEventListener('wheel', e => {
 
 btnSelectFiles.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', e => {
-  if (e.target.files && e.target.files.length > 0) {
-    handleFiles(e.target.files);
-    fileInput.value = '';
+  const pickedFiles = Array.from(e.target.files || []);
+  fileInput.value = '';
+  if (pickedFiles.length > 0) {
+    handleFiles(pickedFiles);
   }
 });
 
@@ -7587,9 +7600,10 @@ function initMobileWorkbenchControls() {
   if (btnMobileSelectPdf && mobilePdfInput) {
     btnMobileSelectPdf.addEventListener('click', () => mobilePdfInput.click());
     mobilePdfInput.addEventListener('change', e => {
-      if (e.target.files && e.target.files.length > 0) {
-        handleFiles(e.target.files);
-        mobilePdfInput.value = '';
+      const pickedFiles = Array.from(e.target.files || []);
+      mobilePdfInput.value = '';
+      if (pickedFiles.length > 0) {
+        handleFiles(pickedFiles);
       }
     });
   }
@@ -7597,9 +7611,10 @@ function initMobileWorkbenchControls() {
   if (btnMobileSelectPhotos && mobilePhotoInput) {
     btnMobileSelectPhotos.addEventListener('click', () => mobilePhotoInput.click());
     mobilePhotoInput.addEventListener('change', e => {
-      if (e.target.files && e.target.files.length > 0) {
-        handleFiles(e.target.files);
-        mobilePhotoInput.value = '';
+      const pickedFiles = Array.from(e.target.files || []);
+      mobilePhotoInput.value = '';
+      if (pickedFiles.length > 0) {
+        handleFiles(pickedFiles);
       }
     });
   }
@@ -7614,8 +7629,16 @@ function initMobileWorkbenchControls() {
     });
   }
 
-  if (btnMobileExport) {
-    btnMobileExport.addEventListener('click', async () => {
+  if (btnMobileDownload) {
+    btnMobileDownload.addEventListener('click', async () => {
+      const res = await buildExportPngBlob();
+      if (!res) return;
+      triggerPngBlobDownload(res.blob, res.filename, res.finalW, res.finalH);
+    });
+  }
+
+  if (btnMobileShare) {
+    btnMobileShare.addEventListener('click', async () => {
       const res = await buildExportPngBlob();
       if (!res) return;
 
@@ -7631,7 +7654,7 @@ function initMobileWorkbenchControls() {
             files: [fileObj],
             title: res.filename
           });
-          showToast('已完成圖片分享 / 儲存');
+          showToast('已完成系統分享 / 傳送');
           return;
         } catch (err) {
           if (err && err.name === 'AbortError') return;

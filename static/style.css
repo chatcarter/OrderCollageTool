@@ -1315,24 +1315,24 @@ body.is-mobile-mode .mobile-bottom-bar {
 }
 
 .mobile-bottom-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 46px;
   font-size: 13px;
   font-weight: 700;
   justify-content: center;
   border-radius: 8px;
-  padding: 8px 8px;
+  padding: 8px 6px;
+  white-space: nowrap;
 }
 
 .mobile-btn-clear {
-  flex: 0.85;
   color: #b91c1c;
   border-color: #fca5a5;
   background: #fef2f2;
 }
 
 .mobile-btn-stamp {
-  flex: 1.05;
   color: #003FBC;
   border: 1.5px solid #003FBC;
   background: #eff6ff;
@@ -1342,8 +1342,13 @@ body.is-mobile-mode .mobile-bottom-bar {
   display: none !important;
 }
 
-.mobile-btn-export {
-  flex: 1.25;
+.mobile-btn-download {
+  color: #0f172a;
+  border: 1.5px solid #94a3b8;
+  background: #f8fafc;
+}
+
+.mobile-btn-share {
   background: #003FBC;
   color: #ffffff;
 }
