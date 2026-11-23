@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 21:38:30] (第 28 版 / v28)
+- **執行項目**：重構匯入前快速關鍵字預掃描＋色彩雙重精準分流、導入基於 3～4 組 OCR 關鍵字錨點之銷貨明細裁切邊界框計算、實施嚴格 `docRole` 圖層角色隔離，以及建立非空值 OCR 狀態合併保護機制。
+- **具體進度**：
+  1. **版本徽章更新**：同步更新 `index.html` 與 `static/index.html` 為 `v28 (2026.11.23)`。
+  2. **關鍵字預掃描與色彩雙重分流**：於 `static/app.js` 實作 `quickPreScanImageText()` 並與 `static/card_templates.js` 之 `classifyDocumentByTextAndColor()` 串接，精準區分電子發票明細與國際牌保卡，發票絕不進入 `1.48:1` 拉正或專櫃蓋章流程。
+  3. **OCR 文字錨點發票裁切框**：實作 `computeTextAnchoredReceiptCrop()`，依「電子發票證明聯／營業人統編／商品明細／發票號碼」Bounding Box 反推裁切框並自動切除上方折角與桌面背景，以右欄 `37%` 等比例擺放；若錨點不足自動回退 `autoTrimReceiptImage()`。
+  4. **角色隔離與非空值狀態合併**：全圖層引入 `docRole` 標記（`order_sheet` / `warranty_card` / `receipt`）並建立 `mergeOcrSummaryFields()`，確保發票與保卡 OCR 欄位嚴格隔離且後匯入單據之空值絕不覆蓋前一張已辨識之有效結果。
+  5. 建立 `_backup/20261123_213413/` 完整備份，通過雙份 HTML 同步、語法平衡與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 21:28:09] (第 27 版 / v27)
 - **執行項目**：徹底根除 `Cannot read properties of undefined (reading 'parseInvoiceHeaderFields')` 錯誤（清除 `card_templates.js` 重複宣告語法錯誤並加上安全存在性防護），並強化保卡匯入分流條件確保 100% 觸發離屏透視拉正與自動蓋章。
 - **具體進度**：

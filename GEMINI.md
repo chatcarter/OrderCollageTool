@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 21:38:30] (第 28 版 / v28)
+- **執行項目**：重構匯入前快速關鍵字預掃描＋色彩雙重精準分流、導入基於 3～4 組 OCR 關鍵字錨點之銷貨明細裁切邊界框計算、實施嚴格 `docRole` 圖層角色隔離，以及建立非空值 OCR 狀態合併保護機制。
+- **具體進度**：
+  1. **版本徽章同步更新為 `v28 (2026.11.23)`**：
+     - 同步更新 `index.html`、`static/index.html` 頂部 `#headerVersionBadge` 與右側 `#panelVersionBanner`。
+  2. **快速關鍵字預掃描 ＋ 色彩雙重精準分流（`quickPreScanImageText` ＋ `classifyDocumentByTextAndColor`）**：
+     - 於 `static/card_templates.js` 新增 `RECEIPT_KEYWORDS`、`WARRANTY_KEYWORDS` 與 `classifyDocumentByTextAndColor()`，優先比對關鍵字命中數與面積最大比例之紅褐色保卡外框，徹底杜絕「電子發票被誤判為保卡、被壓扁為 `1.48:1` 且誤蓋專櫃印章」之問題。
+  3. **基於 OCR 文字錨點之發票白紙明細框精密裁切（`computeTextAnchoredReceiptCrop`）**：
+     - 依據預掃描取得的 `lines / words` Bounding Box 反推原始尺寸文字外包矩形，左右延伸 `±12% * textW`、上方緊貼標題列上方 `0.8x` 行高以徹底切除折角與上方桌面背景、下方延伸 `1.2x` 條碼／結尾行高，並校驗合理高寬比（`1.35 <= H/W <= 3.3`），異常時自動回退 `autoTrimReceiptImage()`；依訂購單基準 `37%` 欄寬等比例縮放至右欄。
+  4. **嚴格圖層角色隔離與非空值 OCR 合併保護（`docRole` ＋ `mergeOcrSummaryFields`）**：
+     - 為 `createLayerObject()` 與 PDF／影像匯入建立獨立 `docRole`（`'order_sheet'` / `'warranty_card'` / `'receipt'`），並於 `resolveLayoutRoleLayers()`、`getTargetWarrantyImageLayer()`、`syncSummaryTextLayer()` 與 `autoArrangeWorkbenchLayout()` 一致套用角色配對。
+     - 新增 `mergeOcrSummaryFields(sourceRole, fields)`：發票 OCR 僅更新非空之 `date`、`invoiceNo`、`sellerTaxId`（並支援合併預掃描文字 `preScanText`）；保卡 OCR 僅更新非空之 `brand`、`model`、`serialNo`，空字串或佔位符絕不覆蓋既有有效欄位。
+  5. 建立 `_backup/20261123_213413/` 完整備份，全專案通過雙份 HTML 同步檢核、括號平衡驗證（`syntaxErrors = 0`）與 `CRLF` 換行檢核，並推送至 GitHub。
+
 ### [2026-11-23 21:28:09] (第 27 版 / v27)
 - **執行項目**：徹底根除 `Cannot read properties of undefined (reading 'parseInvoiceHeaderFields')` 錯誤（清除 `card_templates.js` 重複宣告語法錯誤並加上安全存在性防護），並強化保卡匯入分流條件確保 100% 觸發離屏透視拉正與自動蓋章。
 - **具體進度**：

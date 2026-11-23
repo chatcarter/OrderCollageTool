@@ -1080,6 +1080,146 @@
     };
   }
 
+  /**
+   * v28: 快速關鍵字與色彩雙重分類（嚴格區分 receipt 發票 vs warranty_card 保卡）
+   */
+  const RECEIPT_KEYWORDS = [
+    '銷貨明細', '明細表', '載具', '發票號碼', '統編', '宏匯廣場', '營業人', '點數', '退貨用條碼', '退換貨'
+  ];
+  const WARRANTY_KEYWORDS = [
+    'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商', '顧客收執', '保證內容', '2601335017'
+  ];
+
+  function classifyDocumentByTextAndColor(ocrText, detectRes, sw, sh, isManualPanasonic = false) {
+    if (isManualPanasonic) {
+      return { role: 'warranty_card', reason: '手動指定國際牌保卡模板' };
+    }
+
+    const upper = (ocrText || '').toUpperCase();
+    let receiptHits = [];
+    let warrantyHits = [];
+
+    RECEIPT_KEYWORDS.forEach(kw => {
+      if (upper.includes(kw.toUpperCase())) receiptHits.push(kw);
+    });
+    WARRANTY_KEYWORDS.forEach(kw => {
+      if (upper.includes(kw.toUpperCase())) warrantyHits.push(kw);
+    });
+
+    if (receiptHits.length > 0 && receiptHits.length >= warrantyHits.length) {
+      return { role: 'receipt', reason: `預掃描命中發票關鍵字 (${receiptHits.slice(0, 3).join('、')})` };
+    }
+    if (warrantyHits.length > 0) {
+      return { role: 'warranty_card', reason: `預掃描命中保卡關鍵字 (${warrantyHits.slice(0, 3).join('、')})` };
+    }
+
+    // 無文字或預掃描未命中關鍵字時，依紅褐色外框＋底紙色彩與方向雙重特徵判定
+    if (detectRes && detectRes.detected) {
+      return { role: 'warranty_card', reason: '偵測到紅褐色保卡外框與底紙特徵' };
+    }
+    const isHorizontal = sw >= sh;
+    const aspectHW = sh / Math.max(1, sw);
+    const paperIsHorizontal = !!(detectRes && detectRes.paperBox && (detectRes.paperBox.w / Math.max(1, detectRes.paperBox.h)) >= 1.15);
+
+    if (!isHorizontal && !paperIsHorizontal && aspectHW >= 1.25) {
+      return { role: 'receipt', reason: '無紅褐色外框之直立熱感應紙張特徵' };
+    }
+    if (isHorizontal || paperIsHorizontal) {
+      return { role: 'warranty_card', reason: '橫向卡片比例特徵' };
+    }
+    return { role: 'receipt', reason: '預設直向單據特徵' };
+  }
+
+  /**
+   * v28: Text-Anchored Bounding Box — 基於 3～4 組關鍵文字錨點反推銷貨明細真實寬高裁切框
+   * 寬度外擴 12% * textW，頂部上擴 0.8x 字高（切除上方多餘折角），底部下擴 1.2x 字高
+   */
+  function computeTextAnchoredReceiptCrop(srcImg, ocrData, preScale = 1) {
+    if (!srcImg || !ocrData) return null;
+    const sw = srcImg.width;
+    const sh = srcImg.height;
+    const invScale = 1 / Math.max(0.05, preScale);
+
+    // 收集有效文字行或單詞（優先使用 lines，如無則用 words）
+    const rawItems = (Array.isArray(ocrData.lines) && ocrData.lines.length >= 3)
+      ? ocrData.lines
+      : (Array.isArray(ocrData.words) ? ocrData.words : []);
+
+    const boxes = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const item = rawItems[i];
+      const txt = (item && item.text ? item.text : '').trim();
+      const b = item && item.bbox;
+      if (!txt || !b) continue;
+      if (typeof item.confidence === 'number' && item.confidence < 25) continue;
+
+      const x0 = b.x0 * invScale;
+      const y0 = b.y0 * invScale;
+      const x1 = b.x1 * invScale;
+      const y1 = b.y1 * invScale;
+      const bw = x1 - x0;
+      const bh = y1 - y0;
+      // 過濾異常雜訊大框或極小點
+      if (bw <= 4 || bh <= 4) continue;
+      if (bw > sw * 0.94 || bh > sh * 0.16) continue;
+      // 至少需含中英數字元
+      if (!/[A-Za-z0-9\u4e00-\u9fff]/.test(txt)) continue;
+
+      boxes.push({ text: txt, x0, y0, x1, y1, bw, bh });
+    }
+
+    if (boxes.length < 3) return null;
+
+    // 計算行高代表值（中位數）
+    const heights = boxes.map(b => b.bh).sort((a, b) => a - b);
+    const medianH = heights[Math.floor(heights.length / 2)] || 24;
+
+    // 1. 左右寬度反推（Width Anchors）
+    const minX0 = Math.min(...boxes.map(b => b.x0));
+    const maxX1 = Math.max(...boxes.map(b => b.x1));
+    const textW = maxX1 - minX0;
+    if (textW < sw * 0.12) return null;
+
+    const cropX0 = Math.max(0, Math.round(minX0 - 0.12 * textW));
+    const cropX1 = Math.min(sw, Math.round(maxX1 + 0.12 * textW));
+
+    // 2. 上下高度反推（Height Anchors）
+    // 頂部優先鎖定「宏匯廣場 / 銷貨明細表 / 明細表」，否則取上半部最上方有效文字行
+    const upperBoxes = boxes.filter(b => b.y0 < sh * 0.55).sort((a, b) => a.y0 - b.y0);
+    const headerAnchor = upperBoxes.find(b => /宏匯|銷貨明細|明細表|營業人/.test(b.text)) || upperBoxes[0] || boxes[0];
+    const topAnchorH = Math.max(medianH, Math.min(medianH * 2.2, headerAnchor.bh));
+    const cropY0 = Math.max(0, Math.round(headerAnchor.y0 - 0.8 * topAnchorH));
+
+    // 底部優先鎖定「商品退換貨請持本聯 / 退換貨 / 機: / 序: / 本聯」，否則取最下方有效文字行
+    const sortedByBottom = [...boxes].sort((a, b) => b.y1 - a.y1);
+    const bottomAnchor = sortedByBottom.find(b => /退換貨|本聯|機[:：]|序[:：]|退貨/.test(b.text)) || sortedByBottom[0];
+    const botAnchorH = Math.max(medianH, Math.min(medianH * 2.0, bottomAnchor.bh));
+    const cropY1 = Math.min(sh, Math.round(bottomAnchor.y1 + 1.2 * botAnchorH));
+
+    const cropW = cropX1 - cropX0;
+    const cropH = cropY1 - cropY0;
+    if (cropW < sw * 0.18 || cropH < sh * 0.25) return null;
+
+    // 驗證合理發票高寬比（正常銷貨明細約 1.6:1 ~ 2.6:1，容許區間 1.35 ~ 3.3）
+    const hwRatio = cropH / Math.max(1, cropW);
+    if (hwRatio < 1.35 || hwRatio > 3.3) return null;
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = cropW;
+    outCanvas.height = cropH;
+    const oCtx = outCanvas.getContext('2d');
+    oCtx.imageSmoothingEnabled = true;
+    oCtx.imageSmoothingQuality = 'high';
+    oCtx.drawImage(srcImg, cropX0, cropY0, cropW, cropH, 0, 0, cropW, cropH);
+
+    return {
+      canvas: outCanvas,
+      method: 'text_anchors',
+      box: { x: cropX0, y: cropY0, w: cropW, h: cropH },
+      anchorCount: boxes.length
+    };
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     TEMPLATES: CARD_TEMPLATES,
@@ -1092,6 +1232,8 @@
     adaptStampCanvasToLighting,
     compositeStampOnOffscreenCard,
     autoTrimReceiptImage,
+    classifyDocumentByTextAndColor,
+    computeTextAnchoredReceiptCrop,
     normalizeTaiwanInvoiceNo,
     parseInvoiceHeaderFields,
     filterWarrantyModelResult,
