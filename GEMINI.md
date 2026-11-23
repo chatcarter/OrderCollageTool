@@ -53,6 +53,19 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 01:48:24] (第 41 版 / v41)
+- **執行項目**：**手機工作區全開展開 ＋ 製作完成大字提示 ＋ 雙擊印章「改日期」按鈕（v41）** — 徹底修復手機端畫布在匯入後出現左上角小視窗裁切的問題，並於三樣組合蓋章完成後於螢幕正中央顯示四行大字穿透式提示，同時於雙擊印章浮動編輯列「歸零」鈕左側新增「改日期」快捷鈕。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v41`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner` 及 `.mobile-ver-badge` 為 `v41 (2026.11.24)`，並將資源參數更新為 `style.css?v=41`、`card_templates.js?v=41` 與 `app.js?v=41`。
+  2. **修復手機端中央工作區域全開展開與三樣完成滿版不分切**：
+     - 於雙份 HTML `#canvasViewport` 內新增 `#canvasStage` 尺寸橋接層（配合 `static/style.css` `.is-mobile-mode` 之 `flex: 1 1 0%` 全開容器設定），取代易受 `inline-block` 負邊距影響之佈局，改以精準 `visualW × visualH` 佔位並搭配 `margin: auto` 自動垂直水平置中；匯入、自動排版、補蓋章完成及手機隱形鎖解鎖（`unlockStealthLock`）後皆自動重算 `fitCanvasToViewport()` 滿版呈現，徹底消除右半發票與底部 5 行文字裁邊問題。
+  3. **三樣組合完成正中央四行大字穿透式淡入淡出提示（`#mobileCompleteOverlay`）**：
+     - 於手機端偵測訂購單、保卡、發票三樣皆備齊且保卡已蓋章渲染完成時，呼叫 `checkAndShowMobileCompletionOverlay()` ➔ `showMobileThreePieceCompleteOverlay()`，於畫面正中央以 `0.25s` 淡入、停留 `1.5s`、`0.4s` 淡出顯示「保卡 / 發票 / 訂單 / 製作完成」深色圓角卡片；全程設定 `pointer-events: none; user-select: none;`，完全穿透不阻斷底部「清空 / 下載 / 分享」操作。
+  4. **雙擊印章浮動編輯列新增「改日期」按鈕（`#btnMobileChangeStampDate`）**：
+     - 於 `#mobileStampEditBar`「歸零」按鈕緊鄰左側配置明顯之「改日期」鈕，點擊即透過 `openStampDateEditDialog()` 喚起既有民國日期輸入小視窗（預帶目前印章日期並開啟數字鍵盤），確認送出後即時更新該印章日期重繪，完整保留既有印章位置、雙指縮放尺寸、落點光影採樣與藍色深淺設定。
+  5. 建立 `_backup/20261124_014536/` 備份，通過 `HTML_SYNC_OK=True`、JS 語法平衡 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 01:27:32] (第 40 版 / v40)
 - **執行項目**：**手機預覽圖紙自動滿版 ＋ 雙擊印章雙指縮放調色 ＋ 雙擊文字編輯（v40）** — 完整保留電腦版所有工具列與既有封版辨識排版核心，全面升級手機端中央畫布滿版適配、預設隱藏選取框防誤觸、雙擊專櫃印章進入藍色框編輯（支援單指拖曳、雙指縮放、浮動藍色深淺滑桿），以及雙擊左下 5 行核對文字直接彈窗編輯。
 - **具體進度**：

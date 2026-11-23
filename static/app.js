@@ -121,15 +121,18 @@ const btnHeaderSwitchMobile = document.getElementById('btnHeaderSwitchMobile');
 const mBadgeOrder = document.getElementById('mBadgeOrder');
 const mBadgeCard = document.getElementById('mBadgeCard');
 const mBadgeReceipt = document.getElementById('mBadgeReceipt');
+const canvasStage = document.getElementById('canvasStage');
 const mobileStampEditBar = document.getElementById('mobileStampEditBar');
 const mobileBlueToneSlider = document.getElementById('mobileBlueToneSlider');
 const mobileBlueToneVal = document.getElementById('mobileBlueToneVal');
+const btnMobileChangeStampDate = document.getElementById('btnMobileChangeStampDate');
 const btnMobileResetBlueTone = document.getElementById('btnMobileResetBlueTone');
 const btnMobileDoneEdit = document.getElementById('btnMobileDoneEdit');
 const mobileTextEditModalBackdrop = document.getElementById('mobileTextEditModalBackdrop');
 const mobileTextEditTextarea = document.getElementById('mobileTextEditTextarea');
 const btnCancelMobileTextEdit = document.getElementById('btnCancelMobileTextEdit');
 const btnConfirmMobileTextEdit = document.getElementById('btnConfirmMobileTextEdit');
+const mobileCompleteOverlay = document.getElementById('mobileCompleteOverlay');
 
 // 縮放、圖紙尺寸與復原控制
 const btnUndo = document.getElementById('btnUndo');
@@ -689,22 +692,21 @@ function setZoom(zoom) {
   canvasWrapper.style.height = `${canvasHeight}px`;
   canvasWrapper.style.transform = `scale(${currentZoom})`;
   canvasWrapper.style.transformOrigin = 'top left';
+  canvasWrapper.style.marginLeft = '';
+  canvasWrapper.style.marginTop = '';
+  canvasWrapper.style.marginRight = '';
+  canvasWrapper.style.marginBottom = '';
 
-  if (isMobile && canvasViewport) {
-    const pad = 8;
-    const visualW = Math.round(canvasWidth * currentZoom);
-    const visualH = Math.round(canvasHeight * currentZoom);
-    const availW = Math.max(80, canvasViewport.clientWidth - pad * 2);
-    const availH = Math.max(80, canvasViewport.clientHeight - pad * 2);
-    canvasWrapper.style.marginRight = `${-(canvasWidth - visualW)}px`;
-    canvasWrapper.style.marginBottom = `${-(canvasHeight - visualH)}px`;
-    canvasWrapper.style.marginLeft = `${Math.max(0, Math.floor((availW - visualW) / 2))}px`;
-    canvasWrapper.style.marginTop = `${Math.max(0, Math.floor((availH - visualH) / 2))}px`;
-  } else {
-    canvasWrapper.style.marginLeft = '';
-    canvasWrapper.style.marginTop = '';
-    canvasWrapper.style.marginRight = '';
-    canvasWrapper.style.marginBottom = '';
+  if (canvasStage) {
+    if (isMobile) {
+      const visualW = Math.max(1, Math.round(canvasWidth * currentZoom));
+      const visualH = Math.max(1, Math.round(canvasHeight * currentZoom));
+      canvasStage.style.width = `${visualW}px`;
+      canvasStage.style.height = `${visualH}px`;
+    } else {
+      canvasStage.style.width = '';
+      canvasStage.style.height = '';
+    }
   }
 
   if (zoomPercent) {
@@ -714,7 +716,7 @@ function setZoom(zoom) {
 
 function fitCanvasToViewport() {
   const isMobile = document.body.classList.contains('is-mobile-mode');
-  const pad = isMobile ? 8 : 32;
+  const pad = isMobile ? 10 : 32;
   const availW = Math.max(120, canvasViewport.clientWidth - pad * 2);
   const availH = Math.max(120, canvasViewport.clientHeight - pad * 2);
   const scaleW = availW / canvasWidth;
@@ -2837,6 +2839,15 @@ async function handleFiles(fileList) {
       showToast(`不支援的檔案格式: ${file.name}`);
     }
   }
+
+  if (document.body.classList.contains('is-mobile-mode')) {
+    if (typeof getMobileEditingStampLayer === 'function' && !getMobileEditingStampLayer()) {
+      fitCanvasToViewport();
+    }
+    if (typeof checkAndShowMobileCompletionOverlay === 'function') {
+      checkAndShowMobileCompletionOverlay();
+    }
+  }
 }
 
 // --- 訂購單 6.0x 超高取樣文字銳利化讀取與 +12px 精準切線 ---
@@ -4834,8 +4845,10 @@ function clearWorkbenchSession(forceConfirm = true) {
   if (inputCardModel) inputCardModel.value = '';
   if (inputCardSerial) inputCardSerial.value = '';
   if (typeof exitMobileEditMode === 'function') exitMobileEditMode(true);
+  if (typeof resetMobileCompletionOverlayState === 'function') resetMobileCompletionOverlayState();
   setActiveLayer(null);
   if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
+  if (document.body.classList.contains('is-mobile-mode')) fitCanvasToViewport();
   render();
   showToast('畫布已清空');
 }
@@ -6631,6 +6644,16 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
       cardLayer.bakedStampMeta = { dateStr, fontSize, offsetY, stampSpec };
       updateLayersListUI();
       render();
+      if (document.body.classList.contains('is-mobile-mode')) {
+        requestAnimationFrame(() => {
+          if (typeof getMobileEditingStampLayer === 'function' && !getMobileEditingStampLayer()) {
+            fitCanvasToViewport();
+          }
+          if (typeof checkAndShowMobileCompletionOverlay === 'function') {
+            checkAndShowMobileCompletionOverlay();
+          }
+        });
+      }
       setCanvasOcrPill(`✅ 已依指定日期蓋上專櫃印章 (${dateStr})`, 'success');
       showToast(`已依指定日期於保卡蓋上專櫃印章 (${dateStr})`);
       return true;
@@ -6895,6 +6918,32 @@ async function finalizeWarrantyCardStampAfterLayout(cardLayer) {
   });
 }
 
+let pendingStampDateEditCallback = null;
+
+function openStampDateEditDialog(initialDateStr, onConfirm) {
+  if (!stampDateModalBackdrop || !modalStampDateInput) return;
+  pendingStampDateEditCallback = typeof onConfirm === 'function' ? onConfirm : null;
+  const initVal = (initialDateStr || '').trim();
+  modalStampDateInput.value = initVal;
+  if (modalStampDateError) {
+    modalStampDateError.classList.add('hidden');
+    modalStampDateError.textContent = '';
+  }
+  if (modalStampDatePreview) {
+    const check = normalizeMinguoStampDateInput(initVal);
+    modalStampDatePreview.textContent = check.valid
+      ? `✓ 目前印章日期：${check.formatted}（輸入 7 碼如 1150417 可改期）`
+      : '格式範例：輸入 1150417 自動轉為 115.04.17';
+  }
+  stampDateModalBackdrop.classList.remove('hidden');
+  setTimeout(() => {
+    modalStampDateInput.focus();
+    if (typeof modalStampDateInput.select === 'function') {
+      modalStampDateInput.select();
+    }
+  }, 20);
+}
+
 function initStampDateModal() {
   if (!stampDateModalBackdrop || !modalStampDateInput || !btnConfirmModalStampDate) return;
 
@@ -6917,6 +6966,13 @@ function initStampDateModal() {
       modalStampDateError.classList.add('hidden');
     }
     stampDateModalBackdrop.classList.add('hidden');
+
+    if (pendingStampDateEditCallback) {
+      const cb = pendingStampDateEditCallback;
+      pendingStampDateEditCallback = null;
+      cb(check.formatted);
+      return;
+    }
 
     if (pendingStampDateWaiter) {
       const waiter = pendingStampDateWaiter;
@@ -6965,6 +7021,13 @@ function initStampDateModal() {
   });
 
   btnConfirmModalStampDate.addEventListener('click', submitDate);
+
+  stampDateModalBackdrop.addEventListener('click', e => {
+    if (e.target === stampDateModalBackdrop && pendingStampDateEditCallback) {
+      pendingStampDateEditCallback = null;
+      stampDateModalBackdrop.classList.add('hidden');
+    }
+  });
 }
 
 function initSmartWarrantyModule() {
@@ -7903,11 +7966,69 @@ async function handleMobileCanvasDoubleTap(coords) {
   }
 }
 
+let hasShownMobileThreePieceComplete = false;
+let mobileCompleteFadeTimer = null;
+let mobileCompleteHideTimer = null;
+
+function resetMobileCompletionOverlayState() {
+  hasShownMobileThreePieceComplete = false;
+  if (mobileCompleteFadeTimer) {
+    clearTimeout(mobileCompleteFadeTimer);
+    mobileCompleteFadeTimer = null;
+  }
+  if (mobileCompleteHideTimer) {
+    clearTimeout(mobileCompleteHideTimer);
+    mobileCompleteHideTimer = null;
+  }
+  if (mobileCompleteOverlay) {
+    mobileCompleteOverlay.classList.add('hidden');
+    mobileCompleteOverlay.classList.remove('show', 'fade-out');
+  }
+}
+
+function showMobileThreePieceCompleteOverlay() {
+  if (!mobileCompleteOverlay) return;
+  if (mobileCompleteFadeTimer) clearTimeout(mobileCompleteFadeTimer);
+  if (mobileCompleteHideTimer) clearTimeout(mobileCompleteHideTimer);
+
+  mobileCompleteOverlay.classList.remove('hidden', 'fade-out', 'show');
+  void mobileCompleteOverlay.offsetWidth;
+  mobileCompleteOverlay.classList.add('show');
+
+  // 淡入 0.25s + 停留 1.5s = 1.75s 後開始 0.4s 平滑淡出
+  mobileCompleteFadeTimer = setTimeout(() => {
+    mobileCompleteOverlay.classList.remove('show');
+    mobileCompleteOverlay.classList.add('fade-out');
+    mobileCompleteHideTimer = setTimeout(() => {
+      mobileCompleteOverlay.classList.add('hidden');
+      mobileCompleteOverlay.classList.remove('fade-out');
+    }, 420);
+  }, 1750);
+}
+
+function checkAndShowMobileCompletionOverlay() {
+  if (!document.body.classList.contains('is-mobile-mode') || hasShownMobileThreePieceComplete) return;
+  const hasOrder = layers.some(l => l.type === 'pdf_order' || l.docRole === 'order_sheet');
+  const hasCard = layers.some(l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard));
+  const hasReceipt = layers.some(l => l.type === 'image' && (l.docRole === 'receipt' || l.isReceipt));
+  const isCardStamped = layers.some(l => l.hasBakedStamp) || layers.some(l => l.type === 'stamp');
+  if (hasOrder && hasCard && hasReceipt && isCardStamped) {
+    hasShownMobileThreePieceComplete = true;
+    requestAnimationFrame(() => {
+      showMobileThreePieceCompleteOverlay();
+    });
+  }
+}
+
 function updateMobileWorkflowBadges() {
   const hasOrder = layers.some(l => l.type === 'pdf_order' || l.docRole === 'order_sheet');
   const cardLayers = layers.filter(l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard));
   const hasCard = cardLayers.length > 0;
   const hasReceipt = layers.some(l => l.type === 'image' && (l.docRole === 'receipt' || l.isReceipt));
+
+  if (!hasOrder || !hasCard || !hasReceipt) {
+    hasShownMobileThreePieceComplete = false;
+  }
 
   if (mBadgeOrder) mBadgeOrder.classList.toggle('done', hasOrder);
   if (mBadgeCard) mBadgeCard.classList.toggle('done', hasCard);
@@ -7965,6 +8086,9 @@ async function placeMobileStandaloneStampOnCard() {
     updateMobileWorkflowBadges();
     if (document.body.classList.contains('is-mobile-mode')) {
       enterMobileStampEditMode(newStamp);
+      if (typeof checkAndShowMobileCompletionOverlay === 'function') {
+        checkAndShowMobileCompletionOverlay();
+      }
     } else {
       render();
       showToast('已蓋上專櫃印章！可單指拖曳調整位置，放開自動融合紙張光影');
@@ -8069,6 +8193,24 @@ function initMobileWorkbenchControls() {
       if (typeof applyBlueToneSliderValue === 'function') {
         applyBlueToneSliderValue(mobileBlueToneSlider.value);
       }
+    });
+  }
+
+  if (btnMobileChangeStampDate) {
+    btnMobileChangeStampDate.addEventListener('click', () => {
+      const editStamp = getMobileEditingStampLayer();
+      if (!editStamp) return;
+      const curDate = editStamp.stampDate || confirmedSessionStampDate || (inputStampDate && inputStampDate.value.trim()) || '';
+      openStampDateEditDialog(curDate, async newDateStr => {
+        if (!layers.includes(editStamp)) return;
+        pushUndoState('修改保卡印章日期');
+        editStamp.stampDate = newDateStr;
+        if (inputStampDate) inputStampDate.value = newDateStr;
+        await refreshSingleStandaloneStampLayer(editStamp, false);
+        setActiveLayer(editStamp);
+        render();
+        showToast(`已更新印章日期為 ${newDateStr}`);
+      });
     });
   }
 
@@ -8237,6 +8379,14 @@ function initMobileWorkbenchControls() {
     overlay.removeEventListener('touchend', onStealthTouchEnd);
     overlay.removeEventListener('dragover', onStealthBlockDragDrop);
     overlay.removeEventListener('drop', onStealthBlockDragDrop);
+    if (document.body.classList.contains('is-mobile-mode') && typeof fitCanvasToViewport === 'function') {
+      requestAnimationFrame(fitCanvasToViewport);
+      setTimeout(() => {
+        if (document.body.classList.contains('is-mobile-mode') && typeof fitCanvasToViewport === 'function') {
+          fitCanvasToViewport();
+        }
+      }, 160);
+    }
   };
 
   const onStealthPointerFocus = e => {

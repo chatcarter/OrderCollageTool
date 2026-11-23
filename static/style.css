@@ -1282,7 +1282,8 @@ body.is-mobile-mode .mobile-upload-bar {
 }
 
 body.is-mobile-mode .workbench-container {
-  flex: 1;
+  flex: 1 1 0%;
+  width: 100%;
   height: auto;
   min-height: 0;
   display: flex;
@@ -1291,16 +1292,48 @@ body.is-mobile-mode .workbench-container {
 }
 
 body.is-mobile-mode .canvas-section {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   width: 100%;
+  height: 100%;
+  min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-right: none;
+  overflow: hidden;
 }
 
 body.is-mobile-mode .canvas-viewport {
-  padding: 8px;
+  flex: 1 1 0%;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  display: flex;
+  overflow: auto;
   touch-action: pan-x pan-y;
   -webkit-overflow-scrolling: touch;
+  background-color: #cbd5e1;
+}
+
+.canvas-stage {
+  display: inline-block;
+  position: relative;
+}
+
+body.is-mobile-mode .canvas-stage {
+  display: block;
+  position: relative;
+  flex-shrink: 0;
+  margin: auto;
+}
+
+body.is-mobile-mode .canvas-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
 }
 
 body.is-mobile-mode .mobile-bottom-bar {
@@ -1454,4 +1487,61 @@ body.is-mobile-mode .mobile-stamp-edit-bar.hidden {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+.mobile-btn-change-date {
+  color: #003FBC;
+  border-color: #93c5fd;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+/* 手機端三樣組合完成中央穿透式四行大字提示 (v41) */
+.mobile-complete-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  z-index: 99990;
+  pointer-events: none !important;
+  user-select: none !important;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.mobile-complete-overlay.hidden {
+  display: none !important;
+}
+
+.mobile-complete-overlay.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.mobile-complete-overlay.fade-out {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.97);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.mobile-complete-card {
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  border-radius: 20px;
+  padding: 24px 44px;
+  text-align: center;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.42;
+  letter-spacing: 3px;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+.mobile-complete-done-line {
+  margin-top: 4px;
+  color: #93c5fd;
 }
