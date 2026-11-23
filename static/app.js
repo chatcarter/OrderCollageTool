@@ -2707,7 +2707,7 @@ function importImagePureFrontend(file) {
           cardTemplateId = ocrLayerProxy.cardTemplateId;
         }
 
-        // 依訂購單 100% 基準之 60% : 3% : 37% 比例進場擺放
+        // 依訂購單 100% 基準之 70% : 3% : 27% 比例進場擺放 (v32)
         const effW = activeImg.width;
         const effH = activeImg.height;
         let displayW, displayH, posX, posY;
@@ -2722,13 +2722,13 @@ function importImagePureFrontend(file) {
           posX = Math.round(canvasWidth / 2);
           posY = 10 + displayH / 2;
         } else if (docRole === 'warranty_card') {
-          displayW = Math.round(refFullW * 0.60);
+          displayW = Math.round(refFullW * 0.70);
           const aspect = effW / Math.max(1, effH);
           displayH = Math.round(displayW / aspect);
           posX = 10 + displayW / 2;
           posY = canvasHeight - 40 - displayH / 2;
         } else {
-          displayW = Math.round(refFullW * 0.37);
+          displayW = Math.round(refFullW * 0.27);
           const aspect = effW / Math.max(1, effH);
           displayH = Math.round(displayW / aspect);
           posX = canvasWidth - 10 - displayW / 2;
@@ -6418,7 +6418,7 @@ function syncSummaryTextLayer(forceUpdate = true) {
   const usableW = canvasWidth - margin * 2;
   const baseFullW = orderLayer ? orderLayer.width : usableW;
   const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
-  const leftColW = Math.round(baseFullW * 0.60);
+  const leftColW = Math.round(baseFullW * 0.70);
 
   const cardLeftX = cardLayer ? (cardLayer.x - cardLayer.width / 2) : baseLeftX;
   const cardBottomY = cardLayer ? (cardLayer.y + cardLayer.height / 2) : (orderLayer ? (orderLayer.y + orderLayer.height / 2 + 24) : 20);
@@ -6506,14 +6506,14 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     currentTopY = orderLayer.y + orderLayer.height / 2 + gapY;
   }
 
-  // 2. 以訂購單寬度為 100% 基準執行黃金比例排版：保卡 60% : 中間白縫 3% : 發票 37%
+  // 2. 以訂購單寬度為 100% 基準執行黃金比例排版：保卡 70% : 中間白縫 3% : 發票 27% (v32)
   const baseFullW = orderLayer ? orderLayer.width : usableW;
   const baseLeftX = orderLayer ? Math.round(orderLayer.x - baseFullW / 2) : margin;
   const baseRightX = baseLeftX + baseFullW;
 
-  const leftColW = Math.round(baseFullW * 0.60);
+  const leftColW = Math.round(baseFullW * 0.70);
   const gapX = Math.round(baseFullW * 0.03);
-  const rightColW = baseFullW - leftColW - gapX; // 精準 37%
+  const rightColW = baseFullW - leftColW - gapX; // 精準 27%
 
   let cardBottomY = currentTopY;
   let cardLeftX = baseLeftX;
@@ -6545,7 +6545,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     });
   }
 
-  // 3. 下方右欄（37% 寬度）：發票，右緣切齊訂購單右緣、上緣對齊保卡上緣、完整呈現不裁切
+  // 3. 下方右欄（27% 寬度）：發票，右緣切齊訂購單右緣、上緣對齊保卡上緣、完整呈現不裁切
   let receiptBottomY = currentTopY;
   if (receiptLayer && receiptLayer.image) {
     const rImg = receiptLayer.image;
