@@ -313,8 +313,9 @@
       x: Math.max(0, Math.min(sw, Math.round(p.x * invScale))),
       y: Math.max(0, Math.min(sh, Math.round(p.y * invScale)))
     }));
+    const quadIsLandscape = spanW / Math.max(1, spanH) >= 1.12;
 
-    return { corners, detected: true, confidence: 'high', paperBox };
+    return { corners, detected: true, confidence: 'high', paperBox, quadIsLandscape };
   }
 
   /**
@@ -893,7 +894,7 @@
   }
 
   /**
-   * 台灣電子發票號碼正規化與 Regex 校驗 ([A-Z]{2}\d{8})，容許數字中間斷開空格並自動去除 '-' (v26)
+   * 台灣電子發票號碼正規化與 Regex 校驗 ([A-Z]{2}\d{8})，自動移除 '-' 與所有空格輸出連貫格式 (v29)
    */
   function normalizeTaiwanInvoiceNo(rawText) {
     if (!rawText) return '';
@@ -901,18 +902,21 @@
 
     function extractFromText(scopeText) {
       const upper = scopeText.toUpperCase();
-      // 1. 放寬比對：允許 8 碼數字中間被 OCR 斷出空格 (如 ZE-9373 1662)
-      const relaxed = upper.match(/([A-Z]{2})\s*[-—–]?\s*(\d[\d\s]{6,10}\d)/);
-      if (relaxed) {
-        const digits = relaxed[2].replace(/\s+/g, '');
-        if (/^\d{8}$/.test(digits)) return `${relaxed[1]}${digits}`;
+      // 1. 嚴格優先比對標準 2 碼大寫英文 + 8 碼數字（容許 - / 空格斷開）
+      const exactRe = /([A-Z]{2})\s*[-—–]?\s*(\d[\d\s]{6,9}\d)/g;
+      let m;
+      while ((m = exactRe.exec(upper)) !== null) {
+        const digits = m[2].replace(/\s+/g, '');
+        if (/^\d{8}$/.test(digits) && digits !== '24721268') {
+          return `${m[1]}${digits}`;
+        }
       }
-      // 2. 容許英數混淆修復（如 ZE-9373I662 / ZEO-9373 1662）
-      const fuzzy = upper.match(/([A-Z0-9]{2})\s*[-—–]?\s*([A-Z0-9][A-Z0-9\s]{6,10}[A-Z0-9])/);
-      if (fuzzy) {
-        const pfx = fixLetterConfusions(fuzzy[1]);
-        const num = fixDigitConfusions(fuzzy[2].replace(/\s+/g, ''));
-        if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num)) {
+      // 2. 容許英數混淆修復（如 ZE-9373I662）
+      const fuzzyRe = /([A-Z0-9]{2})\s*[-—–]?\s*([A-Z0-9][A-Z0-9\s]{6,10}[A-Z0-9])/g;
+      while ((m = fuzzyRe.exec(upper)) !== null) {
+        const pfx = fixLetterConfusions(m[1]);
+        const num = fixDigitConfusions(m[2].replace(/\s+/g, ''));
+        if (/^[A-Z]{2}$/.test(pfx) && /^\d{8}$/.test(num) && num !== '24721268') {
           return `${pfx}${num}`;
         }
       }
@@ -935,41 +939,91 @@
   }
 
   /**
-   * 從發票 OCR 文字中擷取賣方統編 (\d{8}) 與購買日期 (YYYY-MM-DD) (v26)
+   * 從發票上方 OCR 文字中精準擷取賣方統編 (\d{8}) 與購買日期 (YYYY-MM-DD)，明確排除底部 店:0417 誤判 (v29)
    */
   function parseInvoiceHeaderFields(headerText, fullText = '') {
-    const scope = (headerText + '\n' + fullText).replace(/\r/g, '\n');
+    const rawHeader = (headerText || '').replace(/\r/g, '\n');
+    const rawFull = (fullText || '').replace(/\r/g, '\n');
+    const scope = (rawHeader + '\n' + rawFull).replace(/\r/g, '\n');
+
+    // 明確移除底部「店:0417 / 機: / 序:」等門市代碼，嚴禁誤判為日期
+    const sanitizeStoreNoise = txt => (txt || '')
+      .replace(/店\s*[:：]?\s*\d{3,6}/g, ' ')
+      .replace(/機\s*[:：]?\s*\d{2,6}/g, ' ')
+      .replace(/序\s*[:：]?\s*\d{2,6}/g, ' ');
+
+    const cleanHeader = sanitizeStoreNoise(rawHeader);
+    const cleanScope = sanitizeStoreNoise(scope);
 
     // 1. 賣方統編（營業人統編後方 8 碼純數字，容許空格）
     let sellerTaxId = '';
-    const taxMatch = scope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,8}([0-9OILSB\s]{8,11})/i);
+    const taxMatch = cleanScope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,8}([0-9OILSB\s]{8,11})/i);
     if (taxMatch) {
       const fixed = fixDigitConfusions(taxMatch[1].replace(/\s+/g, ''));
       if (/^\d{8}$/.test(fixed)) sellerTaxId = fixed;
+    } else if (/24721268/.test(cleanScope)) {
+      sellerTaxId = '24721268';
     }
 
-    // 2. 購買日期（載具號碼下方日期列，放寬支援 202\d 及空白間隔，格式化為 YYYY-MM-DD）
+    // 2. 購買日期：優先鎖定上方日期列（202x-MM-DD / 202x/MM/DD）並校驗月日合法範圍
+    const tryExtractAdDate = txt => {
+      if (!txt) return '';
+      const dateRe = /(202\d)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/g;
+      let dm;
+      while ((dm = dateRe.exec(txt)) !== null) {
+        const yyyy = parseInt(dm[1], 10);
+        const mm = parseInt(dm[2], 10);
+        const dd = parseInt(dm[3], 10);
+        if (yyyy >= 2020 && yyyy <= 2035 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+          return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        }
+      }
+      return '';
+    };
+
     let dateStr = '';
-    const dateRegex = /(202\d|20\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/;
-    const lines = scope.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (/載具/.test(lines[i])) {
-        const near = lines.slice(i, i + 5).join(' ');
-        const adNear = near.match(dateRegex);
-        if (adNear) {
-          dateStr = `${adNear[1]}-${adNear[2].padStart(2, '0')}-${adNear[3].padStart(2, '0')}`;
+    // A. 先從 headerText（發票上半部）找載具下方或直接出現的 202x 日期
+    const headerLines = cleanHeader.split('\n');
+    for (let i = 0; i < headerLines.length; i++) {
+      if (/載具/.test(headerLines[i])) {
+        const near = headerLines.slice(i, i + 5).join(' ');
+        const hit = tryExtractAdDate(near);
+        if (hit) {
+          dateStr = hit;
           break;
         }
       }
     }
     if (!dateStr) {
-      const ad = scope.match(dateRegex);
-      if (ad) {
-        dateStr = `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}`;
-      } else {
-        const roc = scope.match(/(1\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
-        if (roc) {
-          dateStr = `${parseInt(roc[1], 10) + 1911}-${roc[2].padStart(2, '0')}-${roc[3].padStart(2, '0')}`;
+      dateStr = tryExtractAdDate(cleanHeader);
+    }
+
+    // B. 若 headerText 未涵蓋，取 fullText 前 60% 上方區域再找一次
+    if (!dateStr && cleanScope) {
+      const allLines = cleanScope.split('\n').filter(l => l.trim());
+      const upperLines = allLines.slice(0, Math.max(10, Math.ceil(allLines.length * 0.60)));
+      for (let i = 0; i < upperLines.length; i++) {
+        if (/載具/.test(upperLines[i])) {
+          const hit = tryExtractAdDate(upperLines.slice(i, i + 5).join(' '));
+          if (hit) {
+            dateStr = hit;
+            break;
+          }
+        }
+      }
+      if (!dateStr) {
+        dateStr = tryExtractAdDate(upperLines.join('\n')) || tryExtractAdDate(cleanScope);
+      }
+    }
+
+    // C. 最後備援：民國年日期（限明確含年/月/日或 -/. 分隔）
+    if (!dateStr) {
+      const roc = cleanScope.match(/(11\d|12\d)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
+      if (roc) {
+        const mm = parseInt(roc[2], 10);
+        const dd = parseInt(roc[3], 10);
+        if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+          dateStr = `${parseInt(roc[1], 10) + 1911}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
         }
       }
     }
@@ -978,11 +1032,23 @@
   }
 
   /**
-   * 過濾保卡 OCR 機種／機號中的條碼雜訊（放寬空格與破折號容錯）(v26)
+   * 過濾保卡 OCR 機種／機號中的條碼雜訊（支援 PSM 6 行內萃取型號 token）(v29)
    */
   function filterWarrantyModelResult(rawText) {
     if (!rawText) return '';
-    const lines = rawText.toUpperCase()
+    const upperRaw = rawText.toUpperCase();
+    // 優先從全文直接抽取含連字號的標準型號格式 (如 NR-D505XV-W, NA-V150MDH)
+    const modelTokens = upperRaw.match(/[A-Z]{1,4}\s*-\s*[A-Z0-9-]{3,14}/g);
+    if (modelTokens && modelTokens.length > 0) {
+      for (let i = 0; i < modelTokens.length; i++) {
+        const cleanedTok = modelTokens[i].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
+        if (cleanedTok.length >= 5 && /\d/.test(cleanedTok) && /[A-Z]/.test(cleanedTok)) {
+          return cleanedTok;
+        }
+      }
+    }
+
+    const lines = upperRaw
       .split(/\r?\n/)
       .map(s => s.replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, ''))
       .filter(Boolean);
@@ -999,7 +1065,7 @@
       const withHyphen = valid.find(v => /^[A-Z]{2,4}-[A-Z0-9]{3,}/.test(v));
       return withHyphen || valid[0];
     }
-    const fallback = rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    const fallback = upperRaw.replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
     return /\d/.test(fallback) ? fallback : '';
   }
 
@@ -1081,14 +1147,19 @@
   }
 
   /**
-   * v28: 快速關鍵字與色彩雙重分類（嚴格區分 receipt 發票 vs warranty_card 保卡）
+   * v29: 100% 文字指紋優先確認 ＋ 三角色（order_sheet / receipt / warranty_card）精準鎖定
+   * 徹底移除 detectRes.detected 無條件判為保卡之條款，杜絕白紙發票誤入保卡壓扁與蓋章管線
    */
+  const ORDER_SHEET_KEYWORDS = [
+    '集雅社', '專櫃訂購單', '訂購單', '訂單單號', '實收訂金', '預定交貨日'
+  ];
   const RECEIPT_KEYWORDS = [
-    '銷貨明細', '明細表', '載具', '發票號碼', '統編', '宏匯廣場', '營業人', '點數', '退貨用條碼', '退換貨'
+    '銷貨明細', '明細表', '載具號碼', '載具', '營業人統編', '統編', '發票號碼', '退貨用條碼', '退換貨', '宏匯廣場', '營業人'
   ];
   const WARRANTY_KEYWORDS = [
-    'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商', '顧客收執', '保證內容', '2601335017'
+    'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017'
   ];
+  const TAIWAN_INVOICE_STRUCT_REGEX = /[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/;
 
   function classifyDocumentByTextAndColor(ocrText, detectRes, sw, sh, isManualPanasonic = false) {
     if (isManualPanasonic) {
@@ -1096,9 +1167,13 @@
     }
 
     const upper = (ocrText || '').toUpperCase();
-    let receiptHits = [];
-    let warrantyHits = [];
+    const orderHits = [];
+    const receiptHits = [];
+    const warrantyHits = [];
 
+    ORDER_SHEET_KEYWORDS.forEach(kw => {
+      if (upper.includes(kw.toUpperCase())) orderHits.push(kw);
+    });
     RECEIPT_KEYWORDS.forEach(kw => {
       if (upper.includes(kw.toUpperCase())) receiptHits.push(kw);
     });
@@ -1106,23 +1181,52 @@
       if (upper.includes(kw.toUpperCase())) warrantyHits.push(kw);
     });
 
-    if (receiptHits.length > 0 && receiptHits.length >= warrantyHits.length) {
-      return { role: 'receipt', reason: `預掃描命中發票關鍵字 (${receiptHits.slice(0, 3).join('、')})` };
+    const invCodeMatch = upper.match(TAIWAN_INVOICE_STRUCT_REGEX);
+    const hasInvoiceStructCode = !!(invCodeMatch && invCodeMatch[0].replace(/\D/g, '') !== '24721268');
+
+    // 1. 100% 鎖定為「發票 (receipt)」：命中台灣發票 2英+8數 結構編號，或命中發票專屬文字指紋
+    if (hasInvoiceStructCode) {
+      return {
+        role: 'receipt',
+        reason: `預掃描命中發票編號 (${invCodeMatch[0].replace(/[\s-—–]/g, '')})`
+      };
     }
-    if (warrantyHits.length > 0) {
-      return { role: 'warranty_card', reason: `預掃描命中保卡關鍵字 (${warrantyHits.slice(0, 3).join('、')})` };
+    if (receiptHits.length > 0 && receiptHits.length >= warrantyHits.length) {
+      return {
+        role: 'receipt',
+        reason: `預掃描命中發票指紋 (${receiptHits.slice(0, 3).join('、')})`
+      };
     }
 
-    // 無文字或預掃描未命中關鍵字時，依紅褐色外框＋底紙色彩與方向雙重特徵判定
-    if (detectRes && detectRes.detected) {
-      return { role: 'warranty_card', reason: '偵測到紅褐色保卡外框與底紙特徵' };
+    // 2. 100% 鎖定為「訂購單 (order_sheet)」：圖片格式且命中訂購單專屬關鍵字
+    if (orderHits.length > 0 && warrantyHits.length === 0) {
+      return {
+        role: 'order_sheet',
+        reason: `預掃描命中訂購單指紋 (${orderHits.slice(0, 3).join('、')})`
+      };
     }
+
+    // 3. 100% 鎖定為「保卡 (warranty_card)」：命中保卡專屬關鍵字
+    if (warrantyHits.length > 0) {
+      return {
+        role: 'warranty_card',
+        reason: `預掃描命中保卡指紋 (${warrantyHits.slice(0, 3).join('、')})`
+      };
+    }
+
+    // 4. 無關鍵字命中時之比例與色彩備援（絕不使用 detectRes.detected 直接搶判直立發票）
     const isHorizontal = sw >= sh;
     const aspectHW = sh / Math.max(1, sw);
-    const paperIsHorizontal = !!(detectRes && detectRes.paperBox && (detectRes.paperBox.w / Math.max(1, detectRes.paperBox.h)) >= 1.15);
+    const paperBox = detectRes && detectRes.paperBox ? detectRes.paperBox : null;
+    const paperAspectHW = paperBox ? (paperBox.h / Math.max(1, paperBox.w)) : 0;
+    const isPortraitReceipt = (!isHorizontal && aspectHW > 1.30) || (paperAspectHW > 1.30);
+    const paperIsHorizontal = !!(paperBox && (paperBox.w / Math.max(1, paperBox.h)) >= 1.15);
 
-    if (!isHorizontal && !paperIsHorizontal && aspectHW >= 1.25) {
-      return { role: 'receipt', reason: '無紅褐色外框之直立熱感應紙張特徵' };
+    if (isPortraitReceipt) {
+      return { role: 'receipt', reason: '無保卡文字且影像／紙張呈直立長條比例 (H/W > 1.30)' };
+    }
+    if (detectRes && detectRes.detected && detectRes.quadIsLandscape !== false && (isHorizontal || paperIsHorizontal)) {
+      return { role: 'warranty_card', reason: '紅褐色外框＋橫向保卡比例特徵' };
     }
     if (isHorizontal || paperIsHorizontal) {
       return { role: 'warranty_card', reason: '橫向卡片比例特徵' };
@@ -1131,8 +1235,8 @@
   }
 
   /**
-   * v28: Text-Anchored Bounding Box — 基於 3～4 組關鍵文字錨點反推銷貨明細真實寬高裁切框
-   * 寬度外擴 12% * textW，頂部上擴 0.8x 字高（切除上方多餘折角），底部下擴 1.2x 字高
+   * v29: Noise-Filtered Text-Anchored Crop — 過濾雜訊字框後，以內部有效文字群外推熱感應紙真實邊界
+   * 左右各外擴 12% * textW，上方標題上擴 0.8x 行高（切除上方折角），下方下擴 1.2x 行高，驗證 1.4 <= H/W <= 3.2
    */
   function computeTextAnchoredReceiptCrop(srcImg, ocrData, preScale = 1) {
     if (!srcImg || !ocrData) return null;
@@ -1140,18 +1244,21 @@
     const sh = srcImg.height;
     const invScale = 1 / Math.max(0.05, preScale);
 
-    // 收集有效文字行或單詞（優先使用 lines，如無則用 words）
+    // 收集有效文字行或單詞（優先使用 lines，不足 3 行則降級 words）
     const rawItems = (Array.isArray(ocrData.lines) && ocrData.lines.length >= 3)
       ? ocrData.lines
       : (Array.isArray(ocrData.words) ? ocrData.words : []);
 
-    const boxes = [];
+    const minBoxW = Math.max(8, sw * 0.015);
+    const minBoxH = Math.max(6, sh * 0.005);
+
+    const candidates = [];
     for (let i = 0; i < rawItems.length; i++) {
       const item = rawItems[i];
       const txt = (item && item.text ? item.text : '').trim();
       const b = item && item.bbox;
       if (!txt || !b) continue;
-      if (typeof item.confidence === 'number' && item.confidence < 25) continue;
+      if (typeof item.confidence === 'number' && item.confidence < 32) continue;
 
       const x0 = b.x0 * invScale;
       const y0 = b.y0 * invScale;
@@ -1159,22 +1266,48 @@
       const y1 = b.y1 * invScale;
       const bw = x1 - x0;
       const bh = y1 - y0;
-      // 過濾異常雜訊大框或極小點
-      if (bw <= 4 || bh <= 4) continue;
-      if (bw > sw * 0.94 || bh > sh * 0.16) continue;
-      // 至少需含中英數字元
-      if (!/[A-Za-z0-9\u4e00-\u9fff]/.test(txt)) continue;
 
-      boxes.push({ text: txt, x0, y0, x1, y1, bw, bh });
+      // 過濾極小孤立雜訊點與跨圖異常大框
+      if (bw < minBoxW || bh < minBoxH) continue;
+      if (bw > sw * 0.92 || bh > sh * 0.14) continue;
+      // 必須包含實際中英數印刷字元（剔除純標點／雜線）
+      const coreChars = txt.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '');
+      if (coreChars.length === 0) continue;
+
+      candidates.push({
+        text: txt,
+        conf: typeof item.confidence === 'number' ? item.confidence : 60,
+        x0,
+        y0,
+        x1,
+        y1,
+        bw,
+        bh,
+        cx: (x0 + x1) / 2
+      });
+    }
+
+    if (candidates.length < 3) return null;
+
+    // 空間聚類去離群：剔除偏離主體文字直欄之桌面邊緣雜訊點
+    let boxes = candidates;
+    if (candidates.length >= 5) {
+      const sortedX0 = [...candidates].map(b => b.x0).sort((a, b) => a - b);
+      const sortedX1 = [...candidates].map(b => b.x1).sort((a, b) => a - b);
+      const qLowX0 = sortedX0[Math.floor(sortedX0.length * 0.15)];
+      const qHighX1 = sortedX1[Math.floor(sortedX1.length * 0.85)];
+      const spanGuard = Math.max(sw * 0.14, (qHighX1 - qLowX0) * 0.35);
+      const clustered = candidates.filter(b => b.x0 >= qLowX0 - spanGuard && b.x1 <= qHighX1 + spanGuard);
+      if (clustered.length >= 3) boxes = clustered;
     }
 
     if (boxes.length < 3) return null;
 
-    // 計算行高代表值（中位數）
+    // 計算有效文字行高代表值（中位數）
     const heights = boxes.map(b => b.bh).sort((a, b) => a - b);
     const medianH = heights[Math.floor(heights.length / 2)] || 24;
 
-    // 1. 左右寬度反推（Width Anchors）
+    // 1. 左右紙張邊界外推（Width Anchors: ±12% * textW）
     const minX0 = Math.min(...boxes.map(b => b.x0));
     const maxX1 = Math.max(...boxes.map(b => b.x1));
     const textW = maxX1 - minX0;
@@ -1183,16 +1316,14 @@
     const cropX0 = Math.max(0, Math.round(minX0 - 0.12 * textW));
     const cropX1 = Math.min(sw, Math.round(maxX1 + 0.12 * textW));
 
-    // 2. 上下高度反推（Height Anchors）
-    // 頂部優先鎖定「宏匯廣場 / 銷貨明細表 / 明細表」，否則取上半部最上方有效文字行
+    // 2. 上下紙張邊界外推（Height Anchors: 頂部 +0.8x 行高切除折角、底部 +1.2x 行高）
     const upperBoxes = boxes.filter(b => b.y0 < sh * 0.55).sort((a, b) => a.y0 - b.y0);
-    const headerAnchor = upperBoxes.find(b => /宏匯|銷貨明細|明細表|營業人/.test(b.text)) || upperBoxes[0] || boxes[0];
+    const headerAnchor = upperBoxes.find(b => /宏匯|銷貨明細|明細表|營業人|電子發票/.test(b.text)) || upperBoxes[0] || boxes[0];
     const topAnchorH = Math.max(medianH, Math.min(medianH * 2.2, headerAnchor.bh));
     const cropY0 = Math.max(0, Math.round(headerAnchor.y0 - 0.8 * topAnchorH));
 
-    // 底部優先鎖定「商品退換貨請持本聯 / 退換貨 / 機: / 序: / 本聯」，否則取最下方有效文字行
     const sortedByBottom = [...boxes].sort((a, b) => b.y1 - a.y1);
-    const bottomAnchor = sortedByBottom.find(b => /退換貨|本聯|機[:：]|序[:：]|退貨/.test(b.text)) || sortedByBottom[0];
+    const bottomAnchor = sortedByBottom.find(b => /退換貨|請持本聯|本聯|店[:：]\d|機[:：]|序[:：]/.test(b.text)) || sortedByBottom[0];
     const botAnchorH = Math.max(medianH, Math.min(medianH * 2.0, bottomAnchor.bh));
     const cropY1 = Math.min(sh, Math.round(bottomAnchor.y1 + 1.2 * botAnchorH));
 
@@ -1200,9 +1331,9 @@
     const cropH = cropY1 - cropY0;
     if (cropW < sw * 0.18 || cropH < sh * 0.25) return null;
 
-    // 驗證合理發票高寬比（正常銷貨明細約 1.6:1 ~ 2.6:1，容許區間 1.35 ~ 3.3）
+    // 3. 驗證合理熱感應紙高寬比（1.4 <= H/W <= 3.2）
     const hwRatio = cropH / Math.max(1, cropW);
-    if (hwRatio < 1.35 || hwRatio > 3.3) return null;
+    if (hwRatio < 1.4 || hwRatio > 3.2) return null;
 
     const outCanvas = document.createElement('canvas');
     outCanvas.width = cropW;

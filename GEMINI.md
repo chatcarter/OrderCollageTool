@@ -53,6 +53,21 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 22:01:30] (第 29 版 / v29)
+- **執行項目**：升級 `1280px` 高對比灰階預掃描＋發票文字指紋與結構編號 `100%` 單據鎖定、徹底移除 `detectRes.detected` 搶判保卡條款、新增圖片訂購單（`order_sheet`）三角色防重疊、升級過濾雜訊字框之內部有效文字群外推熱感應紙邊界裁切，以及放寬保卡局部裁切並以 `PSM = 6` 完整讀取機種／機號。
+- **具體進度**：
+  1. **版本徽章更新與 JS 防快取（`v29`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 的 `#headerVersionBadge` 與 `#panelVersionBanner` 為 `v29 (2026.11.23)`，並為 `card_templates.js?v=29` 與 `app.js?v=29` 加上查詢參數破除瀏覽器舊版快取。
+  2. **高對比預掃描 ＋ 三角色 100% 文字指紋分類**：
+     - 強化 `quickPreScanImageText()` 為長邊至少 `1280px` 並套用 `createEnhancedOcrCropCanvas` 動態對比拉伸（含純 `eng` 備援預掃描）。
+     - 升級 `classifyDocumentByTextAndColor()`：徹底移除 `detectRes.detected` 無條件判為保卡之條款，優先比對 `/[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/`、發票指紋（`銷貨明細`、`明細表`、`載具號碼`、`營業人統編`、`發票號碼`、`退貨用條碼`、`宏匯廣場`）或無保卡文字之直立比例（`H/W > 1.30`）鎖定為 `receipt`（嚴禁壓扁與蓋章）；命中訂購單關鍵字（`集雅社`、`專櫃訂購單`、`訂單單號`、`實收訂金`、`預定交貨日`）之圖片鎖定為 `order_sheet` 頂部 `100%` 滿版；保卡指紋或暖色橫向紅褐外框鎖定為 `warranty_card`。
+  3. **過濾雜訊字框之發票真實邊界外推裁切（`computeTextAnchoredReceiptCrop`）**：
+     - 過濾 `confidence < 32`、極小雜訊點與離群偏離座標後（至少 3 行有效印刷文字），左右外擴 `±12% * textW`、上方標題上擴 `0.8x` 行高（切除上方折角）、下方結尾下擴 `1.2x` 行高，驗證 `1.4 <= H/W <= 3.2` 後維持直向原比例裁切並縮放為 `37%` 擺入右下欄。
+  4. **精準日期／無橫槓發票號碼／保卡 `PSM=6` 辨識與無條件自動排版**：
+     - 強化 `parseInvoiceHeaderFields()` 明確排除底部 `店:0417` 等門市代碼，鎖定上方 `202x-MM-DD` 購買日期；`normalizeTaiwanInvoiceNo()` 自動去除 `-` 與空白輸出 `ZE93731662`。
+     - `runCardTargetedOcr()` 移除 `tightenRegion` 過度裁剪，改採上下各外擴 `1.5%` 留白並切換 `PSM = 6` 完整讀取 `NR-D505XV-W` 與 `02926020033`；每次單據匯入完成後無條件觸發 `autoArrangeWorkbenchLayout(false)` ＋ `syncSummaryTextLayer(true)`。
+  5. 建立 `_backup/20261123_215821/` 完整備份，通過雙份 HTML 同步、語法平衡（`syntaxErrors = 0`）與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 21:38:30] (第 28 版 / v28)
 - **執行項目**：重構匯入前快速關鍵字預掃描＋色彩雙重精準分流、導入基於 3～4 組 OCR 關鍵字錨點之銷貨明細裁切邊界框計算、實施嚴格 `docRole` 圖層角色隔離，以及建立非空值 OCR 狀態合併保護機制。
 - **具體進度**：
