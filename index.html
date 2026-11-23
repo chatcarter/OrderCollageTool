@@ -326,6 +326,71 @@
         </div>
       </div>
 
+      <!-- 2-1. 🏷️ 品牌保卡智慧辨識與自動蓋章 (v21) -->
+      <div class="panel-card" id="cardSmartWarranty">
+        <div class="card-title">
+          <span>🏷️ 品牌保卡智慧辨識與自動蓋章</span>
+          <span class="count-badge" id="cardTemplateBadge">國際牌雙聯</span>
+        </div>
+
+        <div class="panel-body-box">
+          <div class="control-row">
+            <div class="control-label">
+              <span>品牌與聯單模板模式</span>
+            </div>
+            <select id="selectCardTemplateMode" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #fff;">
+              <option value="auto">自動偵測品牌與聯單（推薦）</option>
+              <option value="panasonic_slip1">手動指定：國際牌 第一聯（公司聯 S203J01）</option>
+              <option value="panasonic_slip2">手動指定：國際牌 第二聯（顧客聯 S203B01）</option>
+              <option value="lg_soon" disabled>LG 樂金保證書（預留擴充）</option>
+              <option value="samsung_soon" disabled>Samsung 三星保證書（預留擴充）</option>
+              <option value="hitachi_sony_soon" disabled>Hitachi / Sony 保證書（預留擴充）</option>
+            </select>
+          </div>
+
+          <div class="btn-group" style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnToggleCardRectify" title="自動偵測保卡紅褐色外框並開啟四角微調">
+              📐 四角偵測與拉正
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnApplyCardRectify" style="background: #003FBC;" title="執行透視拉正並辨識機種與機號">
+              ✨ 拉正 + 辨識
+            </button>
+          </div>
+
+          <div id="cardRectifyNotice" class="tool-notice hidden" style="margin-top: 6px; font-size: 11px;">
+            請拖曳畫布上四個青色角點對齊保卡紅褐色外框（可微調），確認後點擊「✨ 拉正 + 辨識」。
+          </div>
+
+          <div id="cardSmartStatus" class="ocr-status-box hidden" style="margin-top: 8px; font-size: 11px;"></div>
+
+          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; width: 48px; flex-shrink: 0; color: var(--text-main);">機種：</span>
+              <input type="text" id="inputCardModel" placeholder="拉正後自動辨識（如 NR-F551WX-W1）" style="flex: 1; font-size: 12px; padding: 4px 6px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCopyCardModel" style="padding: 4px 8px; font-size: 11px;">複製</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; width: 48px; flex-shrink: 0; color: var(--text-main);">機號：</span>
+              <input type="text" id="inputCardSerial" placeholder="拉正後自動辨識（如 A5W01714）" style="flex: 1; font-size: 12px; padding: 4px 6px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCopyCardSerial" style="padding: 4px 8px; font-size: 11px;">複製</button>
+            </div>
+          </div>
+
+          <div class="btn-group" style="margin-top: 8px; display: flex; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnRerunCardOcr" style="flex: 1; font-size: 11px;">
+              🔍 重跑欄位 OCR
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnSyncCardToNote" style="flex: 1; font-size: 11px;">
+              ⬇️ 帶入備註欄
+            </button>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-full" id="btnAutoStampCard" style="margin-top: 8px; background: #003FBC; font-weight: 700;">
+            💮 日期框避讓：自動蓋專櫃章
+          </button>
+        </div>
+      </div>
+
       <!-- 3. 櫃位印章與同色系動態日期 (常駐區塊) -->
       <div class="panel-card">
         <div class="card-title">
@@ -638,6 +703,8 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
+  <!-- 品牌保卡智慧模板庫 (v21) -->
+  <script src="static/card_templates.js"></script>
   <!-- 主互動程式碼 -->
   <script src="static/app.js"></script>
 </body>

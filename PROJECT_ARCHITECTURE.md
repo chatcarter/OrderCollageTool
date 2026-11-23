@@ -81,6 +81,19 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 19:54:39] (第 21 版 / v21)
+- **執行項目**：建置「四大品牌保卡智慧模板庫（首發：國際牌 Panasonic 雙聯單）」、「四角梯形透視自動拉正引擎」、「指定欄位精準 OCR 讀取（機種／機號）」與「日期框空白避讓自動蓋專櫃章」。
+- **具體進度**：
+  1. **建立品牌保卡模板設定架構（`static/card_templates.js`）**：
+     - 建置四大品牌擴充登錄結構（`CARD_BRAND_REGISTRY`：Panasonic、LG、Samsung、Hitachi/Sony），完整實作 **國際牌（Panasonic）** 雙聯單模板（`panasonic_slip1` 第一聯 `S203J01` / `panasonic_slip2` 第二聯 `S203B01`），支援自動偵測與手動指定切換。
+  2. **實作四角梯形透視自動拉正引擎（`rectifyPerspectivePureJS`）**：
+     - 實作 `detectPanasonicCardQuad` 紅褐色外框自動偵測與畫布可拖曳 4 角點控制柄，透過純前端 Homography 透視變換還原標準 `1.48 : 1` 矩形比例。
+  3. **實作指定區域高精準度 OCR 讀取（機種／機號）**：
+     - 僅針對模板指定之機種與機號區塊進行 2.5x 放大與 Otsu 自適應二值化強化後呼叫 `Tesseract.js` 辨識，大幅提升英數字準確率並支援一鍵複製與帶入備註。
+  4. **實作日期框空白避讓：專櫃印章自動精準蓋印（`autoStampWarrantyCard`）**：
+     - 依兩聯通用座標（`X: 84.5%`、`Y: 36.5%`、寬度 `17.5%`、`-1.5° ~ +1.5°` 微傾角與 `multiply` 正片疊底融合）自動蓋印 `#003FBC` 專櫃印章，完美避讓左側黑字並寫入 `Ctrl + Z` 復原紀錄。
+  5. 建立 `_backup/20261123_195033/` 完整備份，同步更新 `index.html`、`static/index.html`、`static/card_templates.js`、`static/app.js`、`GEMINI.md` 與 `PROJECT_ARCHITECTURE.md`，通過語法與 `CRLF` 檢核並同步推送至 GitHub。
+
 ### [2026-11-22 01:56:00] (第 20 版 / v20)
 - **執行項目**：全面升級「✍️ 保卡手寫客戶資料生成器」為 **20 種高差異化職業／年齡／性別人物字跡庫**、**速乾油性原子筆零牽絲物理引擎** 與 **1～10 級左右字距拉霸**。
 - **具體進度**：

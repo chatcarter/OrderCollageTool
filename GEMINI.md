@@ -53,6 +53,23 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 19:54:39] (第 21 版 / v21)
+- **執行項目**：建置「四大品牌保卡智慧模板庫（首發：國際牌 Panasonic 雙聯單）」、「四角梯形透視自動拉正引擎」、「指定欄位精準 OCR 讀取（機種／機號）」與「日期框空白避讓自動蓋專櫃章」。
+- **具體進度**：
+  1. **建立品牌保卡模板設定架構（`static/card_templates.js`）**：
+     - 建置四大品牌擴充登錄結構（`CARD_BRAND_REGISTRY`：Panasonic、LG、Samsung、Hitachi/Sony），完整實作 **國際牌（Panasonic）** 雙聯單模板：
+       - **型號 A（`panasonic_slip1` — 第一聯：公司聯 / 經銷商聯 `S203J01`）**：機種 OCR 座標 `X: 11.5%~36.0%, Y: 13.0%~20.0%`、機號 OCR 座標 `X: 41.0%~65.0%, Y: 13.0%~20.0%`。
+       - **型號 B（`panasonic_slip2` — 第二聯：顧客聯 `S203B01`）**：機種 OCR 座標 `X: 10.5%~35.5%, Y: 33.5%~40.5%`、機號 OCR 座標 `X: 10.5%~35.5%, Y: 40.5%~47.5%`。
+     - 支援自動偵測（表單編號 OCR + 版面墨跡密度雙重判定）與右側面板手動切換模式（`#selectCardTemplateMode`）。
+  2. **實作四角梯形透視自動拉正引擎（`rectifyPerspectivePureJS`）**：
+     - 自動偵測國際牌紅褐色花邊外框四頂點（`detectPanasonicCardQuad`），於畫布繪製 `evenodd` 遮罩、九宮格輔助線與 4 個可拖曳青色角點控制柄（`drawCardRectifyOverlay`）。
+     - 透過純前端 Homography 雙線性插值將斜拍梯形精準拉平還原為標準 `1.48 : 1` 矩形比例並寫入 `Ctrl + Z` 歷史復原。
+  3. **實作指定區域高精準度 OCR 讀取（機種／機號）**：
+     - 針對拉正後保卡僅裁切 `model` 與 `serial` 區域，進行 2.5x 放大與 Otsu 自適應灰階二值化對比強化（`createEnhancedOcrCropCanvas`）後交由 `Tesseract.js` 辨識，即時填入 `#inputCardModel` 與 `#inputCardSerial`（支援一鍵複製與帶入單據備註）。
+  4. **實作日期框空白避讓：專櫃印章自動精準蓋印（`autoStampWarrantyCard`）**：
+     - 依兩聯通用座標（中心點 `X: 84.5%`、`Y: 36.5%`，寬度 `17.5%`，自然微幅傾角 `-1.5° ~ +1.5°`，`multiply` 正片疊底油墨融合）將 `#003FBC` 專櫃印章精準蓋印於「經銷商確認」右側空白區，完全避開左側黑字，並支援畫布二次拖曳微調與高解析 PNG 匯出。
+  5. 建立 `_backup/20261123_195033/` 完整備份，同步更新 `index.html`、`static/index.html`、`static/card_templates.js`、`static/app.js`、`GEMINI.md` 與 `PROJECT_ARCHITECTURE.md`，全專案通過括號平衡驗證（`syntaxErrors = 0`）與 `CRLF` 換行檢核，並執行雲端 GitHub 自動同步推送。
+
 ### [2026-11-22 01:56:00] (第 20 版 / v20)
 - **執行項目**：全面升級「✍️ 保卡手寫客戶資料生成器」為 **20 種高差異化職業／年齡／性別人物字跡庫**、**速乾油性原子筆零牽絲物理引擎** 與 **1～10 級左右字距拉霸**。
 - **具體進度**：

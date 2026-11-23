@@ -70,6 +70,9 @@ let rectCropInitialState = null;
 // --- 自由梯形變形角點拖曳狀態 ---
 let isDraggingDistortCorner = -1; // 0: TL, 1: TR, 2: BR, 3: BL
 
+// --- 品牌保卡四角透視拉正拖曳狀態 (v21) ---
+let isDraggingCardRectifyCorner = -1; // 0: TL, 1: TR, 2: BR, 3: BL
+
 // --- 畫布下/左邊緣拖曳調整尺寸狀態 ---
 let isResizingCanvas = false;
 let canvasResizeEdge = null; // 'bottom' | 'left' | 'bl'
@@ -235,6 +238,21 @@ const btnAddNote = document.getElementById('btnAddNote');
 let newNoteColor = '#000000';
 let newNoteIsBold = false;
 
+// 品牌保卡智慧辨識與自動蓋章控制項 (v21)
+const selectCardTemplateMode = document.getElementById('selectCardTemplateMode');
+const cardTemplateBadge = document.getElementById('cardTemplateBadge');
+const btnToggleCardRectify = document.getElementById('btnToggleCardRectify');
+const btnApplyCardRectify = document.getElementById('btnApplyCardRectify');
+const cardRectifyNotice = document.getElementById('cardRectifyNotice');
+const cardSmartStatus = document.getElementById('cardSmartStatus');
+const inputCardModel = document.getElementById('inputCardModel');
+const btnCopyCardModel = document.getElementById('btnCopyCardModel');
+const inputCardSerial = document.getElementById('inputCardSerial');
+const btnCopyCardSerial = document.getElementById('btnCopyCardSerial');
+const btnRerunCardOcr = document.getElementById('btnRerunCardOcr');
+const btnSyncCardToNote = document.getElementById('btnSyncCardToNote');
+const btnAutoStampCard = document.getElementById('btnAutoStampCard');
+
 // 圖紙輸出範圍與匯出控制項
 const btnToggleExportCrop = document.getElementById('btnToggleExportCrop');
 const switchExportCrop = document.getElementById('switchExportCrop');
@@ -256,6 +274,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initPdfJsWorker();
   updateUndoBtnState();
   initHandwritingGenerator();
+  initSmartWarrantyModule();
 });
 
 // --- 歷史復原（Undo）核心函式 ---
@@ -580,6 +599,12 @@ function createLayerObject(options) {
     distortCorners: null, // 目標四邊形頂點 [{x,y}, {x,y}, {x,y}, {x,y}] (相對於 baseImg 座標系)
     liveDistortPreview: null,
     liveDistortOffset: null,
+    // 品牌保卡四角透視拉正模式 (v21)
+    cardRectifyMode: false,
+    cardQuadCorners: null,
+    cardTemplateId: null,
+    isRectifiedCard: false,
+    blendMode: options.blendMode || null,
     // 文件美化專用
     scanEnhance: false,
     shadowStrength: 70,
@@ -620,7 +645,7 @@ function render(isExporting = false) {
       // 自由梯形變形「即時跟隨拉扯預覽」 + 九宮格參考輔助線
       drawLiveDistortLayer(layer);
     } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
-      if (layer.type === 'handwriting') {
+      if (layer.type === 'handwriting' || layer.blendMode === 'multiply') {
         ctx.globalCompositeOperation = 'multiply';
       }
       ctx.drawImage(
@@ -636,6 +661,11 @@ function render(isExporting = false) {
         drawLayerRectCropGuides(layer);
       }
 
+      // 若處於品牌保卡四角透視拉正模式，繪製青色四邊形框與 4 角點控制柄
+      if (!isExporting && layer === activeLayer && layer.cardRectifyMode && layer.cardQuadCorners) {
+        drawCardRectifyOverlay(layer);
+      }
+
       // 若處於局部圈選塗白模式，繪製紅色虛線框
       if (!isExporting && layer === activeLayer && isEraseMode) {
         drawLayerEraseBox(layer);
@@ -646,7 +676,7 @@ function render(isExporting = false) {
   });
 
   // 3. 繪製選取框與控制柄
-  if (!isExporting && activeLayer && !activeLayer.rectCropMode && !activeLayer.distortMode && !isEraseMode) {
+  if (!isExporting && activeLayer && !activeLayer.rectCropMode && !activeLayer.distortMode && !activeLayer.cardRectifyMode && !isEraseMode) {
     drawSelectionBox(activeLayer);
   }
 
@@ -1321,6 +1351,30 @@ function hitTest(x, y) {
     }
   }
 
+  // 1-1. 若目前選取物件處於品牌保卡四角透視拉正模式，優先偵測 4 角點
+  if (activeLayer && activeLayer.type === 'image' && activeLayer.cardRectifyMode && activeLayer.cardQuadCorners) {
+    const layer = activeLayer;
+    const dx = x - layer.x;
+    const dy = y - layer.y;
+    const localX = dx * Math.cos(-layer.rotation) - dy * Math.sin(-layer.rotation);
+    const localY = dx * Math.sin(-layer.rotation) + dy * Math.cos(-layer.rotation);
+    const hw = layer.width / 2;
+    const hh = layer.height / 2;
+    const baseImg = layer.croppedImage || layer.rawImage || layer.image;
+
+    const pts = layer.cardQuadCorners.map(pt => ({
+      x: (pt.x / baseImg.width) * layer.width - hw,
+      y: (pt.y / baseImg.height) * layer.height - hh
+    }));
+
+    const hitRadius = 28 / currentZoom;
+    for (let cIdx = 0; cIdx < 4; cIdx++) {
+      if (Math.hypot(localX - pts[cIdx].x, localY - pts[cIdx].y) <= hitRadius) {
+        return { layer, part: 'card_rectify_corner', cornerIdx: cIdx };
+      }
+    }
+  }
+
   // 2. 若目前選取物件處於矩形裁切模式，偵測 8 個裁切控制柄與裁切框主體
   if (activeLayer && activeLayer.type === 'image' && activeLayer.rectCropMode && activeLayer.cropRect) {
     const layer = activeLayer;
@@ -1495,6 +1549,8 @@ canvas.addEventListener('mousedown', e => {
 
     if (hit.part === 'distort_corner') {
       isDraggingDistortCorner = hit.cornerIdx;
+    } else if (hit.part === 'card_rectify_corner') {
+      isDraggingCardRectifyCorner = hit.cornerIdx;
     } else if (hit.part === 'rect_crop_handle' || hit.part === 'rect_crop_body') {
       isDraggingRectCrop = true;
       rectCropDragPart = hit.handle || 'body';
@@ -1665,6 +1721,22 @@ window.addEventListener('mousemove', e => {
 
     activeLayer.distortCorners[isDraggingDistortCorner] = { x: rawX, y: rawY };
     updateLiveDistortPreview(activeLayer, 650);
+    render();
+    return;
+  }
+
+  // 2-1. 拖曳品牌保卡四角透視拉正控制點 (v21)
+  if (isDraggingCardRectifyCorner >= 0 && activeLayer.cardRectifyMode && activeLayer.cardQuadCorners) {
+    const hw = activeLayer.width / 2;
+    const hh = activeLayer.height / 2;
+    const localX = (coords.x - activeLayer.x) * Math.cos(-activeLayer.rotation) - (coords.y - activeLayer.y) * Math.sin(-activeLayer.rotation);
+    const localY = (coords.x - activeLayer.x) * Math.sin(-activeLayer.rotation) + (coords.y - activeLayer.y) * Math.cos(-activeLayer.rotation);
+    const baseImg = activeLayer.croppedImage || activeLayer.rawImage || activeLayer.image;
+
+    const rawX = Math.max(0, Math.min(baseImg.width, ((localX + hw) / activeLayer.width) * baseImg.width));
+    const rawY = Math.max(0, Math.min(baseImg.height, ((localY + hh) / activeLayer.height) * baseImg.height));
+
+    activeLayer.cardQuadCorners[isDraggingCardRectifyCorner] = { x: Math.round(rawX), y: Math.round(rawY) };
     render();
     return;
   }
@@ -1901,6 +1973,7 @@ window.addEventListener('mouseup', () => {
   isResizing = false;
   isRotating = false;
   isDraggingDistortCorner = -1;
+  isDraggingCardRectifyCorner = -1;
   isDraggingRectCrop = false;
   rectCropDragPart = null;
   rectCropInitialState = null;
@@ -1977,6 +2050,9 @@ window.addEventListener('keydown', e => {
     } else if (activeLayer.distortMode) {
       e.preventDefault();
       btnApplyDistort.click();
+    } else if (activeLayer.cardRectifyMode && btnApplyCardRectify) {
+      e.preventDefault();
+      btnApplyCardRectify.click();
     }
   } else if (activeLayer && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     e.preventDefault();
@@ -2063,6 +2139,7 @@ function setActiveLayer(layer) {
 
     updateRectCropUI(layer);
     updateDistortUI(layer);
+    if (typeof updateCardRectifyUI === 'function') updateCardRectifyUI(layer);
 
     switchScanEnhance.checked = !!layer.scanEnhance;
     if (layer.scanEnhance) {
@@ -3970,7 +4047,7 @@ btnExportPng.addEventListener('click', () => {
         bufCtx.fillText(line, startX, startY + idx * lineHeight);
       });
     } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
-      if (layer.type === 'handwriting') {
+      if (layer.type === 'handwriting' || layer.blendMode === 'multiply') {
         bufCtx.globalCompositeOperation = 'multiply';
       }
       bufCtx.drawImage(
@@ -4962,6 +5039,491 @@ function initHandwritingGenerator() {
     sliderEditHwNeatness.addEventListener('change', () => {
       if (!activeLayer || activeLayer.type !== 'handwriting') return;
       pushUndoState('微調手寫工整度');
+    });
+  }
+}
+
+
+// =============================================================================
+// 8. 品牌保卡智慧辨識、四角透視自動拉正與日期框避讓蓋章 (v21)
+// =============================================================================
+
+function drawCardRectifyOverlay(layer) {
+  if (!layer.cardQuadCorners || layer.cardQuadCorners.length !== 4) return;
+  const baseImg = layer.croppedImage || layer.rawImage || layer.image;
+  if (!baseImg) return;
+
+  const hw = layer.width / 2;
+  const hh = layer.height / 2;
+  const pts = layer.cardQuadCorners.map(pt => ({
+    x: (pt.x / baseImg.width) * layer.width - hw,
+    y: (pt.y / baseImg.height) * layer.height - hh
+  }));
+
+  ctx.save();
+  // 1. 外部半透明遮罩 (evenodd 挖空四邊形內部)
+  ctx.beginPath();
+  ctx.rect(-hw, -hh, layer.width, layer.height);
+  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.lineTo(pts[1].x, pts[1].y);
+  ctx.lineTo(pts[2].x, pts[2].y);
+  ctx.lineTo(pts[3].x, pts[3].y);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+  ctx.fill('evenodd');
+
+  // 2. 九宮格透視參考線
+  ctx.strokeStyle = 'rgba(6, 182, 212, 0.72)';
+  ctx.lineWidth = Math.max(1.5, 2 / currentZoom);
+  ctx.setLineDash([6 / currentZoom, 4 / currentZoom]);
+  for (let i = 1; i <= 2; i++) {
+    const t = i / 3;
+    // 水平等分線 (左邊到右邊)
+    const lx = pts[0].x + (pts[3].x - pts[0].x) * t;
+    const ly = pts[0].y + (pts[3].y - pts[0].y) * t;
+    const rx = pts[1].x + (pts[2].x - pts[1].x) * t;
+    const ry = pts[1].y + (pts[2].y - pts[1].y) * t;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+
+    // 垂直等分線 (上邊到下邊)
+    const tx = pts[0].x + (pts[1].x - pts[0].x) * t;
+    const ty = pts[0].y + (pts[1].y - pts[0].y) * t;
+    const bx = pts[3].x + (pts[2].x - pts[3].x) * t;
+    const by = pts[3].y + (pts[2].y - pts[3].y) * t;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  // 3. 四邊形主外框 (白底 + 青藍虛線)
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.lineTo(pts[1].x, pts[1].y);
+  ctx.lineTo(pts[2].x, pts[2].y);
+  ctx.lineTo(pts[3].x, pts[3].y);
+  ctx.closePath();
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = Math.max(3, 5 / currentZoom);
+  ctx.stroke();
+  ctx.strokeStyle = '#003FBC';
+  ctx.lineWidth = Math.max(2, 3 / currentZoom);
+  ctx.setLineDash([10 / currentZoom, 6 / currentZoom]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 4. 四個角點可拖曳控制柄
+  const cornerLabels = ['左上', '右上', '右下', '左下'];
+  const r = Math.max(10, 14 / currentZoom);
+  pts.forEach((p, idx) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#06B6D4';
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, 3 / currentZoom);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+
+    ctx.font = `bold ${Math.max(11, Math.round(13 / currentZoom))}px "Microsoft JhengHei", sans-serif`;
+    ctx.fillStyle = '#0F172A';
+    const labelOffsetY = idx < 2 ? -(r + 12 / currentZoom) : (r + 16 / currentZoom);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    const tw = ctx.measureText(cornerLabels[idx]).width + 10;
+    const th = 20 / currentZoom;
+    ctx.fillRect(p.x - tw / 2, p.y + labelOffsetY - th / 2, tw, th);
+    ctx.fillStyle = '#003FBC';
+    ctx.fillText(cornerLabels[idx], p.x, p.y + labelOffsetY);
+  });
+
+  ctx.restore();
+}
+
+function updateCardRectifyUI(layer) {
+  if (!btnToggleCardRectify || !cardRectifyNotice) return;
+  const inMode = !!(layer && layer.type === 'image' && layer.cardRectifyMode);
+  btnToggleCardRectify.textContent = inMode ? '取消四角框選' : '📐 四角偵測與拉正';
+  if (inMode) {
+    btnToggleCardRectify.classList.add('active', 'btn-primary');
+    btnToggleCardRectify.classList.remove('btn-outline');
+    cardRectifyNotice.classList.remove('hidden');
+  } else {
+    btnToggleCardRectify.classList.remove('active', 'btn-primary');
+    btnToggleCardRectify.classList.add('btn-outline');
+    cardRectifyNotice.classList.add('hidden');
+  }
+
+  if (cardTemplateBadge) {
+    if (layer && layer.cardTemplateId && window.CardTemplates && window.CardTemplates.TEMPLATES[layer.cardTemplateId]) {
+      cardTemplateBadge.textContent = window.CardTemplates.TEMPLATES[layer.cardTemplateId].shortLabel;
+    } else {
+      cardTemplateBadge.textContent = '國際牌雙聯';
+    }
+  }
+}
+
+function setCardSmartStatus(text, isLoading = false) {
+  if (!cardSmartStatus) return;
+  cardSmartStatus.classList.remove('hidden');
+  if (isLoading) {
+    cardSmartStatus.classList.add('loading');
+  } else {
+    cardSmartStatus.classList.remove('loading');
+  }
+  cardSmartStatus.textContent = text;
+}
+
+function getTargetWarrantyImageLayer() {
+  if (activeLayer && activeLayer.type === 'image') return activeLayer;
+  for (let i = layers.length - 1; i >= 0; i--) {
+    if (layers[i].type === 'image' && layers[i].isRectifiedCard) return layers[i];
+  }
+  for (let i = layers.length - 1; i >= 0; i--) {
+    if (layers[i].type === 'image') return layers[i];
+  }
+  return null;
+}
+
+function resolveCardTemplate(modeVal) {
+  if (!window.CardTemplates) return null;
+  if (modeVal && window.CardTemplates.TEMPLATES[modeVal]) {
+    return window.CardTemplates.TEMPLATES[modeVal];
+  }
+  return window.CardTemplates.TEMPLATES.panasonic_slip1;
+}
+
+async function runCardTargetedOcr(layer) {
+  if (!layer || layer.type !== 'image' || !window.CardTemplates) return;
+  const srcCanvas = layer.warpedImage || layer.croppedImage || layer.image || layer.rawImage;
+  if (!srcCanvas) return;
+
+  const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+  let templateId = modeVal;
+  let detectReason = '手動指定';
+
+  if (modeVal === 'auto' || !window.CardTemplates.TEMPLATES[modeVal]) {
+    setCardSmartStatus('⏳ 正在自動判別國際牌第一聯 / 第二聯與欄位座標...', true);
+    const detected = await window.CardTemplates.detectPanasonicSlipType(srcCanvas);
+    templateId = detected.templateId;
+    detectReason = detected.reason;
+  }
+
+  const tpl = resolveCardTemplate(templateId);
+  if (!tpl) return;
+
+  layer.cardTemplateId = tpl.id;
+  if (cardTemplateBadge) cardTemplateBadge.textContent = tpl.shortLabel;
+
+  if (!window.Tesseract) {
+    setCardSmartStatus(`✅ 已鎖定模板：${tpl.label}（${detectReason}），但 Tesseract OCR 尚未載入。`, false);
+    return;
+  }
+
+  setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在高精度辨識機種與機號...`, true);
+
+  try {
+    const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.model, 2.5);
+    const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.serial, 2.5);
+
+    const [modelRes, serialRes] = await Promise.all([
+      window.Tesseract.recognize(modelCrop, 'eng'),
+      window.Tesseract.recognize(serialCrop, 'eng')
+    ]);
+
+    const rawModel = (modelRes && modelRes.data && modelRes.data.text) || '';
+    const rawSerial = (serialRes && serialRes.data && serialRes.data.text) || '';
+
+    const modelClean = rawModel.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    const serialClean = rawSerial.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (inputCardModel) inputCardModel.value = modelClean;
+    if (inputCardSerial) inputCardSerial.value = serialClean;
+
+    setCardSmartStatus(
+      `✅ 辨識完成（${tpl.shortLabel} / ${detectReason}）\n機種：${modelClean || '未讀出'} ｜ 機號：${serialClean || '未讀出'}`,
+      false
+    );
+    showToast(`保卡欄位辨識完成：${modelClean || '-'} / ${serialClean || '-'}`);
+  } catch (err) {
+    console.error('保卡指定欄位 OCR 失敗:', err);
+    setCardSmartStatus(`⚠️ OCR 辨識失敗：${err.message}`, false);
+    showToast('保卡欄位 OCR 發生錯誤');
+  }
+}
+
+function toggleCardRectifyMode(forceState = null) {
+  const layer = getTargetWarrantyImageLayer();
+  if (!layer) {
+    showToast('請先匯入並選取一張保卡照片');
+    return;
+  }
+  if (layer !== activeLayer) setActiveLayer(layer);
+
+  const nextState = forceState !== null ? !!forceState : !layer.cardRectifyMode;
+  layer.cardRectifyMode = nextState;
+
+  if (nextState) {
+    if (layer.rectCropMode) {
+      layer.rectCropMode = false;
+      updateRectCropUI(layer);
+    }
+    if (layer.distortMode) {
+      layer.distortMode = false;
+      updateDistortUI(layer);
+    }
+    toggleEraseMode(false);
+
+    const baseImg = layer.croppedImage || layer.rawImage || layer.image;
+    if (window.CardTemplates && baseImg) {
+      const detectRes = window.CardTemplates.detectPanasonicCardQuad(baseImg);
+      layer.cardQuadCorners = detectRes.corners;
+      if (detectRes.detected) {
+        setCardSmartStatus('✅ 已自動偵測國際牌紅褐色外框四角，可直接微調或點擊「✨ 拉正 + 辨識」。', false);
+      } else {
+        setCardSmartStatus('ℹ️ 未偵測到明顯紅褐色外框，已帶入預設四角，請手動拖曳對齊保卡四邊角點。', false);
+      }
+    }
+  }
+
+  updateCardRectifyUI(layer);
+  render();
+}
+
+async function applyCardRectifyAndOcr() {
+  const layer = getTargetWarrantyImageLayer();
+  if (!layer || !window.CardTemplates) {
+    showToast('請先匯入並選取保卡照片');
+    return;
+  }
+  if (layer !== activeLayer) setActiveLayer(layer);
+
+  const baseImg = layer.croppedImage || layer.rawImage || layer.image;
+  if (!baseImg) return;
+
+  if (!layer.cardQuadCorners || layer.cardQuadCorners.length !== 4) {
+    const detectRes = window.CardTemplates.detectPanasonicCardQuad(baseImg);
+    layer.cardQuadCorners = detectRes.corners;
+  }
+
+  const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+  const tpl = resolveCardTemplate(modeVal);
+  const aspectRatio = tpl ? tpl.aspectRatio : 1.48;
+
+  setCardSmartStatus('⏳ 正在執行四角梯形透視自動拉正...', true);
+
+  const rectifiedCanvas = window.CardTemplates.rectifyPerspectivePureJS(
+    baseImg,
+    layer.cardQuadCorners,
+    aspectRatio,
+    1800
+  );
+
+  if (!rectifiedCanvas) {
+    setCardSmartStatus('⚠️ 四角座標異常，無法執行透視拉正，請調整四個角點後再試。', false);
+    showToast('透視拉正失敗，請確認四個角點未重疊');
+    return;
+  }
+
+  pushUndoState('保卡透視自動拉正');
+
+  layer.warpedImage = rectifiedCanvas;
+  layer.image = rectifiedCanvas;
+  layer.scanEnhance = false;
+  layer.cardRectifyMode = false;
+  layer.isRectifiedCard = true;
+  layer.rotation = 0;
+
+  // 依照 1.48 : 1 標準比例重新計算畫布上的顯示尺寸，保持寬度比例自然
+  const keepW = Math.max(480, layer.width);
+  layer.width = Math.round(keepW);
+  layer.height = Math.round(keepW / aspectRatio);
+
+  if (switchScanEnhance) switchScanEnhance.checked = false;
+  if (enhanceSliders) enhanceSliders.classList.add('hidden');
+  updateCardRectifyUI(layer);
+  render();
+
+  await runCardTargetedOcr(layer);
+}
+
+function autoStampWarrantyCard() {
+  const cardLayer = getTargetWarrantyImageLayer();
+  if (!cardLayer) {
+    showToast('畫布上尚未有保卡圖片，請先匯入保卡');
+    return;
+  }
+
+  const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+  const tpl = resolveCardTemplate(cardLayer.cardTemplateId || modeVal);
+  const stampSpec = (tpl && tpl.stampSpec) || {
+    centerX: 0.845,
+    centerY: 0.365,
+    widthRatio: 0.175,
+    tiltRangeDeg: 1.5,
+    blendMode: 'multiply'
+  };
+
+  const dateStr = (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
+  const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
+  const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
+
+  const stampImg = new Image();
+  stampImg.onload = () => {
+    const stampCanvas = document.createElement('canvas');
+    stampCanvas.width = stampImg.width;
+    stampCanvas.height = stampImg.height;
+    const sCtx = stampCanvas.getContext('2d');
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'high';
+    sCtx.drawImage(stampImg, 0, 0);
+
+    const boxCx = 942;
+    const boxCy = 719 + offsetY;
+    sCtx.fillStyle = '#003FBC';
+    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
+    sCtx.textAlign = 'center';
+    sCtx.textBaseline = 'middle';
+    sCtx.fillText(dateStr, boxCx, boxCy);
+
+    // 依保卡寬度 17.5% 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
+    const displayW = Math.round(cardLayer.width * stampSpec.widthRatio);
+    const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
+
+    const localDx = (stampSpec.centerX - 0.5) * cardLayer.width;
+    const localDy = (stampSpec.centerY - 0.5) * cardLayer.height;
+    const cosR = Math.cos(cardLayer.rotation || 0);
+    const sinR = Math.sin(cardLayer.rotation || 0);
+    const posX = Math.round(cardLayer.x + localDx * cosR - localDy * sinR);
+    const posY = Math.round(cardLayer.y + localDx * sinR + localDy * cosR);
+
+    // 自然微幅傾角 (-1.5° ~ +1.5°)
+    const maxTilt = stampSpec.tiltRangeDeg || 1.5;
+    const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
+    const tiltRad = (tiltDeg * Math.PI) / 180;
+
+    const newStamp = createLayerObject({
+      type: 'stamp',
+      name: `專櫃印章-避讓 (${dateStr})`,
+      image: stampCanvas,
+      rawImage: stampCanvas,
+      width: displayW,
+      height: displayH,
+      x: posX,
+      y: posY,
+      rotation: (cardLayer.rotation || 0) + tiltRad,
+      blendMode: stampSpec.blendMode || 'multiply'
+    });
+
+    pushUndoState('日期框避讓自動蓋章');
+    const cardIdx = layers.indexOf(cardLayer);
+    if (cardIdx >= 0) {
+      layers.splice(cardIdx + 1, 0, newStamp);
+    } else {
+      layers.push(newStamp);
+    }
+    setActiveLayer(newStamp);
+    render();
+    showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」避讓座標自動蓋章 (${dateStr})`);
+  };
+
+  if (typeof STAMP_CLEAN_BASE64 !== 'undefined' && STAMP_CLEAN_BASE64) {
+    stampImg.src = STAMP_CLEAN_BASE64;
+  } else {
+    stampImg.src = 'assets/stamp_clean.png';
+  }
+}
+
+function initSmartWarrantyModule() {
+  if (btnToggleCardRectify) {
+    btnToggleCardRectify.addEventListener('click', () => {
+      toggleCardRectifyMode();
+    });
+  }
+
+  if (btnApplyCardRectify) {
+    btnApplyCardRectify.addEventListener('click', () => {
+      applyCardRectifyAndOcr();
+    });
+  }
+
+  if (btnRerunCardOcr) {
+    btnRerunCardOcr.addEventListener('click', () => {
+      const layer = getTargetWarrantyImageLayer();
+      if (!layer) {
+        showToast('請先匯入並選取保卡圖片');
+        return;
+      }
+      runCardTargetedOcr(layer);
+    });
+  }
+
+  if (selectCardTemplateMode) {
+    selectCardTemplateMode.addEventListener('change', () => {
+      const modeVal = selectCardTemplateMode.value;
+      const layer = getTargetWarrantyImageLayer();
+      if (modeVal !== 'auto' && window.CardTemplates && window.CardTemplates.TEMPLATES[modeVal]) {
+        const tpl = window.CardTemplates.TEMPLATES[modeVal];
+        if (cardTemplateBadge) cardTemplateBadge.textContent = tpl.shortLabel;
+        if (layer) {
+          layer.cardTemplateId = tpl.id;
+          if (layer.isRectifiedCard) {
+            runCardTargetedOcr(layer);
+          }
+        }
+      }
+    });
+  }
+
+  if (btnCopyCardModel) {
+    btnCopyCardModel.addEventListener('click', () => {
+      const val = (inputCardModel && inputCardModel.value.trim()) || '';
+      if (!val) { showToast('機種欄位目前為空'); return; }
+      navigator.clipboard.writeText(val).then(() => showToast(`已複製機種：${val}`));
+    });
+  }
+
+  if (btnCopyCardSerial) {
+    btnCopyCardSerial.addEventListener('click', () => {
+      const val = (inputCardSerial && inputCardSerial.value.trim()) || '';
+      if (!val) { showToast('機號欄位目前為空'); return; }
+      navigator.clipboard.writeText(val).then(() => showToast(`已複製機號：${val}`));
+    });
+  }
+
+  if (btnSyncCardToNote) {
+    btnSyncCardToNote.addEventListener('click', () => {
+      const modelVal = (inputCardModel && inputCardModel.value.trim()) || '';
+      const serialVal = (inputCardSerial && inputCardSerial.value.trim()) || '';
+      if (!modelVal && !serialVal) {
+        showToast('請先辨識或輸入機種／機號');
+        return;
+      }
+      if (!inputNewNote) return;
+      const currentText = inputNewNote.value || '';
+      let lines = currentText.trim() ? currentText.split(/\r?\n/) : [];
+      if (modelVal) {
+        const idx = lines.findIndex(l => /^\s*(品牌|型號|機種)/.test(l));
+        if (idx >= 0) lines[idx] = `國際牌 ${modelVal}`;
+        else lines.push(`國際牌 ${modelVal}`);
+      }
+      if (serialVal) {
+        const idx = lines.findIndex(l => /^\s*機號/.test(l));
+        if (idx >= 0) lines[idx] = `機號  ${serialVal}`;
+        else lines.push(`機號  ${serialVal}`);
+      }
+      inputNewNote.value = lines.join('\n');
+      showToast('已將機種與機號帶入單據備註欄');
+    });
+  }
+
+  if (btnAutoStampCard) {
+    btnAutoStampCard.addEventListener('click', () => {
+      autoStampWarrantyCard();
     });
   }
 }

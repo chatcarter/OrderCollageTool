@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
+  <title>閮???∟??潛巨?潸票撌乩???(頞?閫??蝝?蝡舐?)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,27 +16,27 @@
         <line x1="3" y1="9" x2="21" y2="9"/>
         <line x1="9" y1="21" x2="9" y2="9"/>
       </svg>
-      <span>訂單、保卡與發票拼貼工作台</span>
-      <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
+      <span>閮???∟??潛巨?潸票撌乩???/span>
+      <span class="brand-badge">A4 璈怠? 300DPI ?啣蝝?(3508 ? 2480)</span>
     </div>
 
     <div class="header-actions">
       <input type="file" id="fileInput" accept=".pdf, .jpg, .jpeg, .png" multiple class="hidden">
-      <button class="btn btn-primary" id="btnSelectFiles" title="支援 PDF 訂單、JPG/PNG 保卡或發票">
+      <button class="btn btn-primary" id="btnSelectFiles" title="?舀 PDF 閮?PG/PNG 靽?蟡?>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
           <polyline points="17 8 12 3 7 8"/>
           <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
-        選擇檔案匯入
+        ?豢?瑼??臬
       </button>
 
-      <button class="btn btn-outline" id="btnClearCanvas" title="清空目前畫布所有內容">
+      <button class="btn btn-outline" id="btnClearCanvas" title="皜征?桀??怠???摰?>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"/>
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
         </svg>
-        清空畫布
+        皜征?怠?
       </button>
     </div>
   </header>
@@ -49,25 +49,25 @@
       <!-- Toolbar -->
       <div class="canvas-toolbar">
         <div class="toolbar-group">
-          <button class="btn btn-outline btn-sm" id="btnUndo" title="復原上一步 (Ctrl+Z)" disabled>↩ 復原 (Ctrl+Z)</button>
-          <span>畫布縮放：</span>
-          <button class="btn btn-outline btn-sm" id="btnZoomOut" title="縮小 (Alt + 滑鼠滾輪)">-</button>
+          <button class="btn btn-outline btn-sm" id="btnUndo" title="敺拙?銝?甇?(Ctrl+Z)" disabled>??敺拙? (Ctrl+Z)</button>
+          <span>?怠?蝮格嚗?/span>
+          <button class="btn btn-outline btn-sm" id="btnZoomOut" title="蝮桀? (Alt + 皛?皛曇憚)">-</button>
           <span id="zoomPercent" style="min-width: 45px; text-align: center; font-weight: 600;">100%</span>
-          <button class="btn btn-outline btn-sm" id="btnZoomIn" title="放大 (Alt + 滑鼠滾輪)">+</button>
-          <button class="btn btn-outline btn-sm" id="btnZoomFit" title="適應視窗大小">適合視窗</button>
-          <button class="btn btn-outline btn-sm" id="btnZoom100" title="實際像素 100%">100%</button>
+          <button class="btn btn-outline btn-sm" id="btnZoomIn" title="?曉之 (Alt + 皛?皛曇憚)">+</button>
+          <button class="btn btn-outline btn-sm" id="btnZoomFit" title="?拇?閬?憭批?">?拙?閬?</button>
+          <button class="btn btn-outline btn-sm" id="btnZoom100" title="撖阡??? 100%">100%</button>
         </div>
 
         <div class="toolbar-group">
-          <span id="canvasSizeLabel" class="canvas-size-badge" title="可拖曳白色畫布下邊緣或左邊緣調整圖紙尺寸">圖紙尺寸：3508 × 2480 px</span>
-          <button class="btn btn-outline btn-sm" id="btnResetCanvasSize" title="恢復預設 A4 橫向尺寸 (3508 × 2480 px)">重設 A4 尺寸</button>
-          <span style="font-size: 12px; color: #64748b;">💡 雙擊照片可快速裁切</span>
-          <button class="btn btn-outline btn-sm" id="btnToggleExportCrop" title="自訂圈選匯出範圍框">
+          <span id="canvasSizeLabel" class="canvas-size-badge" title="?舀??喟?脩撣??楠?椰?楠隤踵??撠箏站">??撠箏站嚗?508 ? 2480 px</span>
+          <button class="btn btn-outline btn-sm" id="btnResetCanvasSize" title="?Ｗ儔?身 A4 璈怠?撠箏站 (3508 ? 2480 px)">?身 A4 撠箏站</button>
+          <span style="font-size: 12px; color: #64748b;">? ???抒??臬翰????/span>
+          <button class="btn btn-outline btn-sm" id="btnToggleExportCrop" title="?芾???臬蝭?獢?>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
               <line x1="9" y1="3" x2="9" y2="21"/>
             </svg>
-            設定圖紙輸出範圍
+            閮剖???頛詨蝭?
           </button>
         </div>
       </div>
@@ -85,8 +85,8 @@
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 6px;">放開滑鼠以匯入檔案</h2>
-          <p style="font-size: 13px; opacity: 0.9;">支援 PDF 訂單（6.0x 超高取樣文字銳利化）與保卡、發票（100% 原比例進場）</p>
+          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 6px;">?暸?皛?隞亙?交?獢?/h2>
+          <p style="font-size: 13px; opacity: 0.9;">?舀 PDF 閮嚗?.0x 頞??見???喳?????～蟡剁?100% ??靘脣嚗?/p>
         </div>
       </div>
     </section>
@@ -94,85 +94,85 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
       
-      <!-- 1. 已匯入物件清單 -->
+      <!-- 1. 撌脣?亦隞嗆???-->
       <div class="panel-card">
         <div class="card-title">
-          <span>已匯入物件清單</span>
-          <span class="count-badge" id="layerCountBadge">0 個物件</span>
+          <span>撌脣?亦隞嗆???/span>
+          <span class="count-badge" id="layerCountBadge">0 ?隞?/span>
         </div>
         <div class="panel-body-box">
           <div class="layers-list" id="layersList">
             <div class="empty-hint" id="emptyLayersHint">
-              尚未匯入任何物件<br>
-              請直接將 PDF 或圖片拖曳至左側白色畫布
+              撠?臬隞颱??拐辣<br>
+              隢?亙? PDF ?????唾撌血?質?怠?
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 2. 選取物件專屬控制 (動態切換) -->
+      <!-- 2. ?詨??拐辣撠惇?批 (????) -->
       <div class="panel-card" id="cardActiveControls">
         <div class="card-title">
-          <span>選取物件專屬控制</span>
-          <span id="activeTypeName" style="font-size: 11px; color: var(--text-muted); font-weight: normal;">未選取任何物件</span>
+          <span>?詨??拐辣撠惇?批</span>
+          <span id="activeTypeName" style="font-size: 11px; color: var(--text-muted); font-weight: normal;">?芷?遙雿隞?/span>
         </div>
 
         <div class="panel-body-box">
         <div id="noSelectionHint" class="empty-hint">
-          請在左側畫布或上方清單點選物件以展開控制
+          隢撌血?怠????寞??桅??貊隞嗡誑撅??批
         </div>
 
         <div id="selectionControls" class="dynamic-controls hidden">
           
-          <!-- PDF 訂購單專用：裁切高度微調 -->
+          <!-- PDF 閮頃?桀??剁?鋆?擃漲敺株矽 -->
           <div id="pdfControls" class="control-row hidden">
             <div class="control-label">
-              <span>訂購單裁切高度微調</span>
+              <span>閮頃?株???摨血凝隤?/span>
               <span class="slider-val" id="pdfCropVal">60%</span>
             </div>
             <div class="slider-container">
               <input type="range" id="sliderPdfCrop" min="20" max="100" value="60">
             </div>
             <button class="btn btn-outline btn-sm" id="btnResetPdfCrop" style="align-self: flex-start; margin-top: 4px;">
-              重設為自動辨識高度
+              ?身?箄?儘霅?摨?
             </button>
           </div>
 
-          <!-- 圖片（保卡/發票）專用：矩形裁切與自由梯形變形 -->
+          <!-- ??嚗????潛巨嚗??剁??拙耦鋆???望０敶Ｚ?敶?-->
           <div id="imagePerspectiveControls" class="control-row hidden">
             
-            <!-- 矩形裁切工具 -->
+            <!-- ?拙耦鋆?撌亙 -->
             <div style="font-size: 12px; font-weight: 700; color: var(--text-main); margin-bottom: 2px;">
-              1. 矩形裁切（去桌面背景／對照片點兩下可快開）
+              1. ?拙耦鋆?嚗獢?嚗??抒?暺銝敹恍?嚗?
             </div>
             <div id="rectCropNotice" class="tool-notice hidden">
-              請拖曳畫布上的裁切框四邊或四角切除多餘桌面，確認後點擊「完成裁切」（或再點兩下照片）。
+              隢??喟撣?????????閫??文?擗??ｇ?蝣箄?敺?????????暺銝????
             </div>
             <div style="display: flex; gap: 6px;">
-              <button class="btn btn-outline btn-sm btn-full" id="btnToggleRectCrop">開啟矩形裁切</button>
-              <button class="btn btn-primary btn-sm btn-full hidden" id="btnApplyRectCrop">完成裁切</button>
-              <button class="btn btn-outline btn-sm hidden" id="btnRevertRectCrop">還原裁切</button>
+              <button class="btn btn-outline btn-sm btn-full" id="btnToggleRectCrop">???拙耦鋆?</button>
+              <button class="btn btn-primary btn-sm btn-full hidden" id="btnApplyRectCrop">摰?鋆?</button>
+              <button class="btn btn-outline btn-sm hidden" id="btnRevertRectCrop">??鋆?</button>
             </div>
 
-            <!-- 自由梯形變形（透視扭曲 - 即時預覽） -->
+            <!-- ?芰璇臬耦霈耦嚗??剜 - ?單??汗嚗?-->
             <div style="font-size: 12px; font-weight: 700; color: var(--text-main); margin-top: 10px; margin-bottom: 2px;">
-              2. 自由梯形變形（即時拉扯透視校正）
+              2. ?芰璇臬耦霈耦嚗???舫??⊥迤嚗?
             </div>
             <div id="distortNotice" class="tool-notice hidden">
-              拖曳四個紅點時圖片會即時跟著拉扯變形，請對照九宮格線拉平，完成後點擊「套用變形」。
+              ???暺?????????航?敶ｇ?隢??找?摰格蝺?撟喉?摰?敺????刻?敶Ｕ?
             </div>
             <div style="display: flex; gap: 6px;">
-              <button class="btn btn-outline btn-sm btn-full" id="btnToggleDistortMode">開啟自由梯形變形</button>
-              <button class="btn btn-primary btn-sm btn-full hidden" id="btnApplyDistort">套用變形</button>
-              <button class="btn btn-outline btn-sm hidden" id="btnRevertDistort">還原原始圖片</button>
+              <button class="btn btn-outline btn-sm btn-full" id="btnToggleDistortMode">???芰璇臬耦霈耦</button>
+              <button class="btn btn-primary btn-sm btn-full hidden" id="btnApplyDistort">憟霈耦</button>
+              <button class="btn btn-outline btn-sm hidden" id="btnRevertDistort">??????</button>
             </div>
 
           </div>
 
-          <!-- 圖片（保卡/發票）專用：文件掃描美化 (預設關閉) -->
+          <!-- ??嚗????潛巨嚗??剁??辣??蝢? (?身??) -->
           <div id="imageEnhanceControls" class="control-row hidden">
             <div class="toggle-row">
-              <span style="font-size: 12px; font-weight: 700;">開啟文件掃描美化（去陰影/增白）</span>
+              <span style="font-size: 12px; font-weight: 700;">???辣??蝢?嚗?啣蔣/憓嚗?/span>
               <label class="switch">
                 <input type="checkbox" id="switchScanEnhance">
                 <span class="switch-slider"></span>
@@ -182,7 +182,7 @@
             <div id="enhanceSliders" class="dynamic-controls hidden" style="background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
               <div class="control-row">
                 <div class="control-label">
-                  <span>去陰影強度</span>
+                  <span>?駁敶勗撥摨?/span>
                   <span class="slider-val" id="valShadow">70%</span>
                 </div>
                 <div class="slider-container">
@@ -192,7 +192,7 @@
 
               <div class="control-row">
                 <div class="control-label">
-                  <span>亮度微調</span>
+                  <span>鈭桀漲敺株矽</span>
                   <span class="slider-val" id="valBrightness">0</span>
                 </div>
                 <div class="slider-container">
@@ -202,7 +202,7 @@
 
               <div class="control-row">
                 <div class="control-label">
-                  <span>對比微調</span>
+                  <span>撠?敺株矽</span>
                   <span class="slider-val" id="valContrast">1.2x</span>
                 </div>
                 <div class="slider-container">
@@ -212,16 +212,16 @@
             </div>
           </div>
 
-          <!-- 文字物件專用控制 -->
+          <!-- ???拐辣撠?批 -->
           <div id="textControls" class="control-row hidden">
             <div class="control-label">
-              <span>文字內容</span>
+              <span>???批捆</span>
             </div>
             <textarea id="editTextContent" rows="3"></textarea>
 
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>字體大小</span>
+                <span>摮?憭批?</span>
                 <span class="slider-val" id="valTextFontSize">40px</span>
               </div>
               <div class="slider-container" style="display: flex; gap: 8px; align-items: center;">
@@ -233,44 +233,44 @@
             <div class="text-format-group" style="margin-top: 6px;">
               <button class="btn btn-outline btn-sm" id="btnTextBold" style="font-weight: bold; width: 32px;">B</button>
               <div class="color-presets" style="margin: 0;">
-                <div class="color-btn active" data-color="#000000" style="background: #000000;" title="黑色"></div>
-                <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="紅色"></div>
-                <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="專櫃藍色"></div>
+                <div class="color-btn active" data-color="#000000" style="background: #000000;" title="暺"></div>
+                <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="蝝"></div>
+                <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="撠??"></div>
               </div>
             </div>
           </div>
 
-          <!-- 手寫客戶資料圖層專用控制 -->
+          <!-- ?神摰Ｘ鞈??惜撠?批 -->
           <div id="handwritingControls" class="control-row hidden">
             <div class="control-label">
-              <span>手寫客戶資料內容</span>
+              <span>?神摰Ｘ鞈??批捆</span>
             </div>
-            <textarea id="editHwText" rows="3" placeholder="輸入客戶資料..."></textarea>
+            <textarea id="editHwText" rows="3" placeholder="頛詨摰Ｘ鞈?..."></textarea>
 
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>人物字跡（20 種高差異化風格）</span>
+                <span>鈭箇摮楚嚗?0 蝔桅?撌桃?◢?潘?</span>
               </div>
               <select id="editHwPersona" class="hw-select"></select>
             </div>
 
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; gap: 8px;">
               <div class="color-presets" style="margin: 0;" id="editHwColorPresets">
-                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色"></div>
-                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="淺藍色"></div>
-                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="墨藍色"></div>
+                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="暺"></div>
+                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="瘛箄???></div>
+                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="憓刻???></div>
               </div>
               <div class="hw-seg-group" id="editHwTipGroup">
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">細</button>
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">中</button>
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">粗</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">蝝?/button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">銝?/button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">蝎?/button>
               </div>
             </div>
 
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
-                <span class="slider-val" id="valEditHwSpacing">5 (標準)</span>
+                <span>?? 撌血摮?嚗? ?撖???10 ?蝺?嚗?/span>
+                <span class="slider-val" id="valEditHwSpacing">5 (璅?)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderEditHwSpacing" min="1" max="10" step="1" value="5">
@@ -279,8 +279,8 @@
 
             <div class="control-row" style="margin-top: 4px;">
               <div class="control-label">
-                <span>🎛️ 微調工整度（認真 ➔ 隨性）</span>
-                <span class="slider-val" id="valEditHwNeatness">5 (標準)</span>
+                <span>??儭?敺株矽撌交摨佗?隤? ???冽改?</span>
+                <span class="slider-val" id="valEditHwNeatness">5 (璅?)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderEditHwNeatness" min="1" max="10" step="1" value="5">
@@ -288,36 +288,36 @@
             </div>
           </div>
 
-          <!-- 局部圈選刪除（塗白橡皮擦 - 適用於 PDF 訂購單與照片） -->
+          <!-- 撅?典??詨?歹?憛璈∠??- ?拍??PDF 閮頃?株??抒?嚗?-->
           <div id="eraseControls" class="control-row hidden" style="border-top: 1px solid #f1f5f9; padding-top: 10px;">
             <div id="eraseNotice" class="tool-notice hidden" style="margin-bottom: 8px;">
-              <strong>小畫家選取模式</strong>：拖曳拉出虛線框 ➜ 游標移入框內可拖曳平移（或方向鍵 1px 微調） ➜ 按 <strong>Delete</strong> 執行塗白遮除（Esc 退出）。
+              <strong>撠摰園?芋撘?/strong>嚗??單??箄?蝺? ??皜豢?蝘餃獢?舀??喳像蝘鳴??? 1px 敺株矽嚗?????<strong>Delete</strong> ?瑁?憛?桅嚗sc ??綽???
             </div>
             <button type="button" class="btn btn-outline btn-full btn-erase-large" id="btnToggleEraseBox">
-              <span class="erase-btn-icon">🧹</span>
+              <span class="erase-btn-icon">?完</span>
               <span class="erase-btn-content">
-                <span class="erase-btn-title">局部圈選刪除（塗白橡皮擦）</span>
-                <span class="erase-btn-sub">點此開啟 MS Paint 矩形選取框 · 支援拖曳與方向鍵微調</span>
+                <span class="erase-btn-title">撅?典??詨?歹?憛璈∠?佗?</span>
+                <span class="erase-btn-sub">暺迨?? MS Paint ?拙耦?詨?獢?繚 ?舀???敺株矽</span>
               </span>
             </button>
             <button type="button" class="btn btn-danger btn-sm btn-full hidden" id="btnApplyEraseBox" style="margin-top: 8px; padding: 10px 14px; font-size: 13px; font-weight: 700;">
-              ✂️ 確認清除圈選範圍 (Delete)
+              ?? 蝣箄?皜?蝭? (Delete)
             </button>
           </div>
 
-          <!-- 通用變形控制（快速旋轉、水平翻轉、刪除） -->
+          <!-- ?霈耦?批嚗翰??頧偌撟喟蕃頧?歹? -->
           <div class="control-row" style="border-top: 1px solid #f1f5f9; padding-top: 8px;">
             <div style="display: flex; gap: 6px;">
-              <button class="btn btn-outline btn-sm" id="btnRotateCCW" title="逆時針旋轉 90°">⟲ -90°</button>
-              <button class="btn btn-outline btn-sm" id="btnRotateCW" title="順時針旋轉 90°">⟳ +90°</button>
-              <button class="btn btn-outline btn-sm" id="btnFlipH" title="水平翻轉">水平翻轉</button>
-              <button class="btn btn-outline btn-sm" id="btnCenterObj" title="置於畫布正中">居中</button>
-              <button class="btn btn-danger btn-sm" id="btnDeleteActive" style="margin-left: auto;" title="刪除此物件 (Delete)">
+              <button class="btn btn-outline btn-sm" id="btnRotateCCW" title="????頧?90簞">??-90簞</button>
+              <button class="btn btn-outline btn-sm" id="btnRotateCW" title="????頧?90簞">??+90簞</button>
+              <button class="btn btn-outline btn-sm" id="btnFlipH" title="瘞游像蝧餉?">瘞游像蝧餉?</button>
+              <button class="btn btn-outline btn-sm" id="btnCenterObj" title="蝵格?怠?甇?葉">撅葉</button>
+              <button class="btn btn-danger btn-sm" id="btnDeleteActive" style="margin-left: auto;" title="?芷甇斤隞?(Delete)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                 </svg>
-                刪除
+                ?芷
               </button>
             </div>
           </div>
@@ -326,28 +326,93 @@
         </div>
       </div>
 
-      <!-- 3. 櫃位印章與同色系動態日期 (常駐區塊) -->
+      <!-- 2-1. ?儭???靽?箸颲刻????蝡?(v21) -->
+      <div class="panel-card" id="cardSmartWarranty">
+        <div class="card-title">
+          <span>?儭???靽?箸颲刻????蝡?/span>
+          <span class="count-badge" id="cardTemplateBadge">??????/span>
+        </div>
+
+        <div class="panel-body-box">
+          <div class="control-row">
+            <div class="control-label">
+              <span>????格芋?踵芋撘?/span>
+            </div>
+            <select id="selectCardTemplateMode" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #fff;">
+              <option value="auto">?芸??菜葫????殷??刻嚗?/option>
+              <option value="panasonic_slip1">????嚗??? 蝚砌??荔??砍??S203J01嚗?/option>
+              <option value="panasonic_slip2">????嚗??? 蝚砌??荔?憿批恥??S203B01嚗?/option>
+              <option value="lg_soon" disabled>LG 璅?靽??賂????游?嚗?/option>
+              <option value="samsung_soon" disabled>Samsung 銝?靽??賂????游?嚗?/option>
+              <option value="hitachi_sony_soon" disabled>Hitachi / Sony 靽??賂????游?嚗?/option>
+            </select>
+          </div>
+
+          <div class="btn-group" style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnToggleCardRectify" title="?芸??菜葫靽蝝??脣?獢蒂????敺株矽">
+              ?? ???菜葫??甇?
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnApplyCardRectify" style="background: #003FBC;" title="?瑁????迤銝西儘霅?蝔株?璈?">
+              ???迤 + 颲刻?
+            </button>
+          </div>
+
+          <div id="cardRectifyNotice" class="tool-notice hidden" style="margin-top: 6px; font-size: 11px;">
+            隢??喟撣????脰?暺?朣??∠?銴憭?嚗敺株矽嚗?蝣箄?敺?? ?迤 + 颲刻???
+          </div>
+
+          <div id="cardSmartStatus" class="ocr-status-box hidden" style="margin-top: 8px; font-size: 11px;"></div>
+
+          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; width: 48px; flex-shrink: 0; color: var(--text-main);">璈車嚗?/span>
+              <input type="text" id="inputCardModel" placeholder="?迤敺?儘霅?憒?NR-F551WX-W1嚗? style="flex: 1; font-size: 12px; padding: 4px 6px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCopyCardModel" style="padding: 4px 8px; font-size: 11px;">銴ˊ</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; width: 48px; flex-shrink: 0; color: var(--text-main);">璈?嚗?/span>
+              <input type="text" id="inputCardSerial" placeholder="?迤敺?儘霅?憒?A5W01714嚗? style="flex: 1; font-size: 12px; padding: 4px 6px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCopyCardSerial" style="padding: 4px 8px; font-size: 11px;">銴ˊ</button>
+            </div>
+          </div>
+
+          <div class="btn-group" style="margin-top: 8px; display: flex; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-sm" id="btnRerunCardOcr" style="flex: 1; font-size: 11px;">
+              ?? ??甈? OCR
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnSyncCardToNote" style="flex: 1; font-size: 11px;">
+              漎? 撣嗅?酉甈?
+            </button>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-full" id="btnAutoStampCard" style="margin-top: 8px; background: #003FBC; font-weight: 700;">
+            ? ?交?獢霈??芸???瑹?
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. 瑹??啁????脩頂???交? (撣賊??憛? -->
       <div class="panel-card">
         <div class="card-title">
-          <span>櫃位印章與動態日期</span>
+          <span>瑹??啁??????/span>
         </div>
 
         <div class="panel-body-box">
         <div class="stamp-preview-box">
-          <img src="" alt="櫃位印章預覽" class="stamp-preview-img" id="stampPreviewImg">
+          <img src="" alt="瑹??啁??汗" class="stamp-preview-img" id="stampPreviewImg">
         </div>
 
         <div class="control-row">
           <div class="control-label">
-            <span>印章日期（民國年格式）</span>
+            <span>?啁??交?嚗??僑?澆?嚗?/span>
           </div>
-          <input type="text" id="inputStampDate" placeholder="如 115.11.21" value="115.11.21">
+          <input type="text" id="inputStampDate" placeholder="憒?115.11.21" value="115.11.21">
         </div>
 
-        <!-- 日期字體大小微調 -->
+        <!-- ?交?摮?憭批?敺株矽 -->
         <div class="control-row" style="margin-top: 6px;">
           <div class="control-label">
-            <span>日期字體大小</span>
+            <span>?交?摮?憭批?</span>
             <span class="slider-val" id="valStampFontSize">175px</span>
           </div>
           <div class="slider-container">
@@ -355,10 +420,10 @@
           </div>
         </div>
 
-        <!-- 日期垂直位置微調 (Y 軸偏移) -->
+        <!-- ?交??雿蔭敺株矽 (Y 頠詨?蝘? -->
         <div class="control-row">
           <div class="control-label">
-            <span>日期垂直位置（Y 軸）</span>
+            <span>?交??雿蔭嚗 頠賂?</span>
             <span class="slider-val" id="valStampOffsetY">+0px</span>
           </div>
           <div class="slider-container">
@@ -368,7 +433,7 @@
 
         <div style="display: flex; justify-content: flex-end; margin-top: 2px;">
           <button class="btn btn-outline btn-sm" id="btnResetStampSettings" style="font-size: 11px;">
-            重設印章字體與位置
+            ?身?啁?摮???蝵?
           </button>
         </div>
 
@@ -377,24 +442,24 @@
             <circle cx="12" cy="12" r="10"/>
             <polyline points="12 6 12 12 16 14"/>
           </svg>
-          蓋上印章（加到畫布）
+          ???啁?嚗??啁撣?
         </button>
         </div>
       </div>
 
-      <!-- 4. 單據內文辨識 (OCR) 與審核備註文字 -->
+      <!-- 4. ?格??扳?颲刻? (OCR) ?祟?詨?閮餅?摮?-->
       <div class="panel-card">
         <div class="card-title">
-          <span>單據文字辨識與備註</span>
+          <span>?格???颲刻???閮?/span>
           <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
-            <button class="btn btn-outline btn-sm" id="btnSerialOcr" title="框選畫布上保卡的機號區域進行局部 OCR 辨識">
-              🎯 機號辨識
+            <button class="btn btn-outline btn-sm" id="btnSerialOcr" title="獢?怠?銝??∠?璈???脰?撅??OCR 颲刻?">
+              ? 璈?颲刻?
             </button>
-            <button class="btn btn-outline btn-sm" id="btnInvoiceOcr" title="框選畫布上發票的號碼區域進行局部 OCR 辨識">
-              🧾 發票號碼辨識
+            <button class="btn btn-outline btn-sm" id="btnInvoiceOcr" title="獢?怠?銝蟡函??Ⅳ??脰?撅??OCR 颲刻?">
+              ?屁 ?潛巨?Ⅳ颲刻?
             </button>
-            <button class="btn btn-primary btn-sm" id="btnRunOcr" title="自動讀取訂購單、發票與保卡的日期、發票號、型號與機號">
-              🔍 一鍵辨識單據
+            <button class="btn btn-primary btn-sm" id="btnRunOcr" title="?芸?霈??鞈澆?蟡刻?靽??蟡刻?????璈?">
+              ?? 銝?菔儘霅??
             </button>
           </div>
         </div>
@@ -403,61 +468,61 @@
         <div id="ocrStatusBox" class="ocr-status hidden"></div>
 
         <div class="control-row">
-          <textarea id="inputNewNote" rows="5" placeholder="可點擊上方「一鍵辨識單據」自動帶入發票與保卡資訊，或直接手動輸入備註文字..."></textarea>
+          <textarea id="inputNewNote" rows="5" placeholder="?舫????嫘??菔儘霅??葆?亦蟡刻?靽鞈?嚗??湔??頛詨?酉??..."></textarea>
         </div>
 
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; gap: 6px;">
           <div style="display: flex; align-items: center; gap: 6px;">
             <button class="btn btn-outline btn-sm" id="btnNewNoteBold" style="font-weight: bold; width: 30px;">B</button>
             <div class="color-presets" style="margin: 0;" id="newNoteColorPresets">
-              <div class="color-btn active" data-color="#000000" style="background: #000000;" title="黑色"></div>
-              <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="紅色"></div>
-              <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="專櫃藍色"></div>
+              <div class="color-btn active" data-color="#000000" style="background: #000000;" title="暺"></div>
+              <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="蝝"></div>
+              <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="撠??"></div>
             </div>
           </div>
 
           <div style="display: flex; gap: 6px;">
-            <button class="btn btn-outline btn-sm" id="btnCopyNote" title="複製文字框內容貼給客戶">
-              📋 複製文字
+            <button class="btn btn-outline btn-sm" id="btnCopyNote" title="銴ˊ??獢摰寡票蝯血恥??>
+              ?? 銴ˊ??
             </button>
             <button class="btn btn-outline btn-sm" id="btnAddNote">
-              加入畫布
+              ??怠?
             </button>
           </div>
         </div>
         </div>
       </div>
 
-      <!-- 5. 🔤 內文修改：原生字型嵌入與文字覆寫 -->
+      <!-- 5. ? ?扳?靽格嚗??????亥???閬神 -->
       <div class="panel-card">
         <div class="card-title">
-          <span>🔤 內文修改：原生字型嵌入與覆寫</span>
+          <span>? ?扳?靽格嚗??????亥?閬神</span>
         </div>
 
         <div class="panel-body-box">
-        <!-- 字型選擇器 -->
+        <!-- 摮??豢???-->
         <div class="control-row">
           <div class="control-label">
-            <span>選擇自訂字型檔 (.ttf / .otf / .woff)</span>
+            <span>?豢??芾?摮?瑼?(.ttf / .otf / .woff)</span>
           </div>
           <input type="file" id="inputCustomFont" accept=".ttf,.otf,.woff,.woff2" style="font-size: 11px;">
           <div id="customFontStatus" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-            目前字型：系統預設黑體／細明體（載入自訂字型後自動鎖定）
+            ?桀?摮?嚗頂蝯梢?閮剝?擃?蝝唳?擃?頛?芾?摮?敺??摰?
           </div>
         </div>
 
-        <!-- 覆寫文字內容 -->
+        <!-- 閬神???批捆 -->
         <div class="control-row" style="margin-top: 8px;">
           <div class="control-label">
-            <span>覆寫文字內容</span>
+            <span>閬神???批捆</span>
           </div>
-          <input type="text" id="inputOverrideText" placeholder="輸入欲覆寫或新增的單據文字..." value="測試商品型號">
+          <input type="text" id="inputOverrideText" placeholder="頛詨甈脰?撖急??啣????摮?.." value="皜祈岫????">
         </div>
 
-        <!-- 字體大小與數值微調 -->
+        <!-- 摮?憭批???澆凝隤?-->
         <div class="control-row" style="margin-top: 8px;">
           <div class="control-label">
-            <span>字體大小 (px)</span>
+            <span>摮?憭批? (px)</span>
             <span class="slider-val" id="valOverrideFontSize">40px</span>
           </div>
           <div class="slider-container" style="display: flex; gap: 8px; align-items: center;">
@@ -466,94 +531,94 @@
           </div>
         </div>
 
-        <!-- 粗體、顏色與插入按鈕 -->
+        <!-- 蝎????脰???? -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 6px;">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button type="button" class="btn btn-outline btn-sm" id="btnOverrideBold" style="font-weight: bold; width: 32px;" title="粗體切換">B</button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnOverrideBold" style="font-weight: bold; width: 32px;" title="蝎???">B</button>
             <div class="color-presets" style="margin: 0;" id="overrideColorPresets">
-              <div class="color-btn active" data-color="#000000" style="background: #000000;" title="黑色"></div>
-              <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="紅色"></div>
-              <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="專櫃藍色"></div>
+              <div class="color-btn active" data-color="#000000" style="background: #000000;" title="暺"></div>
+              <div class="color-btn" data-color="#D32F2F" style="background: #D32F2F;" title="蝝"></div>
+              <div class="color-btn" data-color="#003FBC" style="background: #003FBC;" title="撠??"></div>
             </div>
           </div>
 
           <button type="button" class="btn btn-primary btn-sm" id="btnAddOverrideText" style="background-color: #003FBC;">
-            ➕ 插入覆寫文字到畫布
+            ???閬神???啁撣?
           </button>
         </div>
         </div>
       </div>
 
-      <!-- 6. ✍️ 保卡手寫客戶資料生成器 (20 種高差異化人物字跡 ＋ 速乾油性原子筆 ＋ 10 級字距) -->
+      <!-- 6. ?? 靽?神摰Ｘ鞈?????(20 蝔桅?撌桃?犖?拙?頝?嚗??嗾瘝寞批?摮? 嚗?10 蝝?頝? -->
       <div class="panel-card" id="cardHandwriting">
         <div class="card-title">
-          <span>✍️ 保卡手寫客戶資料生成器</span>
-          <span class="count-badge" id="hwPersonaBadge">#01 細膩女會計</span>
+          <span>?? 靽?神摰Ｘ鞈?????/span>
+          <span class="count-badge" id="hwPersonaBadge">#01 蝝啗憟單?閮?/span>
         </div>
 
         <div class="panel-body-box">
-          <!-- 客戶資料多行打字區 -->
+          <!-- 摰Ｘ鞈?憭???? -->
           <div class="control-row">
             <div class="control-label">
-              <span>客戶資料多行輸入（姓名／電話／Email／地址／機號）</span>
-              <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">油性原子筆就緒</span>
+              <span>摰Ｘ鞈?憭?頛詨嚗????餉店嚗mail嚗?嚗???</span>
+              <span style="font-size: 10px; color: var(--text-muted);" id="hwStrokeStatus">瘝寞批?摮?撠梁?</span>
             </div>
-            <textarea id="inputHandwritingText" rows="4" placeholder="請輸入或貼上客戶資料（支援換行排版）...">王小明
+            <textarea id="inputHandwritingText" rows="4" placeholder="隢撓?交?鞎潔?摰Ｘ鞈?嚗?湔?銵???...">????
 0912-345-678
 demo@example.com
-台北市信義區忠孝東路五段68號</textarea>
+?啣?撣縑蝢拙?敹??梯楝鈭挾68??/textarea>
           </div>
 
-          <!-- 20 種高差異化人物字跡選擇器（四大類分頁 ＋ 快速點選按鈕 ＋ 下拉選單） -->
+          <!-- 20 蝔桅?撌桃?犖?拙?頝⊿?嚗?憭折??? 嚗?敹恍??豢???嚗?銝??詨嚗?-->
           <div class="hw-persona-selector">
             <div class="hw-cat-tabs" id="hwCategoryTabs">
-              <button type="button" class="hw-cat-tab active" data-cat="female">👩 女性 (5)</button>
-              <button type="button" class="hw-cat-tab" data-cat="male">👨 男性 (5)</button>
-              <button type="button" class="hw-cat-tab" data-cat="elder">👴 長輩 (5)</button>
-              <button type="button" class="hw-cat-tab" data-cat="special">🎨 特殊 (5)</button>
+              <button type="button" class="hw-cat-tab active" data-cat="female">? 憟單?(5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="male">? ?瑟?(5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="elder">? ?瑁憬 (5)</button>
+              <button type="button" class="hw-cat-tab" data-cat="special">? ?寞? (5)</button>
             </div>
             <div class="hw-persona-btns" id="hwPersonaButtons"></div>
-            <select id="hwPersonaSelect" class="hw-select" style="margin-top: 6px;" title="快速切換全部 20 種人物字跡"></select>
+            <select id="hwPersonaSelect" class="hw-select" style="margin-top: 6px;" title="敹恍????20 蝔桐犖?拙?頝?></select>
           </div>
 
-          <!-- 細微調整面板 -->
+          <!-- 蝝啣凝隤踵?Ｘ -->
           <div class="hw-tweak-panel">
-            <!-- 墨水顏色（3 色） -->
+            <!-- 憓冽偌憿嚗? ?莎? -->
             <div class="hw-tweak-row">
-              <span class="hw-tweak-label">墨水顏色</span>
+              <span class="hw-tweak-label">憓冽偌憿</span>
               <div class="color-presets" style="margin: 0;" id="hwColorPresets">
-                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="黑色 (#1A1A1A)"></div>
-                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="淺藍色 (#1E6FD9)"></div>
-                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="墨藍色 (#0B2859)"></div>
+                <div class="color-btn active" data-color="#1A1A1A" style="background: #1A1A1A;" title="暺 (#1A1A1A)"></div>
+                <div class="color-btn" data-color="#1E6FD9" style="background: #1E6FD9;" title="瘛箄???(#1E6FD9)"></div>
+                <div class="color-btn" data-color="#0B2859" style="background: #0B2859;" title="憓刻???(#0B2859)"></div>
               </div>
             </div>
 
-            <!-- 筆尖粗細（3 段） -->
+            <!-- 蝑?蝎敦嚗? 畾蛛? -->
             <div class="hw-tweak-row">
-              <span class="hw-tweak-label">筆尖粗細</span>
+              <span class="hw-tweak-label">蝑?蝎敦</span>
               <div class="hw-seg-group" id="hwTipGroup">
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">細 (0.4mm)</button>
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">中 (0.7mm)</button>
-                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">粗 (1.1mm)</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="0.4">蝝?(0.4mm)</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn active" data-tip="0.7">銝?(0.7mm)</button>
+                <button type="button" class="btn btn-outline btn-sm hw-tip-btn" data-tip="1.1">蝎?(1.1mm)</button>
               </div>
             </div>
 
-            <!-- 左右字距 10 級滑桿（1 最寬 ➔ 10 最緊靠） -->
+            <!-- 撌血摮? 10 蝝?獢選?1 ?撖???10 ?蝺?嚗?-->
             <div class="control-row" style="margin-top: 6px;">
               <div class="control-label">
-                <span>↔️ 左右字距（1 最寬 ➔ 10 最緊靠）</span>
-                <span class="slider-val" id="valHwSpacing">5 (標準)</span>
+                <span>?? 撌血摮?嚗? ?撖???10 ?蝺?嚗?/span>
+                <span class="slider-val" id="valHwSpacing">5 (璅?)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderHwSpacing" min="1" max="10" step="1" value="5">
               </div>
             </div>
 
-            <!-- 微調工整度輔助滑桿（1 認真 ➔ 10 隨性） -->
+            <!-- 敺株矽撌交摨西??拇?獢選?1 隤? ??10 ?冽改? -->
             <div class="control-row" style="margin-top: 4px;">
               <div class="control-label">
-                <span>🎛️ 微調工整度（認真 ➔ 隨性）</span>
-                <span class="slider-val" id="valHwNeatness">5 (標準)</span>
+                <span>??儭?敺株矽撌交摨佗?隤? ???冽改?</span>
+                <span class="slider-val" id="valHwNeatness">5 (璅?)</span>
               </div>
               <div class="slider-container">
                 <input type="range" id="sliderHwNeatness" min="1" max="10" step="1" value="5">
@@ -561,57 +626,57 @@ demo@example.com
             </div>
           </div>
 
-          <!-- 即時放大預覽區 -->
+          <!-- ?單??曉之?汗? -->
           <div class="hw-main-preview-box">
             <canvas id="hwMainPreviewCanvas"></canvas>
           </div>
 
-          <!-- 重新抽樣 ＋ 蓋上保卡按鈕 -->
+          <!-- ??賣見 嚗???靽?? -->
           <div style="display: flex; gap: 6px; margin-top: 8px;">
-            <button type="button" class="btn btn-outline btn-sm" id="btnHwResample" title="同人物下重新隨機微調筆順與起伏">
-              🔄 換個筆順微調
+            <button type="button" class="btn btn-outline btn-sm" id="btnHwResample" title="?犖?拐???冽?敺株矽蝑??絲隡?>
+              ?? ???凝隤?
             </button>
             <button type="button" class="btn btn-primary" id="btnAddHandwriting" style="flex: 1; background-color: #003FBC;">
-              ✍️ 蓋上保卡（加入畫布）
+              ?? ??靽嚗??亦撣?
             </button>
           </div>
         </div>
       </div>
 
-      <!-- 7. 高解析度無損匯出 -->
+      <!-- 7. 擃圾?漲?⊥??臬 -->
       <div class="panel-card export-card">
         <div class="card-title">
-          <span>高解析度無損匯出</span>
+          <span>擃圾?漲?⊥??臬</span>
         </div>
 
         <div class="panel-body-box">
-        <!-- 圖紙輸出範圍勾選開關 -->
+        <!-- ??頛詨蝭??暸?? -->
         <div class="toggle-row" style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9;">
-          <span style="font-size: 12px; font-weight: 600;">依自訂範圍裁切匯出</span>
+          <span style="font-size: 12px; font-weight: 600;">靘閮??????/span>
           <label class="switch">
             <input type="checkbox" id="switchExportCrop">
             <span class="switch-slider"></span>
           </label>
         </div>
 
-        <!-- 輸出解析度三段選擇器 -->
+        <!-- 頛詨閫??摨虫?畾菟? -->
         <div class="control-row" style="margin-bottom: 10px;">
           <div class="control-label">
-            <span>輸出解析度檔位</span>
-            <span id="exportDimensionLabel" style="font-weight: 700; color: #003FBC;">3508 × 2480 px</span>
+            <span>頛詨閫??摨行?雿?/span>
+            <span id="exportDimensionLabel" style="font-weight: 700; color: #003FBC;">3508 ? 2480 px</span>
           </div>
           <div class="res-buttons" style="display: flex; gap: 6px; margin-top: 4px;">
-            <button type="button" class="btn btn-primary btn-sm res-btn active" data-scale="1.0" style="flex: 1;">大 (1.0x)</button>
-            <button type="button" class="btn btn-outline btn-sm res-btn" data-scale="0.75" style="flex: 1;">中 (0.75x)</button>
-            <button type="button" class="btn btn-outline btn-sm res-btn" data-scale="0.5" style="flex: 1;">小 (0.5x)</button>
+            <button type="button" class="btn btn-primary btn-sm res-btn active" data-scale="1.0" style="flex: 1;">憭?(1.0x)</button>
+            <button type="button" class="btn btn-outline btn-sm res-btn" data-scale="0.75" style="flex: 1;">銝?(0.75x)</button>
+            <button type="button" class="btn btn-outline btn-sm res-btn" data-scale="0.5" style="flex: 1;">撠?(0.5x)</button>
           </div>
         </div>
 
         <div class="control-row">
           <div class="control-label">
-            <span>輸出檔名</span>
+            <span>頛詨瑼?</span>
           </div>
-          <input type="text" id="inputExportName" value="客戶訂單發票保卡">
+          <input type="text" id="inputExportName" value="摰Ｘ閮?潛巨靽">
         </div>
 
         <button class="btn btn-primary btn-full" id="btnExportPng" style="margin-top: 12px; padding: 12px; font-size: 14px; background: #003FBC;">
@@ -620,7 +685,7 @@ demo@example.com
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          匯出 PNG 圖片
+          ?臬 PNG ??
         </button>
         </div>
       </div>
@@ -636,9 +701,11 @@ demo@example.com
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <!-- Tesseract.js OCR CDN -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
+  <!-- Base64 Stamp Data (?脫迫?砍 file:/// CORS ?) -->
   <script src="stamp_data.js"></script>
-  <!-- 主互動程式碼 -->
+  <!-- ??靽?箸璅⊥摨?(v21) -->
+  <script src="card_templates.js"></script>
+  <!-- 銝颱???撘Ⅳ -->
   <script src="app.js"></script>
 </body>
 </html>
