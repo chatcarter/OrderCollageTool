@@ -953,3 +953,19 @@ input:checked + .switch-slider:before {
   color: var(--primary-color);
   box-shadow: 0 0 0 1px var(--primary-color);
 }
+
+
+/* 畫布雙擊原地文字編輯器 (v23) */
+.inline-text-editor {
+  position: absolute;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.88);
+  border: 2px dashed #003FBC;
+  border-radius: 4px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  box-shadow: 0 4px 16px rgba(0, 63, 188, 0.18);
+  transform-origin: center center;
+}

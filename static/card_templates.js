@@ -78,11 +78,11 @@
         formCode: { x: 0.01, y: 0.85, w: 0.24, h: 0.14 },
         leftVertical: { x: 0.01, y: 0.15, w: 0.08, h: 0.70 }
       },
-      // 日期框空白避讓自動蓋印參數（兩聯通用）
+      // 日期框空白避讓自動蓋印參數（兩聯通用，v23 放大 1.2x 為 21.0%）
       stampSpec: {
         centerX: 0.845,
         centerY: 0.365,
-        widthRatio: 0.175,
+        widthRatio: 0.210,
         tiltRangeDeg: 1.5,
         blendMode: 'multiply'
       }
@@ -121,7 +121,7 @@
       stampSpec: {
         centerX: 0.845,
         centerY: 0.365,
-        widthRatio: 0.175,
+        widthRatio: 0.210,
         tiltRangeDeg: 1.5,
         blendMode: 'multiply'
       }
@@ -492,12 +492,302 @@
     return dstCanvas;
   }
 
+  /**
+   * 取樣蓋章目標區域周邊紙張空白處的平均亮度 L 與色溫 RGB (v23)
+   */
+  function sampleStampRegionLighting(cardImg, centerXRatio = 0.845, centerYRatio = 0.365, widthRatio = 0.210) {
+    const defaultLighting = { avgL: 235, avgR: 238, avgG: 236, avgB: 232, sampleCount: 0 };
+    if (!cardImg || !cardImg.width || !cardImg.height) return defaultLighting;
+
+    const sw = cardImg.width;
+    const sh = cardImg.height;
+    const sampleW = Math.max(24, Math.round(sw * widthRatio * 0.85));
+    const sampleH = Math.max(24, Math.round(sampleW * 0.72));
+    const cx = Math.round(sw * centerXRatio);
+    const cy = Math.round(sh * centerYRatio);
+
+    const sx = Math.max(0, Math.min(sw - sampleW, cx - Math.round(sampleW / 2)));
+    const sy = Math.max(0, Math.min(sh - sampleH, cy - Math.round(sampleH / 2)));
+    const w = Math.min(sampleW, sw - sx);
+    const h = Math.min(sampleH, sh - sy);
+    if (w <= 4 || h <= 4) return defaultLighting;
+
+    const tmp = document.createElement('canvas');
+    tmp.width = w;
+    tmp.height = h;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(cardImg, sx, sy, w, h, 0, 0, w, h);
+    const data = tCtx.getImageData(0, 0, w, h).data;
+
+    // 收集像素亮度，排除極深色文字線條，僅統計紙張空白底色
+    const candidates = [];
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      candidates.push({ r, g, b, lum });
+    }
+    if (candidates.length === 0) return defaultLighting;
+
+    // 取亮度前 55% 的紙張空白像素（過濾掉黑字與邊框墨線）
+    candidates.sort((a, b) => b.lum - a.lum);
+    const topCount = Math.max(10, Math.floor(candidates.length * 0.55));
+    let sumR = 0, sumG = 0, sumB = 0, sumL = 0;
+    for (let i = 0; i < topCount; i++) {
+      sumR += candidates[i].r;
+      sumG += candidates[i].g;
+      sumB += candidates[i].b;
+      sumL += candidates[i].lum;
+    }
+
+    return {
+      avgL: Math.round(sumL / topCount),
+      avgR: Math.round(sumR / topCount),
+      avgG: Math.round(sumG / topCount),
+      avgB: Math.round(sumB / topCount),
+      sampleCount: topCount
+    };
+  }
+
+  /**
+   * 依據目標紙張亮度與色溫調整專櫃印章油墨，消除偏暗照片上的螢光貼紙感 (v23)
+   */
+  function adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting) {
+    const stampCanvas = document.createElement('canvas');
+    stampCanvas.width = stampImg.width;
+    stampCanvas.height = stampImg.height;
+    const sCtx = stampCanvas.getContext('2d', { willReadFrequently: true });
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'high';
+    sCtx.drawImage(stampImg, 0, 0);
+
+    const boxCx = 942;
+    const boxCy = 719 + offsetY;
+    sCtx.fillStyle = '#003FBC';
+    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
+    sCtx.textAlign = 'center';
+    sCtx.textBaseline = 'middle';
+    sCtx.fillText(dateStr, boxCx, boxCy);
+
+    const avgL = lighting ? lighting.avgL : 235;
+    const paperR = lighting ? lighting.avgR : 235;
+    const paperG = lighting ? lighting.avgG : 235;
+    const paperB = lighting ? lighting.avgB : 235;
+
+    // 偏暗底紙 (L < 190) 時壓低印章明度並收斂飽和度 10%～22%，並微調紙張色溫融入
+    const darkness = avgL < 190 ? Math.min(1, Math.max(0, (190 - avgL) / 110)) : 0;
+    const satKeep = avgL < 190 ? (0.88 - darkness * 0.12) : 0.92; // 降低 8% ~ 24% 飽和度消除螢光感
+    const brightScale = avgL < 190 ? (1.0 - darkness * 0.38) : 0.96;
+    const alphaScale = avgL < 190 ? (0.91 - darkness * 0.08) : 0.94;
+
+    // 底紙偏暖時微幅混入紙張環境光色溫，消除冷藍突兀感
+    const warmShift = Math.max(0, (paperR - paperB) / 255) * 0.16;
+
+    const imgData = sCtx.getImageData(0, 0, stampCanvas.width, stampCanvas.height);
+    const d = imgData.data;
+
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (a === 0) continue;
+
+      let r = d[i];
+      let g = d[i + 1];
+      let b = d[i + 2];
+
+      // 1. 收斂飽和度 (向灰階靠攏以去除螢光純藍感)
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = lum + (r - lum) * satKeep;
+      g = lum + (g - lum) * satKeep;
+      b = lum + (b - lum) * satKeep;
+
+      // 2. 壓低明度對齊拍攝陰影深度
+      r *= brightScale;
+      g *= brightScale;
+      b *= brightScale;
+
+      // 3. 混入紙張環境色溫
+      if (warmShift > 0) {
+        r = r * (1 - warmShift) + (paperR * 0.45) * warmShift;
+        g = g * (1 - warmShift) + (paperG * 0.45) * warmShift;
+        b = b * (1 - warmShift) + (paperB * 0.45) * warmShift;
+      }
+
+      d[i] = Math.max(0, Math.min(255, Math.round(r)));
+      d[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      d[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      d[i + 3] = Math.max(0, Math.min(255, Math.round(a * alphaScale)));
+    }
+
+    sCtx.putImageData(imgData, 0, 0);
+    return {
+      canvas: stampCanvas,
+      avgL,
+      darkness,
+      satKeep,
+      brightScale
+    };
+  }
+
+  /**
+   * 電子發票加強邊緣自動去背裁切（偵測白色紙張輪廓並內縮 1.5% 安全邊距）(v23)
+   */
+  function autoTrimReceiptImage(srcImg) {
+    if (!srcImg || !srcImg.width || !srcImg.height) return null;
+    const sw = srcImg.width;
+    const sh = srcImg.height;
+    if (sw < 60 || sh < 80) return null;
+
+    const maxDim = 560;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(40, Math.round(sw * scale));
+    const h = Math.max(40, Math.round(sh * scale));
+
+    const tmp = document.createElement('canvas');
+    tmp.width = w;
+    tmp.height = h;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(srcImg, 0, 0, w, h);
+    const data = tCtx.getImageData(0, 0, w, h).data;
+
+    // 估計外圍 3% 邊框背景平均亮度（用於對比白色發票紙張）
+    let edgeSum = 0, edgeCnt = 0;
+    const borderMargin = Math.max(2, Math.round(Math.min(w, h) * 0.03));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (x < borderMargin || x >= w - borderMargin || y < borderMargin || y >= h - borderMargin) {
+          const idx = (y * w + x) * 4;
+          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+          edgeSum += lum;
+          edgeCnt++;
+        }
+      }
+    }
+    const edgeAvgLum = edgeCnt > 0 ? (edgeSum / edgeCnt) : 120;
+
+    // 若四週已經全是極白乾淨掃描圖 (>238)，直接檢查非極白內容外框即可
+    const isAlreadyWhiteScan = edgeAvgLum > 236;
+
+    const rowScore = new Float32Array(h);
+    const colScore = new Float32Array(w);
+    const paperMask = new Uint8Array(w * h);
+
+    for (let y = 0; y < h; y++) {
+      let rMatch = 0;
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+
+        let isForeground = false;
+        if (isAlreadyWhiteScan) {
+          // 白底掃描檔：找文字或邊框線所在範圍
+          if (lum < 220) isForeground = true;
+        } else {
+          // 實拍發票：找高亮度且低彩度（白／淺灰紙張）區域
+          const lumThresh = Math.max(125, Math.min(195, edgeAvgLum + 26));
+          if (lum >= lumThresh && chroma <= 52) {
+            isForeground = true;
+          }
+        }
+        if (isForeground) {
+          paperMask[y * w + x] = 1;
+          rMatch++;
+          colScore[x]++;
+        }
+      }
+      rowScore[y] = rMatch / w;
+    }
+    for (let x = 0; x < w; x++) {
+      colScore[x] = colScore[x] / h;
+    }
+
+    // 找出連續主要紙張跨度（避免桌面反光點干擾）
+    function findMainSpan(scores, minRatio) {
+      let bestStart = -1, bestEnd = -1, bestLen = 0;
+      let curStart = -1;
+      const maxGap = Math.max(2, Math.round(scores.length * 0.02));
+      let gap = 0;
+      for (let i = 0; i < scores.length; i++) {
+        if (scores[i] >= minRatio) {
+          if (curStart < 0) curStart = i;
+          gap = 0;
+          const len = i - curStart + 1;
+          if (len > bestLen) {
+            bestLen = len;
+            bestStart = curStart;
+            bestEnd = i;
+          }
+        } else if (curStart >= 0) {
+          gap++;
+          if (gap > maxGap) {
+            curStart = -1;
+            gap = 0;
+          }
+        }
+      }
+      return bestLen > 0 ? [bestStart, bestEnd] : null;
+    }
+
+    const colThresh = isAlreadyWhiteScan ? 0.015 : 0.18;
+    const rowThresh = isAlreadyWhiteScan ? 0.015 : 0.12;
+    const xSpan = findMainSpan(colScore, colThresh);
+    const ySpan = findMainSpan(rowScore, rowThresh);
+    if (!xSpan || !ySpan) return null;
+
+    let x0 = xSpan[0];
+    let x1 = xSpan[1];
+    let y0 = ySpan[0];
+    let y1 = ySpan[1];
+
+    // 確認裁切範圍合理（至少保留原圖 22% 寬度與 30% 高度，且至少裁掉一部分背景邊緣）
+    const spanW = x1 - x0 + 1;
+    const spanH = y1 - y0 + 1;
+    if (spanW < w * 0.22 || spanH < h * 0.30) return null;
+
+    const trimmedAreaRatio = (spanW * spanH) / (w * h);
+    if (trimmedAreaRatio > 0.96 && isAlreadyWhiteScan) return null;
+
+    // 內縮安全邊距 1.5%（完全切除紙張邊緣殘留的暗色桌邊／陰影）
+    const insetRatio = isAlreadyWhiteScan ? -0.01 : 0.015;
+    const invScale = 1 / scale;
+
+    let rx = Math.round(x0 * invScale);
+    let ry = Math.round(y0 * invScale);
+    let rw = Math.round(spanW * invScale);
+    let rh = Math.round(spanH * invScale);
+
+    const insetX = Math.round(rw * insetRatio);
+    const insetY = Math.round(rh * insetRatio);
+    rx = Math.max(0, rx + insetX);
+    ry = Math.max(0, ry + insetY);
+    rw = Math.max(40, Math.min(sw - rx, rw - insetX * 2));
+    rh = Math.max(40, Math.min(sh - ry, rh - insetY * 2));
+
+    // 若裁切結果跟原圖幾乎一模一樣 (>97%) 仍適度做 1.5% 邊緣淨化
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = rw;
+    outCanvas.height = rh;
+    const oCtx = outCanvas.getContext('2d');
+    oCtx.imageSmoothingEnabled = true;
+    oCtx.imageSmoothingQuality = 'high';
+    oCtx.drawImage(srcImg, rx, ry, rw, rh, 0, 0, rw, rh);
+
+    return outCanvas;
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     TEMPLATES: CARD_TEMPLATES,
     detectPanasonicCardQuad,
     detectPanasonicSlipType,
     createEnhancedOcrCropCanvas,
-    rectifyPerspectivePureJS
+    rectifyPerspectivePureJS,
+    sampleStampRegionLighting,
+    adaptStampCanvasToLighting,
+    autoTrimReceiptImage
   };
 })(window);

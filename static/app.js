@@ -238,8 +238,10 @@ const btnAddNote = document.getElementById('btnAddNote');
 let newNoteColor = '#000000';
 let newNoteIsBold = false;
 
-// 品牌保卡智慧辨識與自動蓋章控制項 (v21/v22)
+// 品牌保卡智慧辨識與自動蓋章控制項 (v21/v22/v23)
 const switchAutoSmartCard = document.getElementById('switchAutoSmartCard');
+const switchAutoLayout = document.getElementById('switchAutoLayout');
+const btnAutoLayout = document.getElementById('btnAutoLayout');
 const selectCardTemplateMode = document.getElementById('selectCardTemplateMode');
 const cardTemplateBadge = document.getElementById('cardTemplateBadge');
 const btnToggleCardRectify = document.getElementById('btnToggleCardRectify');
@@ -285,6 +287,7 @@ function cloneLayerForUndo(l) {
   if (l.distortCorners) cloned.distortCorners = l.distortCorners.map(c => ({ ...c }));
   if (l.eraseBox) cloned.eraseBox = { ...l.eraseBox };
   if (l.hwOptions) cloned.hwOptions = { ...l.hwOptions };
+  if (l.stampSpec) cloned.stampSpec = { ...l.stampSpec };
 
   if (l.image instanceof HTMLCanvasElement) {
     const c = document.createElement('canvas');
@@ -600,11 +603,16 @@ function createLayerObject(options) {
     distortCorners: null, // 目標四邊形頂點 [{x,y}, {x,y}, {x,y}, {x,y}] (相對於 baseImg 座標系)
     liveDistortPreview: null,
     liveDistortOffset: null,
-    // 品牌保卡四角透視拉正模式 (v21)
+    // 品牌保卡四角透視拉正模式 (v21/v23)
     cardRectifyMode: false,
     cardQuadCorners: null,
     cardTemplateId: null,
     isRectifiedCard: false,
+    isReceipt: !!options.isReceipt,
+    attachedCardId: options.attachedCardId || null,
+    stampSpec: options.stampSpec || null,
+    isAutoFiveLineNote: !!options.isAutoFiveLineNote,
+    userEdited: !!options.userEdited,
     blendMode: options.blendMode || null,
     // 文件美化專用
     scanEnhance: false,
@@ -677,7 +685,7 @@ function render(isExporting = false) {
   });
 
   // 3. 繪製選取框與控制柄
-  if (!isExporting && activeLayer && !activeLayer.rectCropMode && !activeLayer.distortMode && !activeLayer.cardRectifyMode && !isEraseMode) {
+  if (!isExporting && activeLayer && !activeLayer._isInlineEditing && !activeLayer.rectCropMode && !activeLayer.distortMode && !activeLayer.cardRectifyMode && !isEraseMode) {
     drawSelectionBox(activeLayer);
   }
 
@@ -725,6 +733,8 @@ function drawTextLayer(layer) {
 
   const startX = -layer.width / 2 + padX / 2;
   const startY = -layer.height / 2 + padY / 2;
+
+  if (layer._isInlineEditing) return;
 
   lines.forEach((line, idx) => {
     ctx.fillText(line, startX, startY + idx * lineHeight);
@@ -2091,8 +2101,7 @@ canvas.addEventListener('dblclick', e => {
     }
   } else if (hit.layer.type === 'text' || hit.layer.type === 'overrideText') {
     setActiveLayer(hit.layer);
-    editTextContent.focus();
-    showToast('請在右側面板修改文字內容');
+    openInlineTextEditor(hit.layer);
   }
 });
 
@@ -2440,14 +2449,13 @@ async function importPdfPureFrontend(file) {
       0, 0, fullCanvas.width, cropYInCanvas
     );
 
-    const orderDisplayW = Math.round(canvasWidth * 0.63);
+    const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
+    const orderDisplayW = autoLayoutEnabled ? (canvasWidth - 20) : Math.round(canvasWidth * 0.63);
     const aspect = croppedCanvas.width / croppedCanvas.height;
     const orderDisplayH = Math.round(orderDisplayW / aspect);
 
-    const marginX = Math.round(canvasWidth * (40 / 2400));
-    const marginY = Math.round(canvasHeight * (40 / 1700));
-    const posX = marginX + orderDisplayW / 2;
-    const posY = marginY + orderDisplayH / 2;
+    const posX = autoLayoutEnabled ? Math.round(canvasWidth / 2) : (Math.round(canvasWidth * (40 / 2400)) + orderDisplayW / 2);
+    const posY = autoLayoutEnabled ? (10 + orderDisplayH / 2) : (Math.round(canvasHeight * (40 / 1700)) + orderDisplayH / 2);
 
     const newLayer = createLayerObject({
       type: 'pdf_order',
@@ -2466,7 +2474,10 @@ async function importPdfPureFrontend(file) {
     pushUndoState('匯入 PDF 訂單');
     layers.push(newLayer);
     setActiveLayer(newLayer);
-    showToast(`PDF 訂購單已以 6.0x 超高取樣與文字銳利化精準裁切進場`);
+    if (autoLayoutEnabled && typeof autoArrangeWorkbenchLayout === 'function') {
+      autoArrangeWorkbenchLayout(false);
+    }
+    showToast(`PDF 訂購單已以 6.0x 超高取樣置頂滿版進場`);
   } catch (err) {
     showToast(`PDF 讀取失敗: ${err.message}`);
     console.error(err);
@@ -2523,23 +2534,41 @@ function importImagePureFrontend(file) {
         const sh = img.height;
 
         const isHorizontal = sw >= sh;
+        let activeImg = img;
+        let isReceiptImg = false;
+        let trimmedCanvas = null;
+
+        // v23: 若為長條型電子發票（直立圖且非保卡），執行加強邊緣自動去背裁切 (內縮 1.5% 安全邊距)
+        const modeValInit = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+        const isManualPanasonicInit = modeValInit && modeValInit.startsWith('panasonic_');
+        if (!isHorizontal && !isManualPanasonicInit && window.CardTemplates && window.CardTemplates.autoTrimReceiptImage) {
+          isReceiptImg = true;
+          trimmedCanvas = window.CardTemplates.autoTrimReceiptImage(img);
+          if (trimmedCanvas) {
+            activeImg = trimmedCanvas;
+          }
+        }
+
+        const effW = activeImg.width;
+        const effH = activeImg.height;
+        const effHorizontal = effW >= effH;
         let displayW, displayH, posX, posY;
 
-        if (isHorizontal) {
-          displayW = Math.round(canvasWidth * 0.58);
-          const aspect = sw / sh;
+        if (effHorizontal) {
+          displayW = Math.round(canvasWidth * 0.59);
+          const aspect = effW / effH;
           displayH = Math.round(displayW / aspect);
 
-          const marginX = Math.round(canvasWidth * (40 / 2400));
+          const marginX = 10;
           const marginY = Math.round(canvasHeight * (40 / 1700));
           posX = marginX + displayW / 2;
           posY = canvasHeight - marginY - displayH / 2;
         } else {
-          displayH = Math.round(canvasHeight * 0.88);
-          const aspect = sw / sh;
-          displayW = Math.round(displayH * aspect);
+          displayW = Math.round((canvasWidth - 20) * 0.37);
+          const aspect = effW / effH;
+          displayH = Math.round(displayW / aspect);
 
-          const marginX = Math.round(canvasWidth * (40 / 2400));
+          const marginX = 10;
           posX = canvasWidth - marginX - displayW / 2;
           posY = canvasHeight / 2;
         }
@@ -2547,8 +2576,10 @@ function importImagePureFrontend(file) {
         const newLayer = createLayerObject({
           type: 'image',
           name: file.name,
-          image: img,
+          image: activeImg,
           rawImage: img,
+          croppedImage: trimmedCanvas,
+          isReceipt: isReceiptImg,
           width: displayW,
           height: displayH,
           x: posX,
@@ -2560,10 +2591,11 @@ function importImagePureFrontend(file) {
         setActiveLayer(newLayer);
         render();
 
-        showToast(`已載入原圖: ${file.name}`);
+        showToast(trimmedCanvas ? `已自動去邊裁切發票: ${file.name}` : `已載入原圖: ${file.name}`);
 
-        // v22: 若開啟「上傳保卡自動偵測、拉正與蓋章」，自動判定是否為保卡並執行完整一條龍流程
         const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
+        const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
+
         if (autoSmartEnabled && window.CardTemplates) {
           const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
           const detectRes = window.CardTemplates.detectPanasonicCardQuad(img);
@@ -2572,12 +2604,23 @@ function importImagePureFrontend(file) {
           if (isManualPanasonic || (isHorizontal && detectRes.detected)) {
             newLayer.cardQuadCorners = detectRes.corners;
             await applyCardRectifyAndOcr(newLayer, true);
+          } else if (isReceiptImg) {
+            if (autoLayoutEnabled && typeof autoArrangeWorkbenchLayout === 'function') {
+              autoArrangeWorkbenchLayout(false);
+            }
+            if (typeof runReceiptQuickOcr === 'function') {
+              await runReceiptQuickOcr(newLayer);
+            }
           } else if (isHorizontal && !detectRes.detected) {
             setCardSmartStatus(
               'ℹ️ 未偵測到明顯國際牌紅褐色外框，已維持原圖進場；若為保卡可手動選擇聯別並點擊「📐 四角偵測與拉正」或「💮 重新自動蓋章」。',
               false
             );
           }
+        }
+
+        if (autoLayoutEnabled && typeof autoArrangeWorkbenchLayout === 'function') {
+          autoArrangeWorkbenchLayout(false);
         }
 
         resolve();
@@ -5265,6 +5308,10 @@ async function runCardTargetedOcr(layer) {
     if (inputCardModel) inputCardModel.value = modelClean;
     if (inputCardSerial) inputCardSerial.value = serialClean;
 
+    if ((!switchAutoLayout || switchAutoLayout.checked) && typeof autoArrangeWorkbenchLayout === 'function') {
+      autoArrangeWorkbenchLayout(false);
+    }
+
     setCardSmartStatus(
       `✅ 辨識完成（${tpl.shortLabel} / ${detectReason}）\n機種：${modelClean || '未讀出'} ｜ 機號：${serialClean || '未讀出'}`,
       false
@@ -5409,7 +5456,7 @@ async function autoStampWarrantyCard(targetLayer = null) {
   const stampSpec = (tpl && tpl.stampSpec) || {
     centerX: 0.845,
     centerY: 0.365,
-    widthRatio: 0.175,
+    widthRatio: 0.210,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
   };
@@ -5427,23 +5474,36 @@ async function autoStampWarrantyCard(targetLayer = null) {
     return;
   }
 
-  const stampCanvas = document.createElement('canvas');
-  stampCanvas.width = stampImg.width;
-  stampCanvas.height = stampImg.height;
-  const sCtx = stampCanvas.getContext('2d');
-  sCtx.imageSmoothingEnabled = true;
-  sCtx.imageSmoothingQuality = 'high';
-  sCtx.drawImage(stampImg, 0, 0);
+  // v23: 取樣目標蓋章區域紙張空白亮度與色溫，自適應壓低偏暗照片之印章明度與飽和度，消除螢光感
+  const cardImgSrc = cardLayer.warpedImage || cardLayer.image || cardLayer.croppedImage || cardLayer.rawImage;
+  let stampCanvas;
+  let lightingNote = '';
+  if (window.CardTemplates && window.CardTemplates.sampleStampRegionLighting && window.CardTemplates.adaptStampCanvasToLighting) {
+    const lighting = window.CardTemplates.sampleStampRegionLighting(
+      cardImgSrc,
+      stampSpec.centerX,
+      stampSpec.centerY,
+      stampSpec.widthRatio
+    );
+    const adapted = window.CardTemplates.adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting);
+    stampCanvas = adapted.canvas;
+    lightingNote = lighting.avgL < 190 ? ` · 暗部油墨融合 L=${lighting.avgL}` : '';
+  } else {
+    stampCanvas = document.createElement('canvas');
+    stampCanvas.width = stampImg.width;
+    stampCanvas.height = stampImg.height;
+    const sCtx = stampCanvas.getContext('2d');
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'high';
+    sCtx.drawImage(stampImg, 0, 0);
+    sCtx.fillStyle = '#003FBC';
+    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
+    sCtx.textAlign = 'center';
+    sCtx.textBaseline = 'middle';
+    sCtx.fillText(dateStr, 942, 719 + offsetY);
+  }
 
-  const boxCx = 942;
-  const boxCy = 719 + offsetY;
-  sCtx.fillStyle = '#003FBC';
-  sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
-  sCtx.textAlign = 'center';
-  sCtx.textBaseline = 'middle';
-  sCtx.fillText(dateStr, boxCx, boxCy);
-
-  // 依保卡寬度 17.5% 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
+  // 依保卡寬度 21.0% (v23 放大 1.2x) 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
   const displayW = Math.round(cardLayer.width * stampSpec.widthRatio);
   const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
 
@@ -5459,6 +5519,9 @@ async function autoStampWarrantyCard(targetLayer = null) {
   const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
   const tiltRad = (tiltDeg * Math.PI) / 180;
 
+  // 若同一張保卡先前已自動蓋過附著印章，先行替換避免重複堆疊
+  layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
+
   const newStamp = createLayerObject({
     type: 'stamp',
     name: `專櫃印章-避讓 (${dateStr})`,
@@ -5469,6 +5532,13 @@ async function autoStampWarrantyCard(targetLayer = null) {
     x: posX,
     y: posY,
     rotation: (cardLayer.rotation || 0) + tiltRad,
+    attachedCardId: cardLayer.id,
+    stampSpec: {
+      centerX: stampSpec.centerX,
+      centerY: stampSpec.centerY,
+      widthRatio: stampSpec.widthRatio,
+      tiltRad: tiltRad
+    },
     blendMode: stampSpec.blendMode || 'multiply'
   });
 
@@ -5480,8 +5550,13 @@ async function autoStampWarrantyCard(targetLayer = null) {
     layers.push(newStamp);
   }
   setActiveLayer(newStamp);
-  render();
-  showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」避讓座標自動蓋章 (${dateStr})`);
+
+  if (!switchAutoLayout || switchAutoLayout.checked) {
+    autoArrangeWorkbenchLayout(false);
+  } else {
+    render();
+  }
+  showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」自動蓋章 (${dateStr}${lightingNote})`);
 }
 
 function initSmartWarrantyModule() {
@@ -5575,4 +5650,382 @@ function initSmartWarrantyModule() {
       autoStampWarrantyCard();
     });
   }
+
+  if (btnAutoLayout) {
+    btnAutoLayout.addEventListener('click', () => {
+      autoArrangeWorkbenchLayout(true);
+    });
+  }
+}
+
+// =============================================================================
+// 9. 自適應不重疊排版引擎、自動 5 行核對文字與雙擊原地編輯 (v23)
+// =============================================================================
+
+let cachedReceiptOcrInfo = {
+  date: '',
+  invoiceNo: '',
+  brand: '',
+  model: '',
+  serialNo: '',
+  sellerTaxId: '24721268'
+};
+
+/**
+ * 匯入電子發票後快速執行背景 OCR 擷取購買日期與發票號碼
+ */
+async function runReceiptQuickOcr(receiptLayer) {
+  if (!receiptLayer || !receiptLayer.image || !window.Tesseract) return;
+  try {
+    const src = receiptLayer.image;
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = src.width;
+    tempCanvas.height = src.height;
+    tempCanvas.getContext('2d').drawImage(src, 0, 0);
+
+    const res = await window.Tesseract.recognize(tempCanvas, 'eng+chi_tra');
+    const txt = (res && res.data && res.data.text) ? res.data.text : '';
+    if (!txt.trim()) return;
+
+    let pdfText = '';
+    layers.forEach(l => {
+      if (l.type === 'pdf_order' && l.rawPdfText) pdfText += '\n' + l.rawPdfText;
+    });
+
+    const parsed = parseReceiptAndWarrantyText(txt, pdfText);
+    if (parsed.date) cachedReceiptOcrInfo.date = parsed.date;
+    if (parsed.invoiceNo && !parsed.invoiceNo.includes('請確認')) {
+      cachedReceiptOcrInfo.invoiceNo = parsed.invoiceNo;
+    }
+    if (parsed.brand && !parsed.brand.includes('品牌')) {
+      cachedReceiptOcrInfo.brand = parsed.brand;
+    }
+    if (parsed.model && !parsed.model.includes('請確認')) {
+      cachedReceiptOcrInfo.model = parsed.model;
+    }
+
+    if (!switchAutoLayout || switchAutoLayout.checked) {
+      autoArrangeWorkbenchLayout(false);
+    }
+  } catch (err) {
+    console.warn('發票背景快速 OCR 略過:', err);
+  }
+}
+
+/**
+ * 串接發票與保卡 OCR 結果產生標準 5 行核對資訊
+ */
+function buildAutoFiveLineNoteText() {
+  const cardModel = (inputCardModel && inputCardModel.value.trim()) || cachedReceiptOcrInfo.model || 'XXXXXXXX';
+  const cardSerial = (inputCardSerial && inputCardSerial.value.trim()) || cachedReceiptOcrInfo.serialNo || 'XXXXXXXXXXX';
+
+  let brandName = cachedReceiptOcrInfo.brand || '國際';
+  const cardLayer = getTargetWarrantyImageLayer();
+  if (cardLayer && cardLayer.cardTemplateId && cardLayer.cardTemplateId.startsWith('panasonic')) {
+    brandName = '國際';
+  }
+
+  let dateStr = cachedReceiptOcrInfo.date || '';
+  if (!dateStr) {
+    const now = new Date();
+    dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+  const invoiceNo = cachedReceiptOcrInfo.invoiceNo || 'XXXXXXXXXX';
+  const sellerTaxId = cachedReceiptOcrInfo.sellerTaxId || '24721268';
+
+  return [
+    `發票購買日期 ${dateStr}`,
+    `發票號碼 ${invoiceNo}`,
+    `${brandName} ${cardModel}`,
+    `機號 ${cardSerial}`,
+    `賣方統編 ${sellerTaxId}`
+  ].join('\n');
+}
+
+/**
+ * 衡量指定字體大小之多行文字區塊實際高度與寬度
+ */
+function measureFiveLineBox(text, fontSize, bold = true) {
+  const measureCtx = canvas.getContext('2d');
+  const weight = bold ? 'bold' : 'normal';
+  measureCtx.font = `${weight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif`;
+  const lines = (text || '').split('\n');
+  const lineHeight = fontSize * 1.35;
+  let maxW = 0;
+  lines.forEach(line => {
+    const w = measureCtx.measureText(line).width;
+    if (w > maxW) maxW = w;
+  });
+  return {
+    width: Math.max(50, Math.round(maxW + 30)),
+    height: Math.max(25, Math.round(lines.length * lineHeight + 15))
+  };
+}
+
+/**
+ * 頂部滿版訂購單＋自適應延伸不重疊排版引擎＋左下空白零拉長自動 5 行文字 (v23)
+ */
+function autoArrangeWorkbenchLayout(recordUndo = true) {
+  if (layers.length === 0) {
+    if (recordUndo) showToast('畫布尚無物件可排版');
+    return;
+  }
+
+  if (recordUndo) {
+    pushUndoState('自動智慧排版');
+  }
+
+  const margin = 10;
+  const gapY = 24;
+  const usableW = canvasWidth - margin * 2;
+
+  const orderLayer = [...layers].reverse().find(l => l.type === 'pdf_order') || null;
+  const cardLayer = [...layers].reverse().find(l =>
+    l.type === 'image' && (l.isRectifiedCard || l.cardTemplateId || (!l.isReceipt && l.width >= l.height))
+  ) || null;
+  const receiptLayer = [...layers].reverse().find(l =>
+    l.type === 'image' && l !== cardLayer && (l.isReceipt || l.height > l.width)
+  ) || null;
+
+  let currentTopY = margin;
+
+  // 1. 上方區塊：訂購單頂部橫向滿版擺放（左右各保留 10px 白邊）
+  if (orderLayer && orderLayer.image) {
+    const oImg = orderLayer.image;
+    const oAspect = oImg.width / Math.max(1, oImg.height);
+    orderLayer.width = usableW;
+    orderLayer.height = Math.round(usableW / oAspect);
+    orderLayer.rotation = 0;
+    orderLayer.x = Math.round(canvasWidth / 2);
+    orderLayer.y = Math.round(currentTopY + orderLayer.height / 2);
+    currentTopY = orderLayer.y + orderLayer.height / 2 + gapY;
+  }
+
+  // 2. 下方左欄（59% 寬度）：保卡，與右側發票上緣對齊
+  const leftColW = Math.round(usableW * 0.59);
+  const rightColW = Math.round(usableW * 0.37);
+
+  let cardBottomY = currentTopY;
+  let cardLeftX = margin;
+
+  if (cardLayer && cardLayer.image) {
+    const cImg = cardLayer.image;
+    const cAspect = cImg.width / Math.max(1, cImg.height);
+    cardLayer.width = leftColW;
+    cardLayer.height = Math.round(leftColW / cAspect);
+    cardLayer.rotation = 0;
+    cardLayer.x = Math.round(margin + cardLayer.width / 2);
+    cardLayer.y = Math.round(currentTopY + cardLayer.height / 2);
+    cardLeftX = cardLayer.x - cardLayer.width / 2;
+    cardBottomY = cardLayer.y + cardLayer.height / 2;
+
+    // 同步重新定位並縮放附著於此保卡上的專櫃印章（確保始終鎖定 X: 84.5%, Y: 36.5%, W: 21.0%）
+    layers.forEach(s => {
+      if (s.type === 'stamp' && s.attachedCardId === cardLayer.id && s.image) {
+        const spec = s.stampSpec || { centerX: 0.845, centerY: 0.365, widthRatio: 0.210, tiltRad: 0 };
+        const sAspect = s.image.width / Math.max(1, s.image.height);
+        s.width = Math.round(cardLayer.width * spec.widthRatio);
+        s.height = Math.round(s.width / sAspect);
+        const localDx = (spec.centerX - 0.5) * cardLayer.width;
+        const localDy = (spec.centerY - 0.5) * cardLayer.height;
+        s.x = Math.round(cardLayer.x + localDx);
+        s.y = Math.round(cardLayer.y + localDy);
+        s.rotation = spec.tiltRad || 0;
+      }
+    });
+  }
+
+  // 3. 下方右欄（37% 寬度）：發票，上緣與保卡對齊
+  let receiptBottomY = currentTopY;
+  if (receiptLayer && receiptLayer.image) {
+    const rImg = receiptLayer.image;
+    const rAspect = rImg.width / Math.max(1, rImg.height);
+    receiptLayer.width = rightColW;
+    receiptLayer.height = Math.round(rightColW / rAspect);
+    receiptLayer.rotation = 0;
+    receiptLayer.x = Math.round(canvasWidth - margin - receiptLayer.width / 2);
+    receiptLayer.y = Math.round(currentTopY + receiptLayer.height / 2);
+    receiptBottomY = receiptLayer.y + receiptLayer.height / 2;
+  }
+
+  // 4. 左側空白處「零拉長」自動填入 5 行核心核對文字（保卡正下方、對齊保卡左緣）
+  let noteBottomY = cardBottomY;
+  if (cardLayer || receiptLayer) {
+    let noteLayer = layers.find(l => l.isAutoFiveLineNote);
+    const autoText = buildAutoFiveLineNoteText();
+
+    if (!noteLayer) {
+      noteLayer = createLayerObject({
+        type: 'text',
+        name: '5行核對資訊',
+        text: autoText,
+        color: '#0F172A',
+        bold: true,
+        fontSize: 60,
+        isAutoFiveLineNote: true,
+        userEdited: false
+      });
+      layers.push(noteLayer);
+    } else if (!noteLayer.userEdited) {
+      noteLayer.text = autoText;
+    }
+
+    if (inputNewNote && !noteLayer.userEdited) {
+      inputNewNote.value = noteLayer.text;
+    }
+
+    const noteTopY = cardLayer ? (cardBottomY + 24) : currentTopY;
+    // 計算「零拉長」可用高度：不超過右側發票底線（若無發票則給足 420px）
+    const targetLimitY = receiptLayer ? Math.max(noteTopY + 180, receiptBottomY) : (noteTopY + 420);
+    const availH = Math.max(160, targetLimitY - noteTopY);
+    const maxNoteW = cardLayer ? cardLayer.width : leftColW;
+
+    let bestFontSize = 62;
+    for (let fs = 66; fs >= 30; fs -= 2) {
+      const box = measureFiveLineBox(noteLayer.text, fs, noteLayer.bold);
+      if (box.height <= availH && box.width <= maxNoteW) {
+        bestFontSize = fs;
+        break;
+      }
+      bestFontSize = fs;
+    }
+
+    const finalBox = measureFiveLineBox(noteLayer.text, bestFontSize, noteLayer.bold);
+    noteLayer.fontSize = bestFontSize;
+    noteLayer.width = finalBox.width;
+    noteLayer.height = finalBox.height;
+    noteLayer.rotation = 0;
+    noteLayer.x = Math.round(cardLeftX + finalBox.width / 2);
+    noteLayer.y = Math.round(noteTopY + finalBox.height / 2);
+
+    noteBottomY = noteLayer.y + noteLayer.height / 2;
+  }
+
+  // 5. 白底畫布自適應延伸高度（三物件與文字絕不截斷、互不重疊）
+  const contentBottom = Math.max(currentTopY, cardBottomY, receiptBottomY, noteBottomY);
+  const requiredH = Math.max(2480, Math.ceil(contentBottom + 36));
+
+  if (requiredH !== canvasHeight) {
+    canvasHeight = requiredH;
+    updateCanvasSizeUI();
+    updateExportDimensionDisplay();
+    fitCanvasToViewport();
+  }
+
+  updateLayersListUI();
+  render();
+  if (recordUndo) {
+    showToast(`已完成頂部滿版＋不重疊自適應排版 (${canvasWidth} × ${canvasHeight})`);
+  }
+}
+
+/**
+ * 雙擊畫布文字圖層，於原位置開啟透明／微框 textarea 直接編輯 (v23)
+ */
+let activeInlineTextarea = null;
+
+function openInlineTextEditor(layer) {
+  if (!layer || (layer.type !== 'text' && layer.type !== 'overrideText')) return;
+  if (activeInlineTextarea) {
+    activeInlineTextarea.blur();
+  }
+
+  const origText = layer.text || '';
+  const padX = layer.type === 'overrideText' ? 14 : 30;
+  const padY = layer.type === 'overrideText' ? 8 : 15;
+  const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+  const fontFamily = layer.fontFamily
+    ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif`
+    : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "新細明體", sans-serif';
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'inline-text-editor';
+  textarea.value = origText;
+
+  const boxW = Math.max(220, layer.width + 40);
+  const boxH = Math.max(80, layer.height + 24);
+  textarea.style.left = `${Math.round(layer.x - layer.width / 2)}px`;
+  textarea.style.top = `${Math.round(layer.y - layer.height / 2)}px`;
+  textarea.style.width = `${boxW}px`;
+  textarea.style.height = `${boxH}px`;
+  textarea.style.padding = `${padY / 2}px ${padX / 2}px`;
+  textarea.style.fontSize = `${layer.fontSize}px`;
+  textarea.style.lineHeight = '1.35';
+  textarea.style.fontWeight = fontWeight;
+  textarea.style.fontFamily = fontFamily;
+  textarea.style.color = layer.color || '#000000';
+  if (layer.rotation) {
+    textarea.style.transformOrigin = `${Math.round(layer.width / 2)}px ${Math.round(layer.height / 2)}px`;
+    textarea.style.transform = `rotate(${layer.rotation}rad)`;
+  }
+
+  layer._isInlineEditing = true;
+  activeInlineTextarea = textarea;
+  canvasWrapper.appendChild(textarea);
+  render();
+
+  setTimeout(() => {
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, 0);
+
+  let finished = false;
+  function cleanup(commit) {
+    if (finished) return;
+    finished = true;
+    layer._isInlineEditing = false;
+
+    if (commit) {
+      const nextText = textarea.value;
+      if (nextText !== origText) {
+        pushUndoState('原地編輯畫布文字');
+        layer.text = nextText;
+        layer.userEdited = true;
+        const prefix = layer.type === 'overrideText' ? '覆寫' : '備註';
+        layer.name = `${prefix}: ${nextText.slice(0, 8)}...`;
+        if (editTextContent && activeLayer === layer) {
+          editTextContent.value = nextText;
+        }
+        if (layer.isAutoFiveLineNote && inputNewNote) {
+          inputNewNote.value = nextText;
+        }
+        updateLayersListUI();
+        showToast('已更新畫布文字內容');
+      }
+    }
+
+    if (textarea.parentNode) {
+      textarea.parentNode.removeChild(textarea);
+    }
+    if (activeInlineTextarea === textarea) {
+      activeInlineTextarea = null;
+    }
+    render();
+  }
+
+  function autoGrow() {
+    textarea.style.height = 'auto';
+    textarea.style.width = 'auto';
+    const nextW = Math.max(boxW, textarea.scrollWidth + 24);
+    const nextH = Math.max(boxH, textarea.scrollHeight + 12);
+    textarea.style.width = `${nextW}px`;
+    textarea.style.height = `${nextH}px`;
+  }
+
+  textarea.addEventListener('input', autoGrow);
+
+  textarea.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cleanup(false);
+    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      cleanup(true);
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
+    cleanup(true);
+  });
 }

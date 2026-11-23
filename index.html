@@ -18,7 +18,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v22 (2026.11.23)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v23 (2026.11.23)</span>
     </div>
 
     <div class="header-actions">
@@ -62,7 +62,8 @@
         <div class="toolbar-group">
           <span id="canvasSizeLabel" class="canvas-size-badge" title="可拖曳白色畫布下邊緣或左邊緣調整圖紙尺寸">圖紙尺寸：3508 × 2480 px</span>
           <button class="btn btn-outline btn-sm" id="btnResetCanvasSize" title="恢復預設 A4 橫向尺寸 (3508 × 2480 px)">重設 A4 尺寸</button>
-          <span style="font-size: 12px; color: #64748b;">💡 雙擊照片可快速裁切</span>
+          <button class="btn btn-outline btn-sm" id="btnAutoLayout" title="訂購單頂部滿版、保卡/發票不重疊排版並自動填入5行核對文字">🧩 自動智慧排版</button>
+          <span style="font-size: 12px; color: #64748b;">💡 雙擊照片裁切／雙擊文字原地編輯</span>
           <button class="btn btn-outline btn-sm" id="btnToggleExportCrop" title="自訂圈選匯出範圍框">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -95,10 +96,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v22) -->
+      <!-- 目前版本資訊橫幅 (v23) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v22 (2026.11.23)</span>
+        <span class="version-badge">v23 (2026.11.23)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -345,6 +346,13 @@
             <span style="font-size: 12px; font-weight: 700; color: var(--primary-color);">上傳保卡自動偵測、拉正與蓋章</span>
             <label class="switch">
               <input type="checkbox" id="switchAutoSmartCard" checked>
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row" style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-main);">不重疊自適應排版＋自動 5 行文字</span>
+            <label class="switch">
+              <input type="checkbox" id="switchAutoLayout" checked>
               <span class="switch-slider"></span>
             </label>
           </div>
