@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 00:34:44] (第 38 版 / v38)
+- **執行項目**：**手機端極簡自動模式 ＋ PDF／相簿雙軌分流上傳（v38）** — 在 100% 保留電腦版既有功能、比例與微調工具列前提下，新增自動手機裝置偵測切換極簡 4 區塊佈局、雙軌獨立選檔（PDF 檔案 App / 相簿多選）、完整三件組／單獨蓋保卡雙模式、觸控雙指縮放＋單指拖曳印章即時光影配色，以及手機隱形鎖三連擊／虛擬數字鍵盤解鎖。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v38`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner` 為 `v38 (2026.11.24)`，並將資源參數更新為 `style.css?v=38`、`card_templates.js?v=38` 與 `app.js?v=38`。
+  2. **智慧手機偵測與極簡 4 區塊介面（`.is-mobile-mode`）**：
+     - 於 `static/app.js` 實作 `detectMobileWorkbenchMode()`，依 `window.innerWidth <= 768` 與 `pointer: coarse` / `navigator.maxTouchPoints > 0` 自動加上 `body.is-mobile-mode`，並於頂部右上角提供 `#btnMobileSwitchDesktop`（「💻 電腦版」）及 `#btnHeaderSwitchMobile`（「📱 切回手機版」）透過 `sessionStorage('order_collage_ui_mode')` 記憶切換。
+     - **手機 4 區塊**：(1) `#mobileTopBar` 含 `[訂購單]`、`[保卡]`、`[發票]` 三顆即時綠燈進度徽章（`updateMobileWorkflowBadges()`）；(2) `#mobileUploadBar` 左鍵 `#btnMobileSelectPdf`（獨立 `accept="application/pdf"` 喚起檔案 App）、右鍵 `#btnMobileSelectPhotos`（獨立 `accept="image/*" multiple`、無 `capture` 直開相簿多選）；(3) 中央預覽畫布自動依手機螢幕寬度縮放，支援雙指捏合縮放檢視及單指拖曳物件／印章（放開同步觸發 v37 紙張光影採樣與 `Multiply`）；(4) `#mobileBottomBar` 提供「清空重來」、模式 B 動態「蓋上專櫃印章」快捷鈕，以及優先呼叫原生 `navigator.share`（不支援時自動降級下載 PNG）的「儲存 / 傳送圖片」。
+  3. **完整三件組（模式 A）與略過 PDF 單獨蓋保卡（模式 B）雙模式**：
+     - 絕不強制先傳 PDF：直接選取保卡照片時，國際牌保卡自動執行 v33 上緣 LOGO 外擴透視拉正與最後非阻斷民國日期蓋章；其他未建檔品牌保卡則自動切除桌面背景並於手機底部動態亮出 `#btnMobileStampShortcut`（「蓋上專櫃印章」），點按即放置可單指拖曳調整與自動光影配色的獨立 `Multiply` 印章圖層。
+  4. **手機端「方案 A」隱形時間鎖三連擊 ＋ 虛擬數字鍵盤備援**：
+     - 擴充 `#stealthTimeLockOverlay` 內建透明覆蓋之 `<input id="stealthMobileNumericInput" type="tel" inputmode="numeric">`（`@media (pointer: coarse)` 啟用單點喚起手機數字鍵盤盲打 12/24 小時制前後 2 分鐘時間碼），同時於 `touchend` 偵測螢幕任意處連續快速輕點 3 下（間隔 `< 450ms`）即 0.01 秒無條件解鎖並隱藏鍵盤。
+  5. 建立 `_backup/20261124_002919/` 備份，通過 `HTML_SYNC_OK=True`、JS 語法檢查 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 00:14:57] (第 37 版 / v37)
 - **執行項目**：**手動蓋章自動光影配色 ＋ 專櫃藍色深淺滑桿（v37）** — 完整保留既有辨識、地標裁切、`70% : 3% : 27%` 三欄排版、非阻斷最後蓋章、畫布延伸把手與極簡淺灰隱形鎖，針對單獨上傳保卡手動加入與拖曳／縮放／旋轉印章實作落點即時紙張光影採樣與 `Multiply` 混合模式，並新增專櫃藍色深淺同色系滑桿即時同步重繪。
 - **具體進度**：

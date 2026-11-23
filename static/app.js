@@ -107,6 +107,20 @@ const layersList = document.getElementById('layersList');
 const layerCountBadge = document.getElementById('layerCountBadge');
 const emptyLayersHint = document.getElementById('emptyLayersHint');
 
+// 手機端極簡模式 UI 快取 (v38)
+const mobilePdfInput = document.getElementById('mobilePdfInput');
+const mobilePhotoInput = document.getElementById('mobilePhotoInput');
+const btnMobileSelectPdf = document.getElementById('btnMobileSelectPdf');
+const btnMobileSelectPhotos = document.getElementById('btnMobileSelectPhotos');
+const btnMobileClear = document.getElementById('btnMobileClear');
+const btnMobileStampShortcut = document.getElementById('btnMobileStampShortcut');
+const btnMobileExport = document.getElementById('btnMobileExport');
+const btnMobileSwitchDesktop = document.getElementById('btnMobileSwitchDesktop');
+const btnHeaderSwitchMobile = document.getElementById('btnHeaderSwitchMobile');
+const mBadgeOrder = document.getElementById('mBadgeOrder');
+const mBadgeCard = document.getElementById('mBadgeCard');
+const mBadgeReceipt = document.getElementById('mBadgeReceipt');
+
 // 縮放、圖紙尺寸與復原控制
 const btnUndo = document.getElementById('btnUndo');
 const btnZoomIn = document.getElementById('btnZoomIn');
@@ -292,6 +306,9 @@ window.addEventListener('DOMContentLoaded', () => {
   initHandwritingGenerator();
   initSmartWarrantyModule();
   if (typeof initStampDateModal === 'function') initStampDateModal();
+  if (typeof initMobileWorkbenchControls === 'function') initMobileWorkbenchControls();
+  if (typeof detectMobileWorkbenchMode === 'function') detectMobileWorkbenchMode();
+  if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
 });
 
 // --- 歷史復原（Undo）核心函式 ---
@@ -645,21 +662,30 @@ function updateCanvasSizeUI() {
 }
 
 function setZoom(zoom) {
-  currentZoom = Math.max(0.15, Math.min(2.0, zoom));
+  const isMobile = document.body.classList.contains('is-mobile-mode');
+  const minZoom = isMobile ? 0.05 : 0.15;
+  currentZoom = Math.max(minZoom, Math.min(2.0, zoom));
   canvasWrapper.style.width = `${canvasWidth}px`;
   canvasWrapper.style.height = `${canvasHeight}px`;
   canvasWrapper.style.transform = `scale(${currentZoom})`;
   canvasWrapper.style.transformOrigin = 'top left';
-  zoomPercent.textContent = `${Math.round(currentZoom * 100)}%`;
+  if (zoomPercent) {
+    zoomPercent.textContent = `${Math.round(currentZoom * 100)}%`;
+  }
 }
 
 function fitCanvasToViewport() {
-  const pad = 32;
-  const availW = canvasViewport.clientWidth - pad * 2;
-  const availH = canvasViewport.clientHeight - pad * 2;
+  const isMobile = document.body.classList.contains('is-mobile-mode');
+  const pad = isMobile ? 8 : 32;
+  const availW = Math.max(120, canvasViewport.clientWidth - pad * 2);
+  const availH = Math.max(120, canvasViewport.clientHeight - pad * 2);
   const scaleW = availW / canvasWidth;
   const scaleH = availH / canvasHeight;
-  setZoom(Math.min(scaleW, scaleH));
+  if (isMobile) {
+    setZoom(scaleW);
+  } else {
+    setZoom(Math.min(scaleW, scaleH));
+  }
 }
 
 function getCanvasCoords(e) {
@@ -1550,7 +1576,7 @@ function hitTest(x, y) {
     const localY = dx * Math.sin(-layer.rotation) + dy * Math.cos(-layer.rotation);
     const hw = layer.width / 2;
     const hh = layer.height / 2;
-    const handleHitRadius = 20 / currentZoom;
+    const handleHitRadius = (document.body.classList.contains('is-mobile-mode') ? 28 : 20) / currentZoom;
     const rotStemLength = 32 / currentZoom;
 
     if (Math.hypot(localX - 0, localY - (-hh - rotStemLength)) <= handleHitRadius) {
@@ -1911,70 +1937,8 @@ window.addEventListener('mousemove', e => {
     return;
   }
 
-  // 4. 移動物件
-  if (isDragging) {
-    activeLayer.x = objInitialState.x + dx;
-    activeLayer.y = objInitialState.y + dy;
-    render();
-    return;
-  }
-
-  // 5. 旋轉物件
-  if (isRotating) {
-    const angle = Math.atan2(coords.y - activeLayer.y, coords.x - activeLayer.x) + Math.PI / 2;
-    const deg = (angle * 180 / Math.PI) % 360;
-    const snapThreshold = 3;
-    let finalAngle = angle;
-
-    [0, 90, 180, 270, 360].forEach(snapDeg => {
-      if (Math.abs(deg - snapDeg) < snapThreshold || Math.abs(deg + 360 - snapDeg) < snapThreshold) {
-        finalAngle = (snapDeg * Math.PI) / 180;
-      }
-    });
-    activeLayer.rotation = finalAngle;
-    render();
-    return;
-  }
-
-  // 6. 等比例縮放
-  if (isResizing) {
-    const origW = objInitialState.width;
-    const origH = objInitialState.height;
-    const aspect = origW / origH;
-
-    const localDx = dx * Math.cos(-objInitialState.rotation) - dy * Math.sin(-objInitialState.rotation);
-    const localDy = dx * Math.sin(-objInitialState.rotation) + dy * Math.cos(-objInitialState.rotation);
-
-    let scaleDelta = 0;
-    if (resizeHandle === 'br') {
-      scaleDelta = (localDx + localDy * aspect) / (2 * origW);
-    } else if (resizeHandle === 'tl') {
-      scaleDelta = (-localDx - localDy * aspect) / (2 * origW);
-    } else if (resizeHandle === 'tr') {
-      scaleDelta = (localDx - localDy * aspect) / (2 * origW);
-    } else if (resizeHandle === 'bl') {
-      scaleDelta = (-localDx + localDy * aspect) / (2 * origW);
-    }
-
-    const newScale = Math.max(0.08, 1 + scaleDelta * 2);
-    activeLayer.width = Math.round(origW * newScale);
-    activeLayer.height = Math.round(origH * newScale);
-
-    if (activeLayer.type === 'text' || activeLayer.type === 'overrideText') {
-      activeLayer.fontSize = Math.max(10, Math.round(objInitialState.fontSize * newScale));
-      if (sliderTextFontSize && numTextFontSize) {
-        sliderTextFontSize.value = activeLayer.fontSize;
-        numTextFontSize.value = activeLayer.fontSize;
-        if (valTextFontSize) valTextFontSize.textContent = `${activeLayer.fontSize}px`;
-      }
-      if (activeLayer.type === 'overrideText' && inputOverrideFontSize && numOverrideFontSize) {
-        inputOverrideFontSize.value = activeLayer.fontSize;
-        numOverrideFontSize.value = activeLayer.fontSize;
-        if (valOverrideFontSize) valOverrideFontSize.textContent = `${activeLayer.fontSize}px`;
-      }
-    }
-
-    render();
+  // 4~6. 共用拖曳移動 / 旋轉 / 等比例縮放
+  if (applyActiveLayerPointerDrag(coords, dx, dy)) {
     return;
   }
 
@@ -2090,6 +2054,76 @@ window.addEventListener('mouseup', () => {
     return;
   }
 
+  finishPointerDragSession();
+});
+
+function applyActiveLayerPointerDrag(coords, dx, dy) {
+  if (!activeLayer || !objInitialState) return false;
+  if (isDragging) {
+    activeLayer.x = objInitialState.x + dx;
+    activeLayer.y = objInitialState.y + dy;
+    render();
+    return true;
+  }
+  if (isRotating) {
+    const angle = Math.atan2(coords.y - activeLayer.y, coords.x - activeLayer.x) + Math.PI / 2;
+    const deg = (angle * 180 / Math.PI) % 360;
+    const snapThreshold = 3;
+    let finalAngle = angle;
+
+    [0, 90, 180, 270, 360].forEach(snapDeg => {
+      if (Math.abs(deg - snapDeg) < snapThreshold || Math.abs(deg + 360 - snapDeg) < snapThreshold) {
+        finalAngle = (snapDeg * Math.PI) / 180;
+      }
+    });
+    activeLayer.rotation = finalAngle;
+    render();
+    return true;
+  }
+  if (isResizing) {
+    const origW = objInitialState.width;
+    const origH = objInitialState.height;
+    const aspect = origW / origH;
+
+    const localDx = dx * Math.cos(-objInitialState.rotation) - dy * Math.sin(-objInitialState.rotation);
+    const localDy = dx * Math.sin(-objInitialState.rotation) + dy * Math.cos(-objInitialState.rotation);
+
+    let scaleDelta = 0;
+    if (resizeHandle === 'br') {
+      scaleDelta = (localDx + localDy * aspect) / (2 * origW);
+    } else if (resizeHandle === 'tl') {
+      scaleDelta = (-localDx - localDy * aspect) / (2 * origW);
+    } else if (resizeHandle === 'tr') {
+      scaleDelta = (localDx - localDy * aspect) / (2 * origW);
+    } else if (resizeHandle === 'bl') {
+      scaleDelta = (-localDx + localDy * aspect) / (2 * origW);
+    }
+
+    const newScale = Math.max(0.08, 1 + scaleDelta * 2);
+    activeLayer.width = Math.round(origW * newScale);
+    activeLayer.height = Math.round(origH * newScale);
+
+    if (activeLayer.type === 'text' || activeLayer.type === 'overrideText') {
+      activeLayer.fontSize = Math.max(10, Math.round(objInitialState.fontSize * newScale));
+      if (sliderTextFontSize && numTextFontSize) {
+        sliderTextFontSize.value = activeLayer.fontSize;
+        numTextFontSize.value = activeLayer.fontSize;
+        if (valTextFontSize) valTextFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
+      if (activeLayer.type === 'overrideText' && inputOverrideFontSize && numOverrideFontSize) {
+        inputOverrideFontSize.value = activeLayer.fontSize;
+        numOverrideFontSize.value = activeLayer.fontSize;
+        if (valOverrideFontSize) valOverrideFontSize.textContent = `${activeLayer.fontSize}px`;
+      }
+    }
+
+    render();
+    return true;
+  }
+  return false;
+}
+
+function finishPointerDragSession() {
   // 檢查拖曳操作是否有狀態變更以記錄 Undo
   const movedStampLayer = (activeLayer && activeLayer.type === 'stamp' && (isDragging || isResizing || isRotating))
     ? activeLayer
@@ -2124,7 +2158,112 @@ window.addEventListener('mouseup', () => {
     refreshSingleStandaloneStampLayer(movedStampLayer, true);
   }
   render();
-});
+}
+
+// --- 手機觸控操作：單指拖曳調整物件（含印章放開即時光影）＋ 雙指縮放檢視 (v38) ---
+let isTouchDraggingLayer = false;
+let mobilePinchState = null;
+
+canvasViewport.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    isTouchDraggingLayer = false;
+    isDragging = false;
+    isResizing = false;
+    isRotating = false;
+    dragPreSnapshot = null;
+    objInitialState = null;
+
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    const midX = (t1.clientX + t2.clientX) / 2;
+    const midY = (t1.clientY + t2.clientY) / 2;
+    mobilePinchState = {
+      startDist: dist,
+      startZoom: currentZoom,
+      startScrollLeft: canvasViewport.scrollLeft,
+      startScrollTop: canvasViewport.scrollTop,
+      startMidX: midX,
+      startMidY: midY,
+      viewRect: canvasViewport.getBoundingClientRect()
+    };
+    return;
+  }
+
+  if (e.touches.length === 1 && !mobilePinchState) {
+    const touch = e.touches[0];
+    const coords = getCanvasCoords(touch);
+    const hit = hitTest(coords.x, coords.y);
+    if (hit && hit.part !== 'export_crop_handle' && hit.part !== 'export_crop_body') {
+      e.preventDefault();
+      isTouchDraggingLayer = true;
+      dragPreSnapshot = captureSnapshot('觸控移動/縮放');
+      dragStartX = coords.x;
+      dragStartY = coords.y;
+      setActiveLayer(hit.layer);
+      objInitialState = {
+        x: hit.layer.x,
+        y: hit.layer.y,
+        width: hit.layer.width,
+        height: hit.layer.height,
+        rotation: hit.layer.rotation,
+        fontSize: hit.layer.fontSize
+      };
+      if (hit.part === 'rot') {
+        isRotating = true;
+      } else if (['tl', 'tr', 'br', 'bl'].includes(hit.part)) {
+        isResizing = true;
+        resizeHandle = hit.part;
+      } else {
+        isDragging = true;
+      }
+      render();
+    } else {
+      isTouchDraggingLayer = false;
+    }
+  }
+}, { passive: false });
+
+canvasViewport.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && mobilePinchState) {
+    e.preventDefault();
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    const curMidX = (t1.clientX + t2.clientX) / 2;
+    const curMidY = (t1.clientY + t2.clientY) / 2;
+    const targetZoom = mobilePinchState.startZoom * (dist / mobilePinchState.startDist);
+    setZoom(targetZoom);
+
+    const rect = mobilePinchState.viewRect;
+    const focalContentX = (mobilePinchState.startScrollLeft + (mobilePinchState.startMidX - rect.left)) / mobilePinchState.startZoom;
+    const focalContentY = (mobilePinchState.startScrollTop + (mobilePinchState.startMidY - rect.top)) / mobilePinchState.startZoom;
+    canvasViewport.scrollLeft = Math.max(0, focalContentX * currentZoom - (curMidX - rect.left));
+    canvasViewport.scrollTop = Math.max(0, focalContentY * currentZoom - (curMidY - rect.top));
+    return;
+  }
+
+  if (e.touches.length === 1 && isTouchDraggingLayer && activeLayer) {
+    e.preventDefault();
+    const coords = getCanvasCoords(e.touches[0]);
+    const dx = coords.x - dragStartX;
+    const dy = coords.y - dragStartY;
+    applyActiveLayerPointerDrag(coords, dx, dy);
+  }
+}, { passive: false });
+
+const handleCanvasTouchEnd = e => {
+  if (e.touches.length < 2) {
+    mobilePinchState = null;
+  }
+  if (e.touches.length === 0 && isTouchDraggingLayer) {
+    isTouchDraggingLayer = false;
+    finishPointerDragSession();
+  }
+};
+canvasViewport.addEventListener('touchend', handleCanvasTouchEnd, { passive: false });
+canvasViewport.addEventListener('touchcancel', handleCanvasTouchEnd, { passive: false });
 
 // 鍵盤操作
 window.addEventListener('keydown', e => {
@@ -2358,6 +2497,9 @@ function updateColorButtonSelection(container, activeColor) {
 
 // --- 圖層管理清單 UI ---
 function updateLayersListUI() {
+  if (typeof updateMobileWorkflowBadges === 'function') {
+    updateMobileWorkflowBadges();
+  }
   layersList.innerHTML = '';
   layerCountBadge.textContent = `${layers.length} 個物件`;
 
@@ -2752,8 +2894,20 @@ function importImagePureFrontend(file) {
           }
           showToast(`📄 已鎖定訂購單圖片（${docClassify.reason}），將置頂 100% 滿版排版`);
         }
-        // 分支 B：保卡專屬管線（未壓縮高解析原圖優先辨識 ➔ 離屏 1.48:1 透視拉正 ➔ 保底必蓋專櫃章 ➔ 縮放 60%）
-        else if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
+        // 分支 B：保卡專屬管線（未壓縮高解析原圖優先辨識 ➔ 離屏 1.48:1 透視拉正 ➔ 最後蓋章；非國際牌未建檔保卡不誤套固定座標）
+        let isUnmatchedBrandCard = false;
+        if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
+          const preTextUpper = (preScan.text || '').toUpperCase();
+          const looksLikePanasonic = !!(
+            detectRes.detected ||
+            isManualPanasonicInit ||
+            preTextUpper.includes('PANASONIC') ||
+            preTextUpper.includes('NATIONAL') ||
+            preTextUpper.includes('國際牌') ||
+            preTextUpper.includes('台灣松下') ||
+            preTextUpper.includes('松下')
+          );
+
           const tpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
           const aspectRatio = tpl ? tpl.aspectRatio : 1.48;
           const offscreenW = Math.max(1800, Math.min(3200, sw || 1800));
@@ -2802,16 +2956,21 @@ function importImagePureFrontend(file) {
 
           activeImg = rectifiedCleanCanvas;
 
-          // v34: 改為先在未蓋章的最高解析度底圖 rectifiedCleanCanvas 上執行雙語 OCR 與交叉校正，最後排版後才蓋專櫃印章
-          const ocrLayerProxy = {
-            type: 'image',
-            warpedImage: rectifiedCleanCanvas,
-            rectifiedCleanCanvas: rectifiedCleanCanvas,
-            rawSourceImg: img,
-            cardTemplateId: isManualPanasonicInit ? modeValInit : null
-          };
-          await runCardTargetedOcr(ocrLayerProxy);
-          cardTemplateId = ocrLayerProxy.cardTemplateId;
+          if (looksLikePanasonic) {
+            // v34: 國際牌在未蓋章最高解析度底圖執行雙語 OCR 與交叉校正，最後排版後蓋章
+            const ocrLayerProxy = {
+              type: 'image',
+              warpedImage: rectifiedCleanCanvas,
+              rectifiedCleanCanvas: rectifiedCleanCanvas,
+              rawSourceImg: img,
+              cardTemplateId: isManualPanasonicInit ? modeValInit : null
+            };
+            await runCardTargetedOcr(ocrLayerProxy);
+            cardTemplateId = ocrLayerProxy.cardTemplateId;
+          } else {
+            isUnmatchedBrandCard = true;
+            cardTemplateId = null;
+          }
         }
 
         // 依訂購單 100% 基準之 70% : 3% : 27% 比例進場擺放 (v32)
@@ -2861,6 +3020,7 @@ function importImagePureFrontend(file) {
         newLayer.cardQuadCorners = cardQuadCorners;
         newLayer.cardTemplateId = cardTemplateId;
         newLayer.isRectifiedCard = isRectifiedCard;
+        newLayer.isUnmatchedBrandCard = isUnmatchedBrandCard;
 
         pushUndoState('匯入圖片');
         layers.push(newLayer);
@@ -2882,15 +3042,28 @@ function importImagePureFrontend(file) {
           render();
         }
 
-        // v34: 最後才是蓋章（先填好日期就直接蓋上；尚未填好則先完成全部排版，等待輸入日期後立刻補蓋）
-        if (isWarrantyCandidate && autoSmartEnabled && newLayer.rectifiedCleanCanvas && typeof finalizeWarrantyCardStampAfterLayout === 'function') {
+        const isMobileUI = document.body.classList.contains('is-mobile-mode');
+        // v34/v38: 國際牌自動在最後蓋章；其他未建檔品牌於手機端顯示底部「蓋上專櫃印章」快捷鈕由使用者單手點蓋並自由拖曳
+        if (
+          isWarrantyCandidate &&
+          autoSmartEnabled &&
+          newLayer.rectifiedCleanCanvas &&
+          !(isUnmatchedBrandCard && isMobileUI) &&
+          typeof finalizeWarrantyCardStampAfterLayout === 'function'
+        ) {
           await finalizeWarrantyCardStampAfterLayout(newLayer);
+        }
+
+        if (typeof updateMobileWorkflowBadges === 'function') {
+          updateMobileWorkflowBadges();
         }
 
         if (newLayer.hasBakedStamp) {
           showToast(`已完成保卡拉正與自動蓋章: ${file.name}`);
         } else if (trimmedCanvas) {
           showToast(`已完成發票去邊與排版: ${file.name}`);
+        } else if (isUnmatchedBrandCard && isMobileUI) {
+          showToast(`已載入並裁切保卡，請點擊下方「蓋上專櫃印章」自由蓋印: ${file.name}`);
         } else if (isWarrantyCandidate && autoSmartEnabled) {
           showToast(`保卡已拉正排版，等待輸入日期蓋章: ${file.name}`);
         } else {
@@ -4321,130 +4494,149 @@ function updateExportDimensionDisplay() {
   }
 }
 
-// --- 高解析度 PNG 匯出 ---
-btnExportPng.addEventListener('click', () => {
-  if (layers.length === 0) {
-    showToast('畫布目前沒有任何物件');
-    return;
-  }
-
-  const baseW = exportCropActive ? exportCropRect.width : canvasWidth;
-  const baseH = exportCropActive ? exportCropRect.height : canvasHeight;
-  const finalW = Math.round(baseW * exportScale);
-  const finalH = Math.round(baseH * exportScale);
-
-  showToast(`正在產生 ${finalW} × ${finalH} px 高解析度圖片...`);
-
-  const bufferCanvas = document.createElement('canvas');
-  bufferCanvas.width = canvasWidth;
-  bufferCanvas.height = canvasHeight;
-  const bufCtx = bufferCanvas.getContext('2d');
-  bufCtx.imageSmoothingEnabled = true;
-  bufCtx.imageSmoothingQuality = 'high';
-
-  bufCtx.fillStyle = '#FFFFFF';
-  bufCtx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-  layers.forEach(layer => {
-    bufCtx.save();
-    bufCtx.translate(layer.x, layer.y);
-    bufCtx.rotate(layer.rotation);
-    if (layer.flipH) {
-      bufCtx.scale(-1, 1);
-    }
-
-    if (layer.type === 'text' || layer.type === 'overrideText') {
-      const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
-      const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif';
-      bufCtx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
-      bufCtx.fillStyle = layer.color || '#000000';
-      bufCtx.textBaseline = 'top';
-
-      const lines = (layer.text || '').split('\n');
-      const lineHeight = layer.fontSize * 1.35;
-      const padX = layer.type === 'overrideText' ? 14 : 30;
-      const padY = layer.type === 'overrideText' ? 8 : 15;
-      const startX = -layer.width / 2 + padX / 2;
-      const startY = -layer.height / 2 + padY / 2;
-
-      lines.forEach((line, idx) => {
-        bufCtx.fillText(line, startX, startY + idx * lineHeight);
-      });
-    } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
-      if (layer.type === 'handwriting' || layer.blendMode === 'multiply') {
-        bufCtx.globalCompositeOperation = 'multiply';
-      }
-      bufCtx.drawImage(
-        layer.image,
-        -layer.width / 2,
-        -layer.height / 2,
-        layer.width,
-        layer.height
-      );
-    }
-
-    bufCtx.restore();
-  });
-
-  const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = finalW;
-  exportCanvas.height = finalH;
-  const expCtx = exportCanvas.getContext('2d');
-  expCtx.imageSmoothingEnabled = true;
-  expCtx.imageSmoothingQuality = 'high';
-
-  if (exportCropActive) {
-    const sx = Math.round(exportCropRect.x);
-    const sy = Math.round(exportCropRect.y);
-    const sw = Math.round(exportCropRect.width);
-    const sh = Math.round(exportCropRect.height);
-    expCtx.drawImage(bufferCanvas, sx, sy, sw, sh, 0, 0, finalW, finalH);
-  } else {
-    expCtx.drawImage(bufferCanvas, 0, 0, canvasWidth, canvasHeight, 0, 0, finalW, finalH);
-  }
-
-  exportCanvas.toBlob(blob => {
-    if (!blob) {
-      showToast('匯出失敗，請確認圖片載入完整');
+// --- 高解析度 PNG 匯出核心與下載／分享 ---
+function buildExportPngBlob() {
+  return new Promise(resolve => {
+    if (layers.length === 0) {
+      showToast('畫布目前沒有任何物件');
+      resolve(null);
       return;
     }
-    const filename = (inputExportName.value || '客戶訂單發票保卡').trim() + '.png';
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    URL.revokeObjectURL(link.href);
-    showToast(`已成功下載圖片: ${filename} (${finalW} × ${finalH} px)`);
-  }, 'image/png');
+
+    const baseW = exportCropActive ? exportCropRect.width : canvasWidth;
+    const baseH = exportCropActive ? exportCropRect.height : canvasHeight;
+    const finalW = Math.round(baseW * exportScale);
+    const finalH = Math.round(baseH * exportScale);
+
+    showToast(`正在產生 ${finalW} × ${finalH} px 高解析度圖片...`);
+
+    const bufferCanvas = document.createElement('canvas');
+    bufferCanvas.width = canvasWidth;
+    bufferCanvas.height = canvasHeight;
+    const bufCtx = bufferCanvas.getContext('2d');
+    bufCtx.imageSmoothingEnabled = true;
+    bufCtx.imageSmoothingQuality = 'high';
+
+    bufCtx.fillStyle = '#FFFFFF';
+    bufCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    layers.forEach(layer => {
+      bufCtx.save();
+      bufCtx.translate(layer.x, layer.y);
+      bufCtx.rotate(layer.rotation);
+      if (layer.flipH) {
+        bufCtx.scale(-1, 1);
+      }
+
+      if (layer.type === 'text' || layer.type === 'overrideText') {
+        const fontWeight = layer.fontWeight || (layer.bold ? 'bold' : 'normal');
+        const fontFamily = layer.fontFamily ? `"${layer.fontFamily}", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif` : '-apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif';
+        bufCtx.font = `${fontWeight} ${layer.fontSize}px ${fontFamily}`;
+        bufCtx.fillStyle = layer.color || '#000000';
+        bufCtx.textBaseline = 'top';
+
+        const lines = (layer.text || '').split('\n');
+        const lineHeight = layer.fontSize * 1.35;
+        const padX = layer.type === 'overrideText' ? 14 : 30;
+        const padY = layer.type === 'overrideText' ? 8 : 15;
+        const startX = -layer.width / 2 + padX / 2;
+        const startY = -layer.height / 2 + padY / 2;
+
+        lines.forEach((line, idx) => {
+          bufCtx.fillText(line, startX, startY + idx * lineHeight);
+        });
+      } else if (layer.image && (layer.image.complete || layer.image instanceof HTMLCanvasElement)) {
+        if (layer.type === 'handwriting' || layer.blendMode === 'multiply') {
+          bufCtx.globalCompositeOperation = 'multiply';
+        }
+        bufCtx.drawImage(
+          layer.image,
+          -layer.width / 2,
+          -layer.height / 2,
+          layer.width,
+          layer.height
+        );
+      }
+
+      bufCtx.restore();
+    });
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = finalW;
+    exportCanvas.height = finalH;
+    const expCtx = exportCanvas.getContext('2d');
+    expCtx.imageSmoothingEnabled = true;
+    expCtx.imageSmoothingQuality = 'high';
+
+    if (exportCropActive) {
+      const sx = Math.round(exportCropRect.x);
+      const sy = Math.round(exportCropRect.y);
+      const sw = Math.round(exportCropRect.width);
+      const sh = Math.round(exportCropRect.height);
+      expCtx.drawImage(bufferCanvas, sx, sy, sw, sh, 0, 0, finalW, finalH);
+    } else {
+      expCtx.drawImage(bufferCanvas, 0, 0, canvasWidth, canvasHeight, 0, 0, finalW, finalH);
+    }
+
+    exportCanvas.toBlob(blob => {
+      if (!blob) {
+        showToast('匯出失敗，請確認圖片載入完整');
+        resolve(null);
+        return;
+      }
+      const filename = ((inputExportName && inputExportName.value) || '客戶訂單發票保卡').trim() + '.png';
+      resolve({ blob, filename, finalW, finalH });
+    }, 'image/png');
+  });
+}
+
+function triggerPngBlobDownload(blob, filename, finalW, finalH) {
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+  showToast(`已成功下載圖片: ${filename} (${finalW} × ${finalH} px)`);
+}
+
+btnExportPng.addEventListener('click', async () => {
+  const res = await buildExportPngBlob();
+  if (!res) return;
+  triggerPngBlobDownload(res.blob, res.filename, res.finalW, res.finalH);
 });
 
-// --- 清空畫布 ---
-btnClearCanvas.addEventListener('click', () => {
-  if (layers.length === 0) return;
-  if (confirm('確定要清空畫布上的所有物件嗎？')) {
-    pushUndoState('清空畫布');
-    layers = [];
-    if (typeof resetStampDateSession === 'function') {
-      resetStampDateSession();
-    }
-    if (typeof cachedOrderItemModels !== 'undefined') {
-      cachedOrderItemModels = [];
-    }
-    if (typeof cachedReceiptOcrInfo !== 'undefined') {
-      cachedReceiptOcrInfo.date = '';
-      cachedReceiptOcrInfo.invoiceNo = '';
-      cachedReceiptOcrInfo.brand = '';
-      cachedReceiptOcrInfo.model = '';
-      cachedReceiptOcrInfo.serialNo = '';
-      cachedReceiptOcrInfo.sellerTaxId = '24721268';
-    }
-    if (inputCardModel) inputCardModel.value = '';
-    if (inputCardSerial) inputCardSerial.value = '';
-    setActiveLayer(null);
-    render();
-    showToast('畫布已清空');
+// --- 清空畫布（電腦版／手機版共用） ---
+function clearWorkbenchSession(forceConfirm = true) {
+  if (layers.length === 0) {
+    if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
+    return;
   }
-});
+  if (forceConfirm && !confirm('確定要清空畫布上的所有物件嗎？')) return;
+  pushUndoState('清空畫布');
+  layers = [];
+  if (typeof resetStampDateSession === 'function') {
+    resetStampDateSession();
+  }
+  if (typeof cachedOrderItemModels !== 'undefined') {
+    cachedOrderItemModels = [];
+  }
+  if (typeof cachedReceiptOcrInfo !== 'undefined') {
+    cachedReceiptOcrInfo.date = '';
+    cachedReceiptOcrInfo.invoiceNo = '';
+    cachedReceiptOcrInfo.brand = '';
+    cachedReceiptOcrInfo.model = '';
+    cachedReceiptOcrInfo.serialNo = '';
+    cachedReceiptOcrInfo.sellerTaxId = '24721268';
+  }
+  if (inputCardModel) inputCardModel.value = '';
+  if (inputCardSerial) inputCardSerial.value = '';
+  setActiveLayer(null);
+  if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
+  render();
+  showToast('畫布已清空');
+}
+
+btnClearCanvas.addEventListener('click', () => clearWorkbenchSession(true));
 
 // --- 縮放與工具列事件 ---
 btnZoomIn.addEventListener('click', () => setZoom(currentZoom + 0.08));
@@ -6525,12 +6717,16 @@ function initStampDateModal() {
       waiter.resolve(check.formatted);
     }
 
-    // 若畫布上已有未蓋章的保卡圖層，立即補蓋專櫃印章
+    // 若畫布上已有未蓋章的保卡圖層，立即補蓋專櫃印章（未建檔品牌於手機端保留由快捷鈕放可拖曳印章）
+    const isMobileUI = document.body.classList.contains('is-mobile-mode');
     const targetCard = [...layers].reverse().find(
       l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard) && !l.hasBakedStamp
     );
-    if (targetCard) {
+    if (targetCard && !(targetCard.isUnmatchedBrandCard && isMobileUI)) {
       applyConfirmedStampToCardLayer(targetCard, check.formatted);
+    } else if (targetCard && targetCard.isUnmatchedBrandCard && isMobileUI) {
+      if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
+      showToast(`已確認日期 (${check.formatted})，請點下方「蓋上專櫃印章」蓋印並自由拖曳調整`);
     } else {
       showToast(`已鎖定保卡印章日期 (${check.formatted})，背景排版完成後將自動蓋章`);
     }
@@ -7282,7 +7478,200 @@ function openInlineTextEditor(layer) {
 }
 
 // =============================================================================
-// 10. 純前端極簡淺灰全螢幕隱形時間鎖 ＋ 「...」三連點無條件解鎖 (v36)
+// 10. 手機端自動偵測與極簡工作流控制 (v38)
+// =============================================================================
+const MOBILE_UI_MODE_STORAGE_KEY = 'order_collage_ui_mode';
+
+function isAutoMobileTouchViewport() {
+  const narrow = window.innerWidth <= 768;
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  const touchPts = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  return narrow && (coarse || touchPts);
+}
+
+function detectMobileWorkbenchMode() {
+  let override = '';
+  try {
+    override = sessionStorage.getItem(MOBILE_UI_MODE_STORAGE_KEY) || '';
+  } catch (e) {}
+
+  const autoMobile = isAutoMobileTouchViewport();
+  const shouldUseMobile = override === 'mobile' ? true : (override === 'desktop' ? false : autoMobile);
+  const prevMobile = document.body.classList.contains('is-mobile-mode');
+
+  document.body.classList.toggle('is-mobile-mode', shouldUseMobile);
+
+  if (btnHeaderSwitchMobile) {
+    const showReturnMobileBtn = !shouldUseMobile && (autoMobile || override === 'desktop');
+    btnHeaderSwitchMobile.classList.toggle('hidden', !showReturnMobileBtn);
+  }
+
+  if (prevMobile !== shouldUseMobile) {
+    requestAnimationFrame(() => {
+      if (typeof fitCanvasToViewport === 'function') {
+        fitCanvasToViewport();
+      }
+    });
+  }
+}
+
+function updateMobileWorkflowBadges() {
+  const hasOrder = layers.some(l => l.type === 'pdf_order' || l.docRole === 'order_sheet');
+  const cardLayers = layers.filter(l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard));
+  const hasCard = cardLayers.length > 0;
+  const hasReceipt = layers.some(l => l.type === 'image' && (l.docRole === 'receipt' || l.isReceipt));
+
+  if (mBadgeOrder) mBadgeOrder.classList.toggle('done', hasOrder);
+  if (mBadgeCard) mBadgeCard.classList.toggle('done', hasCard);
+  if (mBadgeReceipt) mBadgeReceipt.classList.toggle('done', hasReceipt);
+
+  if (btnMobileStampShortcut) {
+    const hasUnstampedCard = cardLayers.some(c => !c.hasBakedStamp);
+    const hasStandaloneStamp = layers.some(l => l.type === 'stamp');
+    btnMobileStampShortcut.classList.toggle('hidden', !(hasUnstampedCard && !hasStandaloneStamp));
+  }
+}
+
+async function placeMobileStandaloneStampOnCard() {
+  let dateStr = confirmedSessionStampDate || '';
+  if (!dateStr && typeof openStampDatePromptIfNeeded === 'function') {
+    dateStr = await openStampDatePromptIfNeeded();
+  }
+  if (!dateStr) {
+    dateStr = (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
+  }
+
+  const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
+  const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
+  const targetCard = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
+
+  try {
+    const stampImg = await ensureStampImageLoaded();
+    const stampRatio = stampImg.height / Math.max(1, stampImg.width);
+    const displayW = targetCard ? Math.max(360, Math.round(targetCard.width * 0.23)) : 560;
+    const displayH = Math.round(displayW * stampRatio);
+    const posX = targetCard ? Math.round(targetCard.x + targetCard.width * 0.28) : Math.round(canvasWidth * 0.44);
+    const posY = targetCard ? Math.round(targetCard.y + targetCard.height * 0.05) : Math.round(canvasHeight * 0.65);
+
+    const newStamp = createLayerObject({
+      type: 'stamp',
+      name: `專櫃印章 (${dateStr})`,
+      image: stampImg,
+      rawImage: stampImg,
+      blendMode: 'multiply',
+      width: displayW,
+      height: displayH,
+      x: posX,
+      y: posY
+    });
+    newStamp.stampDate = dateStr;
+    newStamp.stampFontSize = fontSize;
+    newStamp.stampOffsetY = offsetY;
+
+    pushUndoState('手機蓋上專櫃印章');
+    layers.push(newStamp);
+    if (typeof refreshSingleStandaloneStampLayer === 'function') {
+      await refreshSingleStandaloneStampLayer(newStamp, true);
+    }
+    setActiveLayer(newStamp);
+    updateMobileWorkflowBadges();
+    render();
+    showToast('已蓋上專櫃印章！可單指拖曳調整位置，放開自動融合紙張光影');
+  } catch (err) {
+    console.error('手機快捷蓋章失敗:', err);
+    showToast('印章載入失敗，請檢查 stamp_data.js');
+  }
+}
+
+function initMobileWorkbenchControls() {
+  if (btnMobileSelectPdf && mobilePdfInput) {
+    btnMobileSelectPdf.addEventListener('click', () => mobilePdfInput.click());
+    mobilePdfInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFiles(e.target.files);
+        mobilePdfInput.value = '';
+      }
+    });
+  }
+
+  if (btnMobileSelectPhotos && mobilePhotoInput) {
+    btnMobileSelectPhotos.addEventListener('click', () => mobilePhotoInput.click());
+    mobilePhotoInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFiles(e.target.files);
+        mobilePhotoInput.value = '';
+      }
+    });
+  }
+
+  if (btnMobileClear) {
+    btnMobileClear.addEventListener('click', () => clearWorkbenchSession(true));
+  }
+
+  if (btnMobileStampShortcut) {
+    btnMobileStampShortcut.addEventListener('click', () => {
+      placeMobileStandaloneStampOnCard();
+    });
+  }
+
+  if (btnMobileExport) {
+    btnMobileExport.addEventListener('click', async () => {
+      const res = await buildExportPngBlob();
+      if (!res) return;
+
+      const fileObj = new File([res.blob], res.filename, { type: 'image/png' });
+      const canNativeShare =
+        typeof navigator !== 'undefined' &&
+        typeof navigator.share === 'function' &&
+        (!navigator.canShare || navigator.canShare({ files: [fileObj] }));
+
+      if (canNativeShare) {
+        try {
+          await navigator.share({
+            files: [fileObj],
+            title: res.filename
+          });
+          showToast('已完成圖片分享 / 儲存');
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+
+      triggerPngBlobDownload(res.blob, res.filename, res.finalW, res.finalH);
+    });
+  }
+
+  if (btnMobileSwitchDesktop) {
+    btnMobileSwitchDesktop.addEventListener('click', () => {
+      try {
+        sessionStorage.setItem(MOBILE_UI_MODE_STORAGE_KEY, 'desktop');
+      } catch (e) {}
+      detectMobileWorkbenchMode();
+      showToast('已切換為完整電腦版工具列');
+    });
+  }
+
+  if (btnHeaderSwitchMobile) {
+    btnHeaderSwitchMobile.addEventListener('click', () => {
+      try {
+        sessionStorage.setItem(MOBILE_UI_MODE_STORAGE_KEY, 'mobile');
+      } catch (e) {}
+      detectMobileWorkbenchMode();
+      showToast('已切回手機極簡自動模式');
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    detectMobileWorkbenchMode();
+    if (document.body.classList.contains('is-mobile-mode')) {
+      fitCanvasToViewport();
+    }
+  });
+}
+
+// =============================================================================
+// 11. 純前端極簡淺灰全螢幕隱形時間鎖（電腦「...」/盲打 ＋ 手機三連擊/數字鍵盤）(v36/v38)
 // =============================================================================
 (function initStealthTimeLock() {
   const SESSION_KEY = 'order_collage_unlocked';
@@ -7304,7 +7693,10 @@ function openInlineTextEditor(layer) {
   let isLocked = true;
   let digitBuffer = '';
   let dotStreak = 0;
+  let touchTapStreak = 0;
+  let lastTouchTapTs = 0;
   const dots = overlay.querySelectorAll('.stealth-dot');
+  const mobileNumericInput = document.getElementById('stealthMobileNumericInput');
 
   const updateDotsUI = () => {
     const filledCount = Math.min(4, digitBuffer.length);
@@ -7315,6 +7707,17 @@ function openInlineTextEditor(layer) {
 
   const focusStealthOverlay = () => {
     if (!isLocked) return;
+    const isCoarseTouch =
+      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && window.innerWidth <= 768);
+    if (mobileNumericInput && isCoarseTouch) {
+      try {
+        mobileNumericInput.focus({ preventScroll: true });
+      } catch (e) {
+        mobileNumericInput.focus();
+      }
+      return;
+    }
     if (document.activeElement && document.activeElement !== overlay && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
     }
@@ -7351,6 +7754,11 @@ function openInlineTextEditor(layer) {
     isLocked = false;
     digitBuffer = '';
     dotStreak = 0;
+    touchTapStreak = 0;
+    if (mobileNumericInput) {
+      mobileNumericInput.value = '';
+      mobileNumericInput.blur();
+    }
     try {
       sessionStorage.setItem(SESSION_KEY, '1');
     } catch (e) {}
@@ -7358,15 +7766,44 @@ function openInlineTextEditor(layer) {
     window.removeEventListener('keydown', onStealthKeyDown, true);
     overlay.removeEventListener('mousedown', onStealthPointerFocus);
     overlay.removeEventListener('click', onStealthPointerFocus);
+    overlay.removeEventListener('touchend', onStealthTouchEnd);
     overlay.removeEventListener('dragover', onStealthBlockDragDrop);
     overlay.removeEventListener('drop', onStealthBlockDragDrop);
   };
 
   const onStealthPointerFocus = e => {
     if (!isLocked) return;
-    e.preventDefault();
+    if (e.target !== mobileNumericInput) {
+      e.preventDefault();
+    }
     e.stopPropagation();
     focusStealthOverlay();
+  };
+
+  const onStealthTouchEnd = e => {
+    if (!isLocked) return;
+    const now = Date.now();
+    if (now - lastTouchTapTs < 450) {
+      touchTapStreak += 1;
+    } else {
+      touchTapStreak = 1;
+    }
+    lastTouchTapTs = now;
+
+    if (touchTapStreak >= 3) {
+      e.preventDefault();
+      e.stopPropagation();
+      unlockStealthLock();
+      return;
+    }
+
+    if (mobileNumericInput) {
+      try {
+        mobileNumericInput.focus({ preventScroll: true });
+      } catch (err) {
+        mobileNumericInput.focus();
+      }
+    }
   };
 
   const onStealthBlockDragDrop = e => {
@@ -7412,6 +7849,9 @@ function openInlineTextEditor(layer) {
     const digit = extractDigitFromKeyEvent(e);
     if (digit) {
       digitBuffer = (digitBuffer + digit).slice(-4);
+      if (mobileNumericInput && document.activeElement === mobileNumericInput) {
+        mobileNumericInput.value = digitBuffer;
+      }
       updateDotsUI();
       if (digitBuffer.length === 4 && isMatchingSystemTimeCode(digitBuffer)) {
         unlockStealthLock();
@@ -7419,9 +7859,28 @@ function openInlineTextEditor(layer) {
     }
   };
 
+  if (mobileNumericInput) {
+    mobileNumericInput.addEventListener('input', () => {
+      if (!isLocked) return;
+      const cleaned = (mobileNumericInput.value || '').replace(/\D/g, '');
+      if (cleaned) {
+        dotStreak = 0;
+        digitBuffer = cleaned.slice(-4);
+        mobileNumericInput.value = digitBuffer;
+      } else {
+        digitBuffer = '';
+      }
+      updateDotsUI();
+      if (digitBuffer.length === 4 && isMatchingSystemTimeCode(digitBuffer)) {
+        unlockStealthLock();
+      }
+    });
+  }
+
   window.addEventListener('keydown', onStealthKeyDown, { capture: true });
   overlay.addEventListener('mousedown', onStealthPointerFocus);
   overlay.addEventListener('click', onStealthPointerFocus);
+  overlay.addEventListener('touchend', onStealthTouchEnd, { passive: false });
   overlay.addEventListener('dragover', onStealthBlockDragDrop);
   overlay.addEventListener('drop', onStealthBlockDragDrop);
 
