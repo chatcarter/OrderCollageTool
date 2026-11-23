@@ -238,7 +238,8 @@ const btnAddNote = document.getElementById('btnAddNote');
 let newNoteColor = '#000000';
 let newNoteIsBold = false;
 
-// 品牌保卡智慧辨識與自動蓋章控制項 (v21)
+// 品牌保卡智慧辨識與自動蓋章控制項 (v21/v22)
+const switchAutoSmartCard = document.getElementById('switchAutoSmartCard');
 const selectCardTemplateMode = document.getElementById('selectCardTemplateMode');
 const cardTemplateBadge = document.getElementById('cardTemplateBadge');
 const btnToggleCardRectify = document.getElementById('btnToggleCardRectify');
@@ -2517,7 +2518,7 @@ function importImagePureFrontend(file) {
     const reader = new FileReader();
     reader.onload = e => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const sw = img.width;
         const sh = img.height;
 
@@ -2557,8 +2558,28 @@ function importImagePureFrontend(file) {
         pushUndoState('匯入圖片');
         layers.push(newLayer);
         setActiveLayer(newLayer);
+        render();
 
         showToast(`已載入原圖: ${file.name}`);
+
+        // v22: 若開啟「上傳保卡自動偵測、拉正與蓋章」，自動判定是否為保卡並執行完整一條龍流程
+        const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
+        if (autoSmartEnabled && window.CardTemplates) {
+          const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+          const detectRes = window.CardTemplates.detectPanasonicCardQuad(img);
+          const isManualPanasonic = modeVal && modeVal.startsWith('panasonic_');
+
+          if (isManualPanasonic || (isHorizontal && detectRes.detected)) {
+            newLayer.cardQuadCorners = detectRes.corners;
+            await applyCardRectifyAndOcr(newLayer, true);
+          } else if (isHorizontal && !detectRes.detected) {
+            setCardSmartStatus(
+              'ℹ️ 未偵測到明顯國際牌紅褐色外框，已維持原圖進場；若為保卡可手動選擇聯別並點擊「📐 四角偵測與拉正」或「💮 重新自動蓋章」。',
+              false
+            );
+          }
+        }
+
         resolve();
       };
       img.src = e.target.result;
@@ -5294,8 +5315,8 @@ function toggleCardRectifyMode(forceState = null) {
   render();
 }
 
-async function applyCardRectifyAndOcr() {
-  const layer = getTargetWarrantyImageLayer();
+async function applyCardRectifyAndOcr(targetLayer = null, autoStampAfter = false) {
+  const layer = targetLayer || getTargetWarrantyImageLayer();
   if (!layer || !window.CardTemplates) {
     showToast('請先匯入並選取保卡照片');
     return;
@@ -5349,10 +5370,35 @@ async function applyCardRectifyAndOcr() {
   render();
 
   await runCardTargetedOcr(layer);
+
+  if (autoStampAfter || (switchAutoSmartCard && switchAutoSmartCard.checked)) {
+    await autoStampWarrantyCard(layer);
+  }
 }
 
-function autoStampWarrantyCard() {
-  const cardLayer = getTargetWarrantyImageLayer();
+let cachedStampBaseImg = null;
+function ensureStampImageLoaded() {
+  return new Promise((resolve, reject) => {
+    if (cachedStampBaseImg && cachedStampBaseImg.complete && cachedStampBaseImg.naturalWidth > 0) {
+      resolve(cachedStampBaseImg);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      cachedStampBaseImg = img;
+      resolve(img);
+    };
+    img.onerror = err => reject(err);
+    if (typeof STAMP_CLEAN_BASE64 !== 'undefined' && STAMP_CLEAN_BASE64) {
+      img.src = STAMP_CLEAN_BASE64;
+    } else {
+      img.src = 'assets/stamp_clean.png';
+    }
+  });
+}
+
+async function autoStampWarrantyCard(targetLayer = null) {
+  const cardLayer = targetLayer || getTargetWarrantyImageLayer();
   if (!cardLayer) {
     showToast('畫布上尚未有保卡圖片，請先匯入保卡');
     return;
@@ -5372,73 +5418,76 @@ function autoStampWarrantyCard() {
   const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
   const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
 
-  const stampImg = new Image();
-  stampImg.onload = () => {
-    const stampCanvas = document.createElement('canvas');
-    stampCanvas.width = stampImg.width;
-    stampCanvas.height = stampImg.height;
-    const sCtx = stampCanvas.getContext('2d');
-    sCtx.imageSmoothingEnabled = true;
-    sCtx.imageSmoothingQuality = 'high';
-    sCtx.drawImage(stampImg, 0, 0);
-
-    const boxCx = 942;
-    const boxCy = 719 + offsetY;
-    sCtx.fillStyle = '#003FBC';
-    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
-    sCtx.textAlign = 'center';
-    sCtx.textBaseline = 'middle';
-    sCtx.fillText(dateStr, boxCx, boxCy);
-
-    // 依保卡寬度 17.5% 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
-    const displayW = Math.round(cardLayer.width * stampSpec.widthRatio);
-    const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
-
-    const localDx = (stampSpec.centerX - 0.5) * cardLayer.width;
-    const localDy = (stampSpec.centerY - 0.5) * cardLayer.height;
-    const cosR = Math.cos(cardLayer.rotation || 0);
-    const sinR = Math.sin(cardLayer.rotation || 0);
-    const posX = Math.round(cardLayer.x + localDx * cosR - localDy * sinR);
-    const posY = Math.round(cardLayer.y + localDx * sinR + localDy * cosR);
-
-    // 自然微幅傾角 (-1.5° ~ +1.5°)
-    const maxTilt = stampSpec.tiltRangeDeg || 1.5;
-    const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
-    const tiltRad = (tiltDeg * Math.PI) / 180;
-
-    const newStamp = createLayerObject({
-      type: 'stamp',
-      name: `專櫃印章-避讓 (${dateStr})`,
-      image: stampCanvas,
-      rawImage: stampCanvas,
-      width: displayW,
-      height: displayH,
-      x: posX,
-      y: posY,
-      rotation: (cardLayer.rotation || 0) + tiltRad,
-      blendMode: stampSpec.blendMode || 'multiply'
-    });
-
-    pushUndoState('日期框避讓自動蓋章');
-    const cardIdx = layers.indexOf(cardLayer);
-    if (cardIdx >= 0) {
-      layers.splice(cardIdx + 1, 0, newStamp);
-    } else {
-      layers.push(newStamp);
-    }
-    setActiveLayer(newStamp);
-    render();
-    showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」避讓座標自動蓋章 (${dateStr})`);
-  };
-
-  if (typeof STAMP_CLEAN_BASE64 !== 'undefined' && STAMP_CLEAN_BASE64) {
-    stampImg.src = STAMP_CLEAN_BASE64;
-  } else {
-    stampImg.src = 'assets/stamp_clean.png';
+  let stampImg;
+  try {
+    stampImg = await ensureStampImageLoaded();
+  } catch (err) {
+    console.error('專櫃印章圖檔載入失敗:', err);
+    showToast('專櫃印章圖檔載入失敗，請檢查 stamp_data.js');
+    return;
   }
+
+  const stampCanvas = document.createElement('canvas');
+  stampCanvas.width = stampImg.width;
+  stampCanvas.height = stampImg.height;
+  const sCtx = stampCanvas.getContext('2d');
+  sCtx.imageSmoothingEnabled = true;
+  sCtx.imageSmoothingQuality = 'high';
+  sCtx.drawImage(stampImg, 0, 0);
+
+  const boxCx = 942;
+  const boxCy = 719 + offsetY;
+  sCtx.fillStyle = '#003FBC';
+  sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
+  sCtx.textAlign = 'center';
+  sCtx.textBaseline = 'middle';
+  sCtx.fillText(dateStr, boxCx, boxCy);
+
+  // 依保卡寬度 17.5% 與中心點 (X: 84.5%, Y: 36.5%) 精準定位，避讓左側發票/店名黑字
+  const displayW = Math.round(cardLayer.width * stampSpec.widthRatio);
+  const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
+
+  const localDx = (stampSpec.centerX - 0.5) * cardLayer.width;
+  const localDy = (stampSpec.centerY - 0.5) * cardLayer.height;
+  const cosR = Math.cos(cardLayer.rotation || 0);
+  const sinR = Math.sin(cardLayer.rotation || 0);
+  const posX = Math.round(cardLayer.x + localDx * cosR - localDy * sinR);
+  const posY = Math.round(cardLayer.y + localDx * sinR + localDy * cosR);
+
+  // 自然微幅傾角 (-1.5° ~ +1.5°)
+  const maxTilt = stampSpec.tiltRangeDeg || 1.5;
+  const tiltDeg = (Math.random() * 2 - 1) * maxTilt;
+  const tiltRad = (tiltDeg * Math.PI) / 180;
+
+  const newStamp = createLayerObject({
+    type: 'stamp',
+    name: `專櫃印章-避讓 (${dateStr})`,
+    image: stampCanvas,
+    rawImage: stampCanvas,
+    width: displayW,
+    height: displayH,
+    x: posX,
+    y: posY,
+    rotation: (cardLayer.rotation || 0) + tiltRad,
+    blendMode: stampSpec.blendMode || 'multiply'
+  });
+
+  pushUndoState('日期框避讓自動蓋章');
+  const cardIdx = layers.indexOf(cardLayer);
+  if (cardIdx >= 0) {
+    layers.splice(cardIdx + 1, 0, newStamp);
+  } else {
+    layers.push(newStamp);
+  }
+  setActiveLayer(newStamp);
+  render();
+  showToast(`已依「${tpl ? tpl.shortLabel : '國際牌'}」避讓座標自動蓋章 (${dateStr})`);
 }
 
 function initSmartWarrantyModule() {
+  // v22: 預先載入專櫃印章圖檔，確保首次上傳保卡即自動蓋印不空白
+  ensureStampImageLoaded().catch(() => {});
+
   if (btnToggleCardRectify) {
     btnToggleCardRectify.addEventListener('click', () => {
       toggleCardRectifyMode();

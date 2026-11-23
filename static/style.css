@@ -65,6 +65,31 @@ body {
   border: 1px solid rgba(0, 63, 188, 0.2);
 }
 
+.version-badge {
+  font-size: 11px;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border: 1px solid #334155;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.panel-version-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f4f6f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
