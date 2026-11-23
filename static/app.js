@@ -257,6 +257,13 @@ const btnRerunCardOcr = document.getElementById('btnRerunCardOcr');
 const btnSyncCardToNote = document.getElementById('btnSyncCardToNote');
 const btnAutoStampCard = document.getElementById('btnAutoStampCard');
 
+// 保卡印章日期輸入對話框控制項 (v34)
+const stampDateModalBackdrop = document.getElementById('stampDateModalBackdrop');
+const modalStampDateInput = document.getElementById('modalStampDateInput');
+const modalStampDatePreview = document.getElementById('modalStampDatePreview');
+const modalStampDateError = document.getElementById('modalStampDateError');
+const btnConfirmModalStampDate = document.getElementById('btnConfirmModalStampDate');
+
 // 圖紙輸出範圍與匯出控制項
 const btnToggleExportCrop = document.getElementById('btnToggleExportCrop');
 const switchExportCrop = document.getElementById('switchExportCrop');
@@ -279,6 +286,7 @@ window.addEventListener('DOMContentLoaded', () => {
   updateUndoBtnState();
   initHandwritingGenerator();
   initSmartWarrantyModule();
+  if (typeof initStampDateModal === 'function') initStampDateModal();
 });
 
 // --- 歷史復原（Undo）核心函式 ---
@@ -2349,6 +2357,19 @@ function deleteActiveLayer() {
 
 // --- 檔案匯入處理 (純前端解析) ---
 async function handleFiles(fileList) {
+  let hasImageFile = false;
+  for (let i = 0; i < fileList.length; i++) {
+    const extCheck = fileList[i].name.split('.').pop().toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'webp'].includes(extCheck)) {
+      hasImageFile = true;
+      break;
+    }
+  }
+  // v34: 只要匯入檔案包含圖片，立刻非阻斷彈出民國日期輸入框，同時背景繼續解析、辨識與排版
+  if (hasImageFile && typeof openStampDatePromptIfNeeded === 'function') {
+    openStampDatePromptIfNeeded();
+  }
+
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
     const ext = file.name.split('.').pop().toLowerCase();
@@ -2663,39 +2684,7 @@ function importImagePureFrontend(file) {
 
           activeImg = rectifiedCleanCanvas;
 
-          // v26/v28 保底必蓋機制：先完成專櫃章離屏合成，絕不因 OCR 失敗而漏蓋
-          try {
-            const stampImg = await ensureStampImageLoaded();
-            const preTpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
-            const stampSpec = (preTpl && preTpl.stampSpec) || {
-              centerX: 0.845,
-              centerY: 0.395,
-              widthRatio: 0.210,
-              tiltRangeDeg: 1.5,
-              blendMode: 'multiply'
-            };
-            const dateStr = (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
-            const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
-            const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
-
-            const baked = window.CardTemplates.compositeStampOnOffscreenCard(
-              rectifiedCleanCanvas,
-              stampImg,
-              dateStr,
-              fontSize,
-              offsetY,
-              stampSpec
-            );
-            if (baked && baked.stampedCanvas) {
-              stampedCardCanvas = baked.stampedCanvas;
-              activeImg = stampedCardCanvas;
-              hasBakedStamp = true;
-            }
-          } catch (stampErr) {
-            console.error('離屏保卡自動蓋章失敗:', stampErr);
-          }
-
-          // 接著在未縮小的最高解析度高清保卡（rectifiedCleanCanvas / rawSourceImg）上執行整塊左側標籤區雙語辨識與交叉校正
+          // v34: 改為先在未蓋章的最高解析度底圖 rectifiedCleanCanvas 上執行雙語 OCR 與交叉校正，最後排版後才蓋專櫃印章
           const ocrLayerProxy = {
             type: 'image',
             warpedImage: rectifiedCleanCanvas,
@@ -2775,10 +2764,17 @@ function importImagePureFrontend(file) {
           render();
         }
 
-        if (hasBakedStamp) {
+        // v34: 最後才是蓋章（先填好日期就直接蓋上；尚未填好則先完成全部排版，等待輸入日期後立刻補蓋）
+        if (isWarrantyCandidate && autoSmartEnabled && newLayer.rectifiedCleanCanvas && typeof finalizeWarrantyCardStampAfterLayout === 'function') {
+          await finalizeWarrantyCardStampAfterLayout(newLayer);
+        }
+
+        if (newLayer.hasBakedStamp) {
           showToast(`已完成保卡拉正與自動蓋章: ${file.name}`);
         } else if (trimmedCanvas) {
           showToast(`已完成發票去邊與排版: ${file.name}`);
+        } else if (isWarrantyCandidate && autoSmartEnabled) {
+          showToast(`保卡已拉正排版，等待輸入日期蓋章: ${file.name}`);
         } else {
           showToast(`已載入原圖: ${file.name}`);
         }
@@ -4324,6 +4320,9 @@ btnClearCanvas.addEventListener('click', () => {
   if (confirm('確定要清空畫布上的所有物件嗎？')) {
     pushUndoState('清空畫布');
     layers = [];
+    if (typeof resetStampDateSession === 'function') {
+      resetStampDateSession();
+    }
     if (typeof cachedOrderItemModels !== 'undefined') {
       cachedOrderItemModels = [];
     }
@@ -5977,6 +5976,248 @@ async function autoStampWarrantyCard(targetLayer = null) {
       return;
     }
   }
+}
+
+// =============================================================================
+// 8-1. 保卡民國日期輸入對話框 ＋ 非阻斷背景辨識與最後蓋章流程 (v34)
+// =============================================================================
+
+let confirmedSessionStampDate = null;
+let pendingStampDateWaiter = null;
+
+function normalizeMinguoStampDateInput(raw) {
+  const s = (raw || '').trim();
+  if (!s) {
+    return { valid: false, reason: '請輸入民國日期（例如 1150417）' };
+  }
+
+  let year, month, day;
+  const compactMatch = s.match(/^(\d{3})(\d{2})(\d{2})$/);
+  if (compactMatch) {
+    year = parseInt(compactMatch[1], 10);
+    month = parseInt(compactMatch[2], 10);
+    day = parseInt(compactMatch[3], 10);
+  } else {
+    const sepMatch = s.match(/^(\d{2,3})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})$/);
+    if (!sepMatch) {
+      return { valid: false, reason: '格式錯誤，請直接輸入 7 碼數字（如 1150417）或 115.04.17' };
+    }
+    year = parseInt(sepMatch[1], 10);
+    month = parseInt(sepMatch[2], 10);
+    day = parseInt(sepMatch[3], 10);
+  }
+
+  if (year < 90 || year > 199 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return { valid: false, reason: '請確認民國年份（如 115）及合法月份日期（01～12 / 01～31）' };
+  }
+
+  const formatted = `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
+  return { valid: true, formatted };
+}
+
+function resetStampDateSession() {
+  confirmedSessionStampDate = null;
+  if (pendingStampDateWaiter) {
+    const waiter = pendingStampDateWaiter;
+    pendingStampDateWaiter = null;
+    waiter.resolve(null);
+  }
+  if (stampDateModalBackdrop) {
+    stampDateModalBackdrop.classList.add('hidden');
+  }
+  if (modalStampDateInput) {
+    modalStampDateInput.value = '';
+  }
+  if (modalStampDateError) {
+    modalStampDateError.classList.add('hidden');
+    modalStampDateError.textContent = '';
+  }
+  if (modalStampDatePreview) {
+    modalStampDatePreview.textContent = '格式範例：輸入 1150417 自動轉為 115.04.17';
+  }
+}
+
+function openStampDatePromptIfNeeded() {
+  if (confirmedSessionStampDate) {
+    return Promise.resolve(confirmedSessionStampDate);
+  }
+  if (pendingStampDateWaiter) {
+    if (stampDateModalBackdrop) stampDateModalBackdrop.classList.remove('hidden');
+    if (modalStampDateInput) setTimeout(() => modalStampDateInput.focus(), 20);
+    return pendingStampDateWaiter.promise;
+  }
+
+  let resolveFn;
+  const promise = new Promise(resolve => {
+    resolveFn = resolve;
+  });
+  pendingStampDateWaiter = { promise, resolve: resolveFn };
+
+  if (modalStampDateInput) modalStampDateInput.value = '';
+  if (modalStampDateError) {
+    modalStampDateError.classList.add('hidden');
+    modalStampDateError.textContent = '';
+  }
+  if (modalStampDatePreview) {
+    modalStampDatePreview.textContent = '格式範例：輸入 1150417 自動轉為 115.04.17';
+  }
+  if (stampDateModalBackdrop) {
+    stampDateModalBackdrop.classList.remove('hidden');
+  }
+  if (modalStampDateInput) {
+    setTimeout(() => modalStampDateInput.focus(), 20);
+  }
+  return promise;
+}
+
+async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
+  if (!cardLayer || !layers.includes(cardLayer) || !dateStr) return false;
+  if (cardLayer._isStamping || cardLayer.hasBakedStamp) return false;
+  if (!window.CardTemplates || !window.CardTemplates.compositeStampOnOffscreenCard) return false;
+
+  cardLayer._isStamping = true;
+  try {
+    const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+    const tpl = resolveCardTemplate(cardLayer.cardTemplateId || modeVal);
+    const stampSpec = (tpl && tpl.stampSpec) || {
+      centerX: 0.845,
+      centerY: 0.395,
+      widthRatio: 0.210,
+      tiltRangeDeg: 1.5,
+      blendMode: 'multiply'
+    };
+
+    let stampImg;
+    try {
+      stampImg = await ensureStampImageLoaded();
+    } catch (err) {
+      console.error('專櫃印章圖檔載入失敗:', err);
+      return false;
+    }
+
+    let cleanCanvas = cardLayer.rectifiedCleanCanvas;
+    if (!cleanCanvas) {
+      const rawSrc = cardLayer.warpedImage || cardLayer.croppedImage || cardLayer.image || cardLayer.rawImage;
+      if (!rawSrc) return false;
+      cleanCanvas = document.createElement('canvas');
+      cleanCanvas.width = rawSrc.width;
+      cleanCanvas.height = rawSrc.height;
+      cleanCanvas.getContext('2d').drawImage(rawSrc, 0, 0);
+      cardLayer.rectifiedCleanCanvas = cleanCanvas;
+    }
+
+    const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
+    const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
+
+    const baked = window.CardTemplates.compositeStampOnOffscreenCard(
+      cleanCanvas,
+      stampImg,
+      dateStr,
+      fontSize,
+      offsetY,
+      stampSpec
+    );
+    if (baked && baked.stampedCanvas) {
+      if (!layers.includes(cardLayer)) return false;
+      layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
+      cardLayer.warpedImage = baked.stampedCanvas;
+      cardLayer.image = baked.stampedCanvas;
+      cardLayer.hasBakedStamp = true;
+      cardLayer.isRectifiedCard = true;
+      updateLayersListUI();
+      render();
+      setCanvasOcrPill(`✅ 已依指定日期蓋上專櫃印章 (${dateStr})`, 'success');
+      showToast(`已依指定日期於保卡蓋上專櫃印章 (${dateStr})`);
+      return true;
+    }
+    return false;
+  } finally {
+    cardLayer._isStamping = false;
+  }
+}
+
+async function finalizeWarrantyCardStampAfterLayout(cardLayer) {
+  if (!cardLayer || !layers.includes(cardLayer)) return;
+  if (confirmedSessionStampDate) {
+    await applyConfirmedStampToCardLayer(cardLayer, confirmedSessionStampDate);
+    return;
+  }
+
+  const waitPromise = openStampDatePromptIfNeeded();
+  setCanvasOcrPill('⏳ 背景辨識與排版已完成，等待確認保卡印章日期後蓋章...', 'loading');
+  waitPromise.then(chosenDate => {
+    if (chosenDate && layers.includes(cardLayer) && !cardLayer.hasBakedStamp) {
+      applyConfirmedStampToCardLayer(cardLayer, chosenDate);
+    }
+  });
+}
+
+function initStampDateModal() {
+  if (!stampDateModalBackdrop || !modalStampDateInput || !btnConfirmModalStampDate) return;
+
+  const submitDate = () => {
+    const check = normalizeMinguoStampDateInput(modalStampDateInput.value);
+    if (!check.valid) {
+      if (modalStampDateError) {
+        modalStampDateError.textContent = check.reason;
+        modalStampDateError.classList.remove('hidden');
+      }
+      modalStampDateInput.focus();
+      return;
+    }
+
+    confirmedSessionStampDate = check.formatted;
+    if (inputStampDate) {
+      inputStampDate.value = check.formatted;
+    }
+    if (modalStampDateError) {
+      modalStampDateError.classList.add('hidden');
+    }
+    stampDateModalBackdrop.classList.add('hidden');
+
+    if (pendingStampDateWaiter) {
+      const waiter = pendingStampDateWaiter;
+      pendingStampDateWaiter = null;
+      waiter.resolve(check.formatted);
+    }
+
+    // 若畫布上已有未蓋章的保卡圖層，立即補蓋專櫃印章
+    const targetCard = [...layers].reverse().find(
+      l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard) && !l.hasBakedStamp
+    );
+    if (targetCard) {
+      applyConfirmedStampToCardLayer(targetCard, check.formatted);
+    } else {
+      showToast(`已鎖定保卡印章日期 (${check.formatted})，背景排版完成後將自動蓋章`);
+    }
+  };
+
+  modalStampDateInput.addEventListener('input', () => {
+    if (modalStampDateError) {
+      modalStampDateError.classList.add('hidden');
+    }
+    const raw = modalStampDateInput.value.trim();
+    if (!raw) {
+      if (modalStampDatePreview) modalStampDatePreview.textContent = '格式範例：輸入 1150417 自動轉為 115.04.17';
+      return;
+    }
+    const check = normalizeMinguoStampDateInput(raw);
+    if (modalStampDatePreview) {
+      modalStampDatePreview.textContent = check.valid
+        ? `✓ 印章將蓋印日期：${check.formatted}`
+        : `輸入中：${raw}（可打 7 碼如 1150417）`;
+    }
+  });
+
+  modalStampDateInput.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitDate();
+    }
+  });
+
+  btnConfirmModalStampDate.addEventListener('click', submitDate);
 }
 
 function initSmartWarrantyModule() {

@@ -53,6 +53,22 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 23:06:00] (第 34 版 / v34)
+- **執行項目**：**非阻斷保卡印章日期對話框 ＋ 背景同步辨識排版 ＋ 最後蓋章流程重構（v34）** — 讓使用者在匯入圖片時可自訂任意民國日期（如直接輸入 7 碼 `1150417` ➔ `115.04.17`），同時系統在背景毫不間斷地執行 OCR、裁切、拉正與 `70% : 3% : 27%` 排版，最後才將專櫃印章蓋上已就位的保卡。
+- **具體進度**：
+  1. **版本徽章更新與 CSS/JS 防快取（`v34`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner` 為 `v34 (2026.11.23)`，並將引入參數更新為 `style.css?v=34`、`card_templates.js?v=34` 與 `app.js?v=34`。
+  2. **純手動民國年日期輸入對話框（`#stampDateModalBackdrop`）**：
+     - 於雙份 HTML 與 `static/style.css` 新增輕量置中輸入框，移除多餘帶入發票日或跳過按鈕；開啟自動聚焦空白輸入欄，支援直接輸入 7 碼數字（如 `1150417`）或分隔寫法（`115.04.17` / `115/04/17`），經 `normalizeMinguoStampDateInput()` 即時預覽並正規化為 `115.04.17`，按 `Enter` 直接送出並同步寫入右側 `#inputStampDate`。
+  3. **非阻斷觸發與「最後才蓋章」匯流管線（`handleFiles` ＋ `finalizeWarrantyCardStampAfterLayout`）**：
+     - 在 `handleFiles()` 偵測到匯入清單含圖片檔時，**立即非阻斷彈出日期對話框**（單獨拖入 PDF 訂購單則不跳出），同時背景繼續執行 PDF 解析、發票地標裁切、保卡 1.48:1 透視拉正、左側雙語 OCR、訂購單交叉校正與 `70% : 3% : 27%` 自動排版。
+     - 將蓋章從保卡排版前移出至最後一步（`finalizeWarrantyCardStampAfterLayout()` ＋ `_isStamping` 防重複鎖定）：
+       - **先填好日期**：系統記住 `confirmedSessionStampDate` 並關閉視窗，待保卡拉正、OCR 與排版完成後自動接續蓋章。
+       - **排版後才填好日期**：畫面先以乾淨未蓋章保卡完成全部三物件與 5 行文字排版等待，按下 `Enter` 送出日期當下立刻補蓋專櫃印章（`applyConfirmedStampToCardLayer`）。
+  4. **清空／重置 100% 歸零**：
+     - 於 `btnClearCanvas` 呼叫 `resetStampDateSession()`，確保清空畫布或重新整理後狀態 100% 歸零重啟。
+  5. 建立 `_backup/20261123_231128/` 完整備份，通過雙份 HTML 同步、語法平衡（`syntaxErrors = 0`）與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 22:51:10] (第 33 版 / v33)
 - **執行項目**：**保卡頂部 `Panasonic` LOGO 完整保留微調（v33）** — 維持 v32 之 `70% : 3% : 27%` 分欄比例與 v31 辨識邏輯，僅將國際牌保卡四點透視上緣（`TL`、`TR`）沿左右邊線方向向上外擴 `6.5%` 卡片高度（約 `1 公分`）以完整露出頂部藍色 `Panasonic` LOGO，並同步微調專櫃印章 Y 軸相對座標至 `39.5%`（`0.395`）。
 - **具體進度**：
