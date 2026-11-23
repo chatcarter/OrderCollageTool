@@ -812,23 +812,7 @@
     const trimmedAreaRatio = (spanW * spanH) / (w * h);
     if (trimmedAreaRatio > 0.96 && isAlreadyWhiteScan) return null;
 
-    // 內縮安全邊距 1.5%（完全切除紙張邊緣殘留的暗色桌邊／陰影）
-    const insetRatio = isAlreadyWhiteScan ? -0.01 : 0.015;
-    const invScale = 1 / scale;
-
-    let rx = Math.round(x0 * invScale);
-    let ry = Math.round(y0 * invScale);
-    let rw = Math.round(spanW * invScale);
-    let rh = Math.round(spanH * invScale);
-
-    const insetX = Math.round(rw * insetRatio);
-    const insetY = Math.round(rh * insetRatio);
-    rx = Math.max(0, rx + insetX);
-    ry = Math.max(0, ry + insetY);
-    rw = Math.max(40, Math.min(sw - rx, rw - insetX * 2));
-    rh = Math.max(40, Math.min(sh - ry, rh - insetY * 2));
-
-    // 若裁切結果跟原圖幾乎一模一樣 (>97%) 仍適度做安全淨化
+    // 內縮安全邊距 1.2% 水平 / 0.8% 垂直（完全切除紙張邊緣殘留的暗色桌邊／陰影，保留完整上下內容）
     const insetRatioX = isAlreadyWhiteScan ? -0.008 : 0.012;
     const insetRatioY = isAlreadyWhiteScan ? -0.008 : 0.008;
     const invScale = 1 / scale;

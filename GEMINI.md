@@ -53,6 +53,18 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 21:28:09] (第 27 版 / v27)
+- **執行項目**：徹底根除 `Cannot read properties of undefined (reading 'parseInvoiceHeaderFields')` 錯誤（清除 `card_templates.js` 重複宣告語法錯誤並加上安全存在性防護），並強化保卡匯入分流條件確保 100% 觸發離屏透視拉正與自動蓋章。
+- **具體進度**：
+  1. **版本徽章同步更新為 `v27 (2026.11.23)`**：
+     - 同步更新 `index.html`、`static/index.html` 頂部 `#headerVersionBadge` 與右側 `#panelVersionBanner`。
+  2. **根除 `Cannot read properties of undefined (reading 'parseI...')` 錯誤**：
+     - 定位並移除 `static/card_templates.js` 中 `autoTrimReceiptImage()` 內殘留重複宣告的 `invScale / rx / ry / rw / rh` 區塊（造成 `SyntaxError` 使 `window.CardTemplates` 無法導出之根本原因），並通過全檔作用域重複宣告掃描驗證。
+     - 於 `static/app.js` 的 `runReceiptHighResOcr()` 為 `parseInvoiceHeaderFields()` 與 `normalizeTaiwanInvoiceNo()` 加入完整存在性防護與內聯回退解析器（`parseHdrSafe` / `normalizeInvSafe`），確保發票購買日期與發票號碼順利解析並寫入左下角 5 行核對文字。
+  3. **強化保卡匯入分流判斷（`importImagePureFrontend`）**：
+     - 將直立熱感應發票判定條件收斂為「非手動指定保卡、非偵測到紅褐色外框、非橫向圖／橫向紙張且高寬比 `> 1.35`」（`isTallReceiptStrip`），其餘所有保卡影像一律明確進入保卡分支，第一時間離屏透視拉正（切除木紋／深綠桌面）＋ 合成專櫃印章（`X: 84.5%`、`Y: 36.5%`、`W: 21.0%`、純 `STAMP_CLEAN_BASE64` ＋ 光影自適應 ＋ `multiply`）＋ 局部 OCR 同步寫入左下角 5 行文字。
+  4. 建立 `_backup/20261123_212524/` 完整備份，全專案通過雙份 HTML 同步檢核、括號平衡驗證（`syntaxErrors = 0`）、重複變數宣告檢查與 `CRLF` 換行檢核，並推送至 GitHub。
+
 ### [2026-11-23 21:22:01] (第 26 版 / v26)
 - **執行項目**：實作保卡「保底必蓋專櫃章機制」與純 Base64 消除 `Tainted Canvas` 錯誤、雙重驗證排除木紋桌面干擾、導入單一序列排隊 OCR 與熱感應紙動態對比拉伸（取代全域 Otsu），並強制同步左下角 5 行核對文字與畫布即時進度提示。
 - **具體進度**：

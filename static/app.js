@@ -2544,14 +2544,15 @@ function importImagePureFrontend(file) {
         const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
         const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
 
-        // v26: 雙重判定（同時支援橫向照與直拍內含橫向保卡），並以淺色紙張驗證排除木紋桌面
+        // v27: 強化保卡匯入分流：只要不是「直向長條形熱感應發票 (aspectHW > 1.35)」，或具保卡特徵，一律明確進入保卡處理分支
         const detectRes = (window.CardTemplates && window.CardTemplates.detectPanasonicCardQuad)
           ? window.CardTemplates.detectPanasonicCardQuad(img)
           : { detected: false, paperBox: null };
         const paperIsHorizontal = !!(detectRes.paperBox && (detectRes.paperBox.w / Math.max(1, detectRes.paperBox.h)) >= 1.15);
 
-        const isWarrantyCandidate = isManualPanasonicInit || detectRes.detected || isHorizontal || paperIsHorizontal;
-        const isReceiptImg = !isWarrantyCandidate && aspectHW > 1.3;
+        const isTallReceiptStrip = !isManualPanasonicInit && !detectRes.detected && !isHorizontal && !paperIsHorizontal && aspectHW > 1.35;
+        const isReceiptImg = isTallReceiptStrip;
+        const isWarrantyCandidate = !isReceiptImg;
 
         let trimmedCanvas = null;
         let activeImg = img;
@@ -5950,25 +5951,45 @@ async function runReceiptHighResOcr(fullResSource) {
         }
       }
 
-      // 解析日期、統編與發票號碼
+      // 解析日期、統編與發票號碼（含安全存在性防護與回退解析）
       let fullText = '';
-      const hdrParsed = (window.CardTemplates && window.CardTemplates.parseInvoiceHeaderFields)
-        ? window.CardTemplates.parseInvoiceHeaderFields(headerText, '')
-        : { sellerTaxId: '', dateStr: '' };
-      let invNo = (window.CardTemplates && window.CardTemplates.normalizeTaiwanInvoiceNo)
-        ? window.CardTemplates.normalizeTaiwanInvoiceNo(invoiceZoneEngText + '\n' + invoiceZoneText + '\n' + headerText)
-        : '';
+      const parseHdrSafe = (hTxt, fTxt) => {
+        if (window.CardTemplates && typeof window.CardTemplates.parseInvoiceHeaderFields === 'function') {
+          return window.CardTemplates.parseInvoiceHeaderFields(hTxt, fTxt);
+        }
+        const scope = (hTxt + '\n' + fTxt).replace(/\r/g, '\n');
+        const ad = scope.match(/(202\d|20\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
+        const tax = scope.match(/(?:營業人統編|賣方統編|統編)[^\dA-Z]{0,8}(\d{8})/i);
+        return {
+          sellerTaxId: tax ? tax[1] : '',
+          dateStr: ad ? `${ad[1]}-${ad[2].padStart(2, '0')}-${ad[3].padStart(2, '0')}` : ''
+        };
+      };
+      const normalizeInvSafe = txt => {
+        if (window.CardTemplates && typeof window.CardTemplates.normalizeTaiwanInvoiceNo === 'function') {
+          return window.CardTemplates.normalizeTaiwanInvoiceNo(txt);
+        }
+        const m = (txt || '').toUpperCase().match(/([A-Z]{2})\s*[-—–]?\s*(\d[\d\s]{6,10}\d)/);
+        if (m) {
+          const d = m[2].replace(/\s+/g, '');
+          if (/^\d{8}$/.test(d)) return `${m[1]}${d}`;
+        }
+        return '';
+      };
+
+      const hdrParsed = parseHdrSafe(headerText, '');
+      let invNo = normalizeInvSafe(invoiceZoneEngText + '\n' + invoiceZoneText + '\n' + headerText);
 
       if (!hdrParsed.dateStr || !invNo) {
         const fullRes = await runChiEng(fullCanvas);
         fullText = (fullRes && fullRes.data && fullRes.data.text) || '';
         if (!hdrParsed.dateStr || !hdrParsed.sellerTaxId) {
-          const fallbackHdr = window.CardTemplates.parseInvoiceHeaderFields(headerText, fullText);
+          const fallbackHdr = parseHdrSafe(headerText, fullText);
           if (!hdrParsed.dateStr && fallbackHdr.dateStr) hdrParsed.dateStr = fallbackHdr.dateStr;
           if (!hdrParsed.sellerTaxId && fallbackHdr.sellerTaxId) hdrParsed.sellerTaxId = fallbackHdr.sellerTaxId;
         }
-        if (!invNo && window.CardTemplates && window.CardTemplates.normalizeTaiwanInvoiceNo) {
-          invNo = window.CardTemplates.normalizeTaiwanInvoiceNo(fullText);
+        if (!invNo) {
+          invNo = normalizeInvSafe(fullText);
         }
       }
 

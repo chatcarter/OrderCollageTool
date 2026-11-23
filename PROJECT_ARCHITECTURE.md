@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 21:28:09] (第 27 版 / v27)
+- **執行項目**：徹底根除 `Cannot read properties of undefined (reading 'parseInvoiceHeaderFields')` 錯誤（清除 `card_templates.js` 重複宣告語法錯誤並加上安全存在性防護），並強化保卡匯入分流條件確保 100% 觸發離屏透視拉正與自動蓋章。
+- **具體進度**：
+  1. **版本徽章更新**：同步更新 `index.html` 與 `static/index.html` 為 `v27 (2026.11.23)`。
+  2. **修復 `window.CardTemplates` 未定義與 `parseInvoiceHeaderFields` 錯誤**：移除 `static/card_templates.js` `autoTrimReceiptImage()` 內重複 `const invScale / let rx` 語法錯誤使模組 100% 正常掛載，並於 `static/app.js` 補齊 `parseHdrSafe` / `normalizeInvSafe` 防護與內聯回退。
+  3. **強化保卡匯入分流與保底合成**：僅高寬比 `> 1.35` 且無保卡特徵之長條形直立圖進入發票分支，其餘一律進入保卡離屏拉正、自動蓋印專櫃章與局部 OCR 寫入 5 行核對文字。
+  4. 建立 `_backup/20261123_212524/` 完整備份，通過語法、同步與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 21:22:01] (第 26 版 / v26)
 - **執行項目**：實作保卡「保底必蓋專櫃章機制」與純 Base64 消除 `Tainted Canvas` 錯誤、雙重驗證排除木紋桌面干擾、導入單一序列排隊 OCR 與熱感應紙動態對比拉伸（取代全域 Otsu），並強制同步左下角 5 行核對文字與畫布即時進度提示。
 - **具體進度**：
