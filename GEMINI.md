@@ -53,6 +53,22 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 22:36:25] (第 31 版 / v31)
+- **執行項目**：**國際牌完美封版（v31）** — 實作「高解析度原圖先辨識＋整塊左側基本資料區雙語錨點讀取＋左側中文字誤認前綴剝除」、新增「訂購單原生純文字型號交叉比對校正（雙向順序無關）」、調高發票頂部外擴參數多留約 `1.5 公分` 完整露出「宏匯廣場」大字，以及將左下角 5 行核對文字放大至 `1.65 倍`（`~96–104px`）並嚴格限制寬度絕不壓迫保卡與發票。
+- **具體進度**：
+  1. **版本徽章同步更新為 `v31 (2026.11.23)` 與防快取參數**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner`，並將腳本參數更新為 `card_templates.js?v=31` 與 `app.js?v=31`。
+  2. **高解析度優先＋整塊左側雙語標籤區讀取與機號前綴淨化**：
+     - 提高保卡離屏拉正辨識底圖寬度上限至 `3200px`（`Math.max(1800, Math.min(3200, sw))`），確保未縮小壓縮前優先辨識。
+     - 於 `PANASONIC_WARRANTY_CONFIG` 與 `CARD_TEMPLATES` 新增 `leftInfoBlock` 整塊左側基本資料區（同時包入 `機種` 與 `機號` 兩列），在 `runCardTargetedOcr()` 優先以 `eng+chi_tra` + `PSM = 6` 整塊掃描並由 `parsePanasonicLeftInfoBlock()` 依雙語錨點提取機種與機號；`filterWarrantySerialResult()` 新增 `stripSerialMisreadPrefix()` 自動剝除 `IS`/`NO`/`SN` 等左側中文字誤認前綴，精準還原純淨 `02926020033`。
+  3. **訂購單原生純文字型號交叉比對校正（`cachedOrderItemModels` ＋ `crossVerifyModelWithOrderSheet`）**：
+     - `importPdfPureFrontend()` 與圖片訂購單分支解析後即同步抽取品牌／型號至 `cachedOrderItemModels`；無論匯入順序（先訂單後保卡、多檔全選或先保卡後訂單），只要與訂購單同品牌標準型號計算編輯距離／視覺混淆相似度 `>= 65%` 且前綴相符（如 `NR-DJ305XV-VW`），立即自動校正為 100% 零誤字 `NR-D505XV-W` 並同步更新 5 行核對文字。
+  4. **發票頂部多留約 `1.5 公分` 完整露出「宏匯廣場」**：
+     - 更新 `RECEIPT_LANDMARK_CROP_CONFIG`（`topExpandHeaderH: 2.2`、`topExpandBodyWRatio: 0.24`），鎖定 `HONHUI PLAZA`／`銷貨明細表` 時往上強制外擴 `max(2.2 * headerHeight, 0.24 * bodyW)`，完整保留上方「宏匯廣場」大字與自然紙邊。
+  5. **左下 5 行核對文字放大 `1.65 倍` 與不越界防護**：
+     - 調整 `syncSummaryTextLayer()` 字級搜尋範圍至 `~96–104px`（於 `3508px` 畫布），與保卡下緣固定保留 `28px` 安全間距，嚴格限定 `box.width <= cardLayer.width * 0.96` 防止跨過 `3%` 間距壓到右側發票。
+  6. 建立 `_backup/20261123_223316/` 完整備份，通過雙份 HTML 同步、語法平衡（`syntaxErrors = 0`）與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 22:17:50] (第 30 版 / v30)
 - **執行項目**：**國際牌封版收尾（v30）** — 實作「純文字地標強制比例外擴一刀裁切演算法」、將發票寬高比例參數獨立集中至 `RECEIPT_LANDMARK_CROP_CONFIG`、精準上移收緊國際牌保卡第二聯「機種／機號」座標隔離，並透過 `PANASONIC_WARRANTY_CONFIG` 封裝國際牌專屬核心參數為後續品牌擴充預留乾淨介面。
 - **具體進度**：

@@ -65,11 +65,13 @@
     }),
     slip1Regions: Object.freeze({
       model: Object.freeze({ label: '機種（型號）', x: 0.115, y: 0.130, w: 0.245, h: 0.070 }),
-      serial: Object.freeze({ label: '機號（序號）', x: 0.410, y: 0.130, w: 0.240, h: 0.070 })
+      serial: Object.freeze({ label: '機號（序號）', x: 0.410, y: 0.130, w: 0.240, h: 0.070 }),
+      leftInfoBlock: Object.freeze({ label: '左側基本資料整塊區（第一聯）', x: 0.025, y: 0.105, w: 0.650, h: 0.125 })
     }),
     slip2Regions: Object.freeze({
       model: Object.freeze({ label: '機種（型號）', x: 0.055, y: 0.305, w: 0.280, h: 0.068 }),
-      serial: Object.freeze({ label: '機號（序號）', x: 0.055, y: 0.382, w: 0.280, h: 0.068 })
+      serial: Object.freeze({ label: '機號（序號）', x: 0.055, y: 0.382, w: 0.280, h: 0.068 }),
+      leftInfoBlock: Object.freeze({ label: '左側基本資料整塊區（第二聯）', x: 0.020, y: 0.275, w: 0.365, h: 0.205 })
     })
   });
 
@@ -89,7 +91,8 @@
       borderColorType: PANASONIC_WARRANTY_CONFIG.borderColorType,
       ocrRegions: {
         model: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.model },
-        serial: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.serial }
+        serial: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.serial },
+        leftInfoBlock: { ...PANASONIC_WARRANTY_CONFIG.slip1Regions.leftInfoBlock }
       },
       detectRegions: {
         formCode: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.formCode },
@@ -110,7 +113,8 @@
       borderColorType: PANASONIC_WARRANTY_CONFIG.borderColorType,
       ocrRegions: {
         model: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.model },
-        serial: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.serial }
+        serial: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.serial },
+        leftInfoBlock: { ...PANASONIC_WARRANTY_CONFIG.slip2Regions.leftInfoBlock }
       },
       detectRegions: {
         formCode: { ...PANASONIC_WARRANTY_CONFIG.detectRegions.formCode },
@@ -1069,13 +1073,29 @@
     return (/\d/.test(fallback) && /[A-Z]/.test(fallback)) ? fallback : '';
   }
 
+  function stripSerialMisreadPrefix(rawTok) {
+    if (!rawTok) return '';
+    let s = rawTok.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // 剝除左側中文字（「機號」）誤認為英文字母的前綴（如 IS / NO / SN / N0 / 1S + 9~12 位純數字）
+    const prefixNum = s.match(/^(?:IS|NO|SN|N0|1S|I8|[A-Z]{1,3})(\d{9,12})[IL|]?$/);
+    if (prefixNum) return prefixNum[1];
+    // 剝除純數字尾端垂直表格框線誤讀之 I / L
+    if (/^\d{9,13}[IL]$/.test(s)) return s.slice(0, -1);
+    return s;
+  }
+
   function filterWarrantySerialResult(rawText) {
     if (!rawText) return '';
-    const stripBorderI = tok => (/^\d{10,13}[IL]$/.test(tok) ? tok.slice(0, -1) : tok);
     const lines = rawText.toUpperCase()
       .split(/\r?\n/)
-      .map(s => stripBorderI(s.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '')))
+      .map(s => stripSerialMisreadPrefix(s))
       .filter(Boolean);
+    // 優先匹配標準 9~12 位純數字機號（如 02926020033）
+    const pure9to12 = lines.find(tok => /^\d{9,12}$/.test(tok));
+    if (pure9to12) return pure9to12;
+    const inlineNumMatch = rawText.toUpperCase().match(/(?:IS|NO|SN|S\/?N)?[\s:/-]*(\d{9,12})\b/);
+    if (inlineNumMatch) return inlineNumMatch[1];
+
     // 機號至少須含 4 位以上數字（徹底剔除如 VLILOULUVOIDI 等純英文條碼誤判）
     const valid = lines.filter(tok => {
       if (tok.length < 5) return false;
@@ -1086,8 +1106,134 @@
       valid.sort((a, b) => (b.match(/\d/g) || []).length - (a.match(/\d/g) || []).length);
       return valid[0];
     }
-    const fallback = stripBorderI(rawText.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, ''));
+    const fallback = stripSerialMisreadPrefix(rawText);
     return (fallback.match(/\d/g) || []).length >= 4 ? fallback : '';
+  }
+
+  /**
+   * v31: 解析保卡左側基本資料整塊區（雙語錨點讀取：機種/型號 + 機號前綴淨化）
+   */
+  function parsePanasonicLeftInfoBlock(rawText) {
+    if (!rawText) return { model: '', serialNo: '' };
+    const lines = rawText.replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+    let model = '';
+    let serialNo = '';
+
+    // 1. 優先依「機種 / 型號 / MODEL」雙語錨點解析機種
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/機種|機\s*種|型號|MODEL|TYPE/i.test(line)) {
+        const after = line.replace(/^.*?(?:機種|機\s*種|型號|MODEL|TYPE)\s*[:：]?\s*/i, '');
+        const candidate = filterWarrantyModelResult(after + '\n' + (lines[i + 1] || ''));
+        if (candidate) {
+          model = candidate;
+          break;
+        }
+      }
+    }
+    if (!model) {
+      model = filterWarrantyModelResult(rawText);
+    }
+
+    // 2. 優先依「機號 / 製造號碼 / SERIAL / S/N」雙語錨點解析機號並剝除左側中文字誤認前綴
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/機號|機\s*號|製造號碼|SERIAL|S\/?N/i.test(line)) {
+        const after = line.replace(/^.*?(?:機號|機\s*號|製造號碼|SERIAL|S\/?N)\s*[:：]?\s*/i, '');
+        const scope = after + '\n' + (lines[i + 1] || '');
+        const mNum = scope.toUpperCase().match(/(?:IS|NO|SN|N0|S\/?N|[A-Z]{1,3})?[\s:/-]*(\d{9,12})(?:[IL|]|\b)/);
+        if (mNum) {
+          serialNo = mNum[1];
+          break;
+        }
+        const cand = filterWarrantySerialResult(scope);
+        if (cand && cand !== model.replace(/-/g, '')) {
+          serialNo = cand;
+          break;
+        }
+      }
+    }
+    if (!serialNo) {
+      serialNo = filterWarrantySerialResult(rawText);
+    }
+
+    return { model, serialNo };
+  }
+
+  /**
+   * v31: 訂購單原生純文字型號交叉比對校正（Levenshtein + 視覺混淆權重，相似度 >= 65% 且前綴相符即校正）
+   */
+  function crossVerifyModelWithOrderSheet(candidateModel, orderItemModels, targetBrand = 'PANASONIC') {
+    if (!candidateModel || !Array.isArray(orderItemModels) || orderItemModels.length === 0) {
+      return { corrected: false, model: candidateModel || '', similarity: 0 };
+    }
+
+    const norm = s => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const visualNorm = s => norm(s).replace(/VW|VV/g, 'W').replace(/0/g, 'O').replace(/1|I/g, 'L');
+
+    const candUpper = candidateModel.toUpperCase().trim();
+    const candNorm = norm(candUpper);
+    const candVis = visualNorm(candUpper);
+    if (candNorm.length < 4) {
+      return { corrected: false, model: candidateModel, similarity: 0 };
+    }
+
+    function levenshtein(a, b) {
+      const m = a.length, n = b.length;
+      if (m === 0) return n;
+      if (n === 0) return m;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+      }
+      return dp[m][n];
+    }
+
+    // 同品牌優先過濾（若清單中無明確品牌標記則全體比對）
+    const targetUpper = (targetBrand || '').toUpperCase();
+    const brandPool = orderItemModels.filter(item =>
+      item && item.model && (!targetUpper || !item.brand || item.brand.toUpperCase().includes(targetUpper) || targetUpper.includes(item.brand.toUpperCase()))
+    );
+    const pool = brandPool.length > 0 ? brandPool : orderItemModels.filter(item => item && item.model);
+
+    let bestItem = null;
+    let bestSim = 0;
+
+    for (let i = 0; i < pool.length; i++) {
+      const stdModel = pool[i].model.toUpperCase().trim();
+      const stdNorm = norm(stdModel);
+      const stdVis = visualNorm(stdModel);
+      if (stdNorm.length < 4) continue;
+
+      // 前綴相符驗證（前 2 碼英數或連字號前前綴一致，如 NR == NR）
+      const candPrefix = (candUpper.split('-')[0] || candNorm.slice(0, 2)).slice(0, 2);
+      const stdPrefix = (stdModel.split('-')[0] || stdNorm.slice(0, 2)).slice(0, 2);
+      if (candPrefix !== stdPrefix) continue;
+
+      const simNorm = 1 - levenshtein(candNorm, stdNorm) / Math.max(candNorm.length, stdNorm.length);
+      const simVis = 1 - levenshtein(candVis, stdVis) / Math.max(candVis.length, stdVis.length);
+      const sim = Math.max(simNorm, simVis);
+
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestItem = stdModel;
+      }
+    }
+
+    if (bestItem && bestSim >= 0.65) {
+      return {
+        corrected: bestItem !== candUpper,
+        model: bestItem,
+        similarity: Math.round(bestSim * 100) / 100
+      };
+    }
+
+    return { corrected: false, model: candidateModel, similarity: Math.round(bestSim * 100) / 100 };
   }
 
   /**
@@ -1236,12 +1382,14 @@
   }
 
   /**
-   * v30: 純文字地標強制比例外擴一刀裁切常數配置（完全獨立集中，徹底放棄背景色／紙張外框偵測）
+   * v31: 純文字地標強制比例外擴一刀裁切常數配置（頂部多留約 1.5 公分確保完整露出「宏匯廣場」大字）
    */
   const RECEIPT_LANDMARK_CROP_CONFIG = Object.freeze({
     bodyExpandXRatio: 0.15,        // 左右各強制外擴 0.15 * bodyW（約實體 2 公分紙邊留白）
     headerFallbackHalfW: 1.10,     // 僅抓到頂部標題宏匯廣場時，以 headerCenterX ± 1.10 * headerW 為左右邊界
-    topExpandHeaderH: 0.45,        // 鎖定頂部標題（宏匯廣場/HONHUI PLAZA/銷貨明細表）往上外擴 0.45 * headerHeight
+    topExpandHeaderH: 2.2,         // 鎖定頂部標題（HONHUI PLAZA / 銷貨明細表）往上強制外擴 2.2 * headerHeight（多留約 1.5 公分露出「宏匯廣場」）
+    topExpandBodyWRatio: 0.24,     // 或往上外擴 0.24 * bodyW，確保上方大字與自然紙邊絕不被切頭
+    topExpandMacroDirectH: 1.0,    // 若直接抓到「宏匯」大字頂框，往上保留 1.0 * headerHeight 自然頂邊
     bottomExpandLineH: 1.5,        // 優先地標①（最底行 機:/序:/帳:/櫃:/商品退換貨請持本聯/請妥善保管）往下外擴 1.5 * lineHeight
     invFallbackExtendW: 0.75,      // 備援地標②（發票號碼/退貨用條碼下緣）往下外擴 0.75 * bodyW（約 4 公分）
     minCropSizePx: 50              // 移除 H/W 比例拒切限制：只要 cropW > 50 && cropH > 50 即強制裁切
@@ -1356,9 +1504,13 @@
       bodyW = Math.max(headerW * 1.5, cropX1 - cropX0);
     }
 
-    // 2. 頂部高度強制裁切（Y 軸上緣）：鎖定頂部標題 topY 往上外擴 0.45 * headerHeight（切除折角）
+    // 2. 頂部高度強制裁切（Y 軸上緣）：鎖定頂部標題往下外擴上緣（若鎖定於 HONHUI PLAZA/銷貨明細表，強制上擴 max(2.2 * headerH, 0.24 * bodyW) 多留 1.5 公分完整露出「宏匯廣場」大字）
     const headerHeight = Math.max(medianH, Math.min(medianH * 2.5, headerLandmark.bh));
-    const cropY0 = Math.max(0, Math.round(headerLandmark.y0 - cfg.topExpandHeaderH * headerHeight));
+    const hasTopChineseLogo = /宏匯/.test(headerLandmark.text);
+    const topExpandPx = hasTopChineseLogo
+      ? Math.max(cfg.topExpandMacroDirectH * headerHeight, 0.12 * bodyW)
+      : Math.max(cfg.topExpandHeaderH * headerHeight, cfg.topExpandBodyWRatio * bodyW);
+    const cropY0 = Math.max(0, Math.round(headerLandmark.y0 - topExpandPx));
 
     // 3. 底部高度強制裁切（Y 軸下緣）：優先地標①（機:/序:/帳:/櫃:/商品退換貨/請妥善保管）➔ 備援地標②（發票號碼/退貨用條碼）
     const sortedByBottom = [...boxes].sort((a, b) => b.y1 - a.y1);
@@ -1422,6 +1574,8 @@
     normalizeTaiwanInvoiceNo,
     parseInvoiceHeaderFields,
     filterWarrantyModelResult,
-    filterWarrantySerialResult
+    filterWarrantySerialResult,
+    parsePanasonicLeftInfoBlock,
+    crossVerifyModelWithOrderSheet
   };
 })(window);

@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-23 22:36:25] (第 31 版 / v31)
+- **執行項目**：**國際牌完美封版（v31）** — 實作未縮小高解析度整塊左側雙語標籤區辨識＋機號前綴淨化、訂購單原生純文字型號交叉校正演算法、發票頂部外擴約 `1.5 公分` 保留「宏匯廣場」大字，以及左下角 5 行核對文字 `1.65 倍` 放大不越界排版。
+- **具體進度**：
+  1. **版本與防快取**：同步更新雙份 HTML 至 `v31 (2026.11.23)` 並更新 `?v=31` 查詢參數。
+  2. **整塊左側雙語辨識與機號淨化**：提升離屏辨識底圖至最高 `3200px`，於 `PANASONIC_WARRANTY_CONFIG` 新增 `leftInfoBlock` 並以 `eng+chi_tra` `PSM=6` 整塊辨識，搭配 `parsePanasonicLeftInfoBlock()` 與 `stripSerialMisreadPrefix()` 剝除 `IS`/`NO`/`SN` 前綴穩定擷取 `02926020033`。
+  3. **訂購單型號交叉校正**：新增 `cachedOrderItemModels`、`extractOrderSheetModels()` 與 `crossVerifyModelWithOrderSheet()`（相似度 `>= 65%` 且前綴相符即自動校正為訂購單標準型號 `NR-D505XV-W`，支援任意匯入順序）。
+  4. **發票頂部保留宏匯廣場與 `1.65x` 大字防重疊**：`RECEIPT_LANDMARK_CROP_CONFIG` 調高 `topExpandHeaderH: 2.2` / `topExpandBodyWRatio: 0.24` 保留約 `1.5 公分` 頂邊；`syncSummaryTextLayer()` 放大 5 行文字至 `~96–104px` 並鎖定 `box.width <= cardLayer.width * 0.96` 與上方 `28px` 間距。
+  5. 建立 `_backup/20261123_223316/` 備份，通過 HTML 同步、語法平衡與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-23 22:17:50] (第 30 版 / v30)
 - **執行項目**：**國際牌封版收尾（v30）** — 實作「純文字地標強制比例外擴一刀裁切演算法」、集中化 `RECEIPT_LANDMARK_CROP_CONFIG` 外擴常數、精準分離國際牌保卡第二聯「機種（`NR-D505XV-W`）」與「機號（`02926020033`）」掃描框座標，並以 `PANASONIC_WARRANTY_CONFIG` 封裝國際牌專屬模板參數。
 - **具體進度**：
