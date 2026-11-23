@@ -2669,7 +2669,7 @@ function importImagePureFrontend(file) {
             const preTpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
             const stampSpec = (preTpl && preTpl.stampSpec) || {
               centerX: 0.845,
-              centerY: 0.365,
+              centerY: 0.395,
               widthRatio: 0.210,
               tiltRangeDeg: 1.5,
               blendMode: 'multiply'
@@ -5917,7 +5917,7 @@ async function autoStampWarrantyCard(targetLayer = null) {
   const tpl = resolveCardTemplate(cardLayer.cardTemplateId || modeVal);
   const stampSpec = (tpl && tpl.stampSpec) || {
     centerX: 0.845,
-    centerY: 0.365,
+    centerY: 0.395,
     widthRatio: 0.210,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
@@ -6529,10 +6529,10 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     cardLeftX = cardLayer.x - cardLayer.width / 2;
     cardBottomY = cardLayer.y + cardLayer.height / 2;
 
-    // 同步重新定位並縮放附著於此保卡上的專櫃印章（確保始終鎖定 X: 84.5%, Y: 36.5%, W: 21.0%）
+    // 同步重新定位並縮放附著於此保卡上的專櫃印章（確保始終鎖定 X: 84.5%, Y: 39.5%, W: 21.0%）
     layers.forEach(s => {
       if (s.type === 'stamp' && s.attachedCardId === cardLayer.id && s.image) {
-        const spec = s.stampSpec || { centerX: 0.845, centerY: 0.365, widthRatio: 0.210, tiltRad: 0 };
+        const spec = s.stampSpec || { centerX: 0.845, centerY: 0.395, widthRatio: 0.210, tiltRad: 0 };
         const sAspect = s.image.width / Math.max(1, s.image.height);
         s.width = Math.round(cardLayer.width * spec.widthRatio);
         s.height = Math.round(s.width / sAspect);

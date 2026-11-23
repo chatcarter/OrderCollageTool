@@ -48,7 +48,7 @@
    */
   const PANASONIC_STAMP_SPEC = Object.freeze({
     centerX: 0.845,
-    centerY: 0.365,
+    centerY: 0.395,
     widthRatio: 0.210,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
@@ -306,12 +306,23 @@
       return { corners: fallbackCorners, detected: false, confidence: 'low', paperBox };
     }
 
-    // 轉回原圖座標系
+    // 轉回原圖座標系，並將頂部兩點 (TL, TR) 沿各自左右邊線方向往上外擴 6.5% 卡片高度（約 1 公分）以完整露出藍色 Panasonic LOGO (v33)
     const invScale = 1 / scale;
-    const corners = [tl, tr, br, bl].map(p => ({
+    const rawCorners = [tl, tr, br, bl].map(p => ({
       x: Math.max(0, Math.min(sw, Math.round(p.x * invScale))),
       y: Math.max(0, Math.min(sh, Math.round(p.y * invScale)))
     }));
+    const TOP_LOGO_EXPAND_RATIO = 0.065;
+    const [rawTL, rawTR, rawBR, rawBL] = rawCorners;
+    const expandedTL = {
+      x: Math.max(0, Math.min(sw, Math.round(rawTL.x + (rawTL.x - rawBL.x) * TOP_LOGO_EXPAND_RATIO))),
+      y: Math.max(0, Math.min(sh, Math.round(rawTL.y + (rawTL.y - rawBL.y) * TOP_LOGO_EXPAND_RATIO)))
+    };
+    const expandedTR = {
+      x: Math.max(0, Math.min(sw, Math.round(rawTR.x + (rawTR.x - rawBR.x) * TOP_LOGO_EXPAND_RATIO))),
+      y: Math.max(0, Math.min(sh, Math.round(rawTR.y + (rawTR.y - rawBR.y) * TOP_LOGO_EXPAND_RATIO)))
+    };
+    const corners = [expandedTL, expandedTR, rawBR, rawBL];
     const quadIsLandscape = spanW / Math.max(1, spanH) >= 1.12;
 
     return { corners, detected: true, confidence: 'high', paperBox, quadIsLandscape };
@@ -556,7 +567,7 @@
   /**
    * 取樣蓋章目標區域周邊紙張空白處的平均亮度 L 與色溫 RGB (v23)
    */
-  function sampleStampRegionLighting(cardImg, centerXRatio = 0.845, centerYRatio = 0.365, widthRatio = 0.210) {
+  function sampleStampRegionLighting(cardImg, centerXRatio = 0.845, centerYRatio = 0.395, widthRatio = 0.210) {
     const defaultLighting = { avgL: 235, avgR: 238, avgG: 236, avgB: 232, sampleCount: 0 };
     if (!cardImg || !cardImg.width || !cardImg.height) return defaultLighting;
 
@@ -1237,13 +1248,13 @@
   }
 
   /**
-   * 離屏高解析度保卡直接合成專櫃印章（避讓座標 X:84.5%, Y:36.5%, W:21.0% ＋ 光影自適應 ＋ multiply）(v25)
+   * 離屏高解析度保卡直接合成專櫃印章（避讓座標 X:84.5%, Y:39.5%, W:21.0% ＋ 光影自適應 ＋ multiply）(v33)
    */
   function compositeStampOnOffscreenCard(cleanCardCanvas, stampImg, dateStr, fontSize, offsetY, stampSpec) {
     if (!cleanCardCanvas || !stampImg) return null;
     const spec = stampSpec || {
       centerX: 0.845,
-      centerY: 0.365,
+      centerY: 0.395,
       widthRatio: 0.210,
       tiltRangeDeg: 1.5,
       blendMode: 'multiply'
