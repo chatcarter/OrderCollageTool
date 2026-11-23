@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="static/style.css?v=36">
+  <link rel="stylesheet" href="static/style.css?v=37">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36: 點開鎖定、重整免重鎖) -->
@@ -34,7 +34,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v36 (2026.11.23)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v37 (2026.11.24)</span>
     </div>
 
     <div class="header-actions">
@@ -113,10 +113,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v36) -->
+      <!-- 目前版本資訊橫幅 (v37) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v36 (2026.11.23)</span>
+        <span class="version-badge">v37 (2026.11.24)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -471,6 +471,25 @@
           </div>
         </div>
 
+        <!-- 專櫃藍色深淺微調（同色系濃淡）(v37) -->
+        <div class="control-row" style="margin-top: 4px;">
+          <div class="control-label">
+            <span>專櫃藍色深淺（同色系）</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="slider-val" id="valStampBlueTone">0 (自動光影)</span>
+              <button type="button" class="btn btn-outline btn-sm" id="btnResetStampBlueTone" title="一鍵歸零（恢復 100% 自動光影配色）" style="padding: 1px 6px; font-size: 10px;">歸零</button>
+            </div>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="inputStampBlueTone" min="-40" max="40" step="1" value="0" title="雙擊滑桿或點擊歸零鈕可恢復自動光影 (0)">
+          </div>
+          <div class="stamp-tone-scale-hints">
+            <span>-40 淡藍</span>
+            <span>0 自動</span>
+            <span>+40 深海軍藍</span>
+          </div>
+        </div>
+
         <div style="display: flex; justify-content: flex-end; margin-top: 2px;">
           <button class="btn btn-outline btn-sm" id="btnResetStampSettings" style="font-size: 11px;">
             重設印章字體與位置
@@ -775,9 +794,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v36) -->
-  <script src="static/card_templates.js?v=36"></script>
-  <!-- 主互動程式碼 (v36) -->
-  <script src="static/app.js?v=36"></script>
+  <!-- 品牌保卡智慧模板庫 (v37) -->
+  <script src="static/card_templates.js?v=37"></script>
+  <!-- 主互動程式碼 (v37) -->
+  <script src="static/app.js?v=37"></script>
 </body>
 </html>

@@ -591,16 +591,34 @@
     tCtx.drawImage(cardImg, sx, sy, w, h, 0, 0, w, h);
     const data = tCtx.getImageData(0, 0, w, h).data;
 
-    // 收集像素亮度，排除極深色文字線條，僅統計紙張空白底色
+    // 收集像素亮度，排除極深色文字線條，僅統計紙張空白底色及左右明暗梯度 (v37)
     const candidates = [];
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      candidates.push({ r, g, b, lum });
+    const leftCands = [];
+    const rightCands = [];
+    const midX = w / 2;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const i = (py * w + px) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const item = { r, g, b, lum };
+        candidates.push(item);
+        if (px < midX) leftCands.push(item);
+        else rightCands.push(item);
+      }
     }
     if (candidates.length === 0) return defaultLighting;
+
+    const avgSideLum = arr => {
+      if (arr.length === 0) return null;
+      arr.sort((a, b) => b.lum - a.lum);
+      const cnt = Math.max(4, Math.floor(arr.length * 0.55));
+      let s = 0;
+      for (let i = 0; i < cnt; i++) s += arr[i].lum;
+      return Math.round(s / cnt);
+    };
 
     // 取亮度前 55% 的紙張空白像素（過濾掉黑字與邊框墨線）
     candidates.sort((a, b) => b.lum - a.lum);
@@ -613,19 +631,22 @@
       sumL += candidates[i].lum;
     }
 
+    const avgL = Math.round(sumL / topCount);
     return {
-      avgL: Math.round(sumL / topCount),
+      avgL,
       avgR: Math.round(sumR / topCount),
       avgG: Math.round(sumG / topCount),
       avgB: Math.round(sumB / topCount),
+      leftAvgL: avgSideLum(leftCands) ?? avgL,
+      rightAvgL: avgSideLum(rightCands) ?? avgL,
       sampleCount: topCount
     };
   }
 
   /**
-   * 依據目標紙張亮度與色溫調整專櫃印章油墨，消除偏暗照片上的螢光貼紙感 (v23)
+   * 依據目標紙張亮度、左右明暗梯度、色溫及同色系藍色深淺微調 (-40 ~ +40) 調整專櫃印章油墨 (v37)
    */
-  function adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting) {
+  function adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting, blueTone = 0) {
     const stampCanvas = document.createElement('canvas');
     stampCanvas.width = stampImg.width;
     stampCanvas.height = stampImg.height;
@@ -646,17 +667,34 @@
     const paperR = lighting ? lighting.avgR : 235;
     const paperG = lighting ? lighting.avgG : 235;
     const paperB = lighting ? lighting.avgB : 235;
+    const leftAvgL = lighting && typeof lighting.leftAvgL === 'number' ? lighting.leftAvgL : avgL;
+    const rightAvgL = lighting && typeof lighting.rightAvgL === 'number' ? lighting.rightAvgL : avgL;
 
     // 偏暗底紙 (L < 190) 時壓低印章明度並收斂飽和度 10%～22%，並微調紙張色溫融入
     const darkness = avgL < 190 ? Math.min(1, Math.max(0, (190 - avgL) / 110)) : 0;
-    const satKeep = avgL < 190 ? (0.88 - darkness * 0.12) : 0.92; // 降低 8% ~ 24% 飽和度消除螢光感
-    const brightScale = avgL < 190 ? (1.0 - darkness * 0.38) : 0.96;
-    const alphaScale = avgL < 190 ? (0.91 - darkness * 0.08) : 0.94;
+    let satKeep = avgL < 190 ? (0.88 - darkness * 0.12) : 0.92;
+    let brightScale = avgL < 190 ? (1.0 - darkness * 0.38) : 0.96;
+    let alphaScale = avgL < 190 ? (0.91 - darkness * 0.08) : 0.94;
+
+    // 同色系專櫃藍色濃淡微調 (-40 淡藍 ➔ 0 自動光影 ➔ +40 深海軍藍)，絕不偏離藍色色相
+    const toneNorm = Math.max(-1, Math.min(1, Number(blueTone || 0) / 40));
+    const lightenLift = toneNorm < 0 ? (-toneNorm) * 0.42 : 0;
+    if (toneNorm < 0) {
+      satKeep *= (1 - (-toneNorm) * 0.22);
+      alphaScale *= (1 - (-toneNorm) * 0.16);
+    } else if (toneNorm > 0) {
+      brightScale *= (1 - toneNorm * 0.46);
+      satKeep = Math.min(1.05, satKeep + toneNorm * 0.08);
+      alphaScale = Math.min(0.99, alphaScale * (1 + toneNorm * 0.06));
+    }
 
     // 底紙偏暖時微幅混入紙張環境光色溫，消除冷藍突兀感
     const warmShift = Math.max(0, (paperR - paperB) / 255) * 0.16;
+    // 左右明暗梯度微調（±12% 以內平滑融合左右陰影差）
+    const lrDiff = Math.max(-60, Math.min(60, rightAvgL - leftAvgL));
+    const sw = stampCanvas.width;
 
-    const imgData = sCtx.getImageData(0, 0, stampCanvas.width, stampCanvas.height);
+    const imgData = sCtx.getImageData(0, 0, sw, stampCanvas.height);
     const d = imgData.data;
 
     for (let i = 0; i < d.length; i += 4) {
@@ -673,12 +711,30 @@
       g = lum + (g - lum) * satKeep;
       b = lum + (b - lum) * satKeep;
 
-      // 2. 壓低明度對齊拍攝陰影深度
-      r *= brightScale;
-      g *= brightScale;
-      b *= brightScale;
+      // 2. 壓低明度對齊拍攝陰影深度，並套用左右明暗梯度
+      let pxScale = brightScale;
+      if (Math.abs(lrDiff) > 4) {
+        const pxX = (i >> 2) % sw;
+        const u = pxX / Math.max(1, sw - 1) - 0.5; // -0.5 .. +0.5
+        pxScale *= Math.max(0.75, Math.min(1.18, 1 + (lrDiff / 255) * 0.35 * u));
+      }
+      r *= pxScale;
+      g *= pxScale;
+      b *= pxScale;
 
-      // 3. 混入紙張環境色溫
+      // 3. 淡藍提亮（朝淺藍紙光方向平滑拉高明度而不改變色相）
+      if (lightenLift > 0) {
+        r = r + (208 - r) * lightenLift;
+        g = g + (223 - g) * lightenLift;
+        b = b + (248 - b) * lightenLift;
+      } else if (toneNorm > 0) {
+        // 深海軍藍濃度補強（壓深 R/G 保留高純度深藍）
+        const deepContrast = toneNorm * 0.24;
+        r *= (1 - deepContrast * 0.65);
+        g *= (1 - deepContrast * 0.45);
+      }
+
+      // 4. 混入紙張環境色溫
       if (warmShift > 0) {
         r = r * (1 - warmShift) + (paperR * 0.45) * warmShift;
         g = g * (1 - warmShift) + (paperG * 0.45) * warmShift;
@@ -1248,9 +1304,9 @@
   }
 
   /**
-   * 離屏高解析度保卡直接合成專櫃印章（避讓座標 X:84.5%, Y:39.5%, W:21.0% ＋ 光影自適應 ＋ multiply）(v33)
+   * 離屏高解析度保卡直接合成專櫃印章（避讓座標 X:84.5%, Y:39.5%, W:21.0% ＋ 光影自適應 ＋ 藍色深淺 ＋ multiply）(v37)
    */
-  function compositeStampOnOffscreenCard(cleanCardCanvas, stampImg, dateStr, fontSize, offsetY, stampSpec) {
+  function compositeStampOnOffscreenCard(cleanCardCanvas, stampImg, dateStr, fontSize, offsetY, stampSpec, blueTone = 0) {
     if (!cleanCardCanvas || !stampImg) return null;
     const spec = stampSpec || {
       centerX: 0.845,
@@ -1266,7 +1322,7 @@
       spec.centerY,
       spec.widthRatio
     );
-    const adapted = adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting);
+    const adapted = adaptStampCanvasToLighting(stampImg, dateStr, fontSize, offsetY, lighting, blueTone);
     const adaptedStamp = adapted.canvas;
 
     const cw = cleanCardCanvas.width;

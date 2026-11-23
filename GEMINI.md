@@ -53,6 +53,19 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 00:14:57] (第 37 版 / v37)
+- **執行項目**：**手動蓋章自動光影配色 ＋ 專櫃藍色深淺滑桿（v37）** — 完整保留既有辨識、地標裁切、`70% : 3% : 27%` 三欄排版、非阻斷最後蓋章、畫布延伸把手與極簡淺灰隱形鎖，針對單獨上傳保卡手動加入與拖曳／縮放／旋轉印章實作落點即時紙張光影採樣與 `Multiply` 混合模式，並新增專櫃藍色深淺同色系滑桿即時同步重繪。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v37`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge` 與 `#panelVersionBanner` 為 `v37 (2026.11.24)`，並將資源參數更新為 `style.css?v=37`、`card_templates.js?v=37` 與 `app.js?v=37`。
+  2. **手動蓋章落點光影採樣與 `Multiply` 紙張融合**：
+     - 擴充 `static/card_templates.js` 之 `sampleStampRegionLighting()` 回傳左右半區亮度（`leftAvgL`、`rightAvgL`）以支援陰影漸層調變，並在 `adaptStampCanvasToLighting()` 加入 `blueTone` 與左右亮度梯度融合演算。
+     - 於 `static/app.js` 實作 `sampleBackdropLightingForStampLayer()`、`refreshSingleStandaloneStampLayer()` 與 `refreshAllStampsAppearance()`：當透過 `#btnAddStamp` 加入獨立印章或於畫布上拖曳／縮放／旋轉放開（`mouseup`）時，自動採樣落點下方紙張原圖亮度、色溫與左右陰影漸層，重繪印章並鎖定 `blendMode: 'multiply'`（同步於即時預覽與高解析 PNG 匯出）。
+  3. **專櫃藍色深淺（同色系）微調滑桿（`#inputStampBlueTone`）與即時重繪連動**：
+     - 於雙份 HTML「日期印章與自動蓋章」區塊新增 `專櫃藍色深淺` 滑桿（`-40` 淡藍 ～ `+40` 深海軍藍，預設 `0`，支援 `歸零` 按鈕 `#btnResetStampBlueTone` 與滑桿雙擊歸零）及 `.stamp-tone-scale-hints` 樣式，並儲存於 `localStorage`（`order_collage_stamp_blue_tone`）。
+     - 調整滑桿時透過 `scheduleLiveStampRefresh()` 即時重繪畫布上所有獨立印章圖層、已合併印章之保卡圖層（`hasBakedStamp`）與右側印章即時預覽圖（`#stampPreviewImg`），切換自動／手動蓋章均一致套用。
+  4. 建立 `_backup/20261124_001103/` 備份，通過 HTML 同步（`HTML_SYNC_OK=True`）、JS 括號與引號語法平衡（`syntaxErrors=0`）與 `CRLF` 檢核（`LF-only=0`）。
+
 ### [2026-11-23 23:54:35] (第 36 版 / v36)
 - **執行項目**：**極簡淺灰全螢幕隱形鎖 ＋「...」三連點無條件通行（v36）** — 完整保留既有辨識、地標裁切、`70% : 3% : 27%` 三欄排版、非阻斷最後蓋章與右側／下方延伸把手，新增純前端隱形時間鎖與最高優先級點號快捷開鎖。
 - **具體進度**：

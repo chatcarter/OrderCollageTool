@@ -24,8 +24,10 @@ let canvasHeight = DEFAULT_CANVAS_HEIGHT;
 
 const DEFAULT_STAMP_FONT_SIZE = 175;
 const DEFAULT_STAMP_OFFSET_Y = 0;
+const DEFAULT_STAMP_BLUE_TONE = 0;
 const STORAGE_KEY_FONT_SIZE = 'order_collage_stamp_font_size';
 const STORAGE_KEY_OFFSET_Y = 'order_collage_stamp_offset_y';
+const STORAGE_KEY_BLUE_TONE = 'order_collage_stamp_blue_tone';
 
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
@@ -223,6 +225,9 @@ const sliderStampFontSize = document.getElementById('sliderStampFontSize');
 const valStampFontSize = document.getElementById('valStampFontSize');
 const sliderStampOffsetY = document.getElementById('sliderStampOffsetY');
 const valStampOffsetY = document.getElementById('valStampOffsetY');
+const inputStampBlueTone = document.getElementById('inputStampBlueTone');
+const valStampBlueTone = document.getElementById('valStampBlueTone');
+const btnResetStampBlueTone = document.getElementById('btnResetStampBlueTone');
 const btnResetStampSettings = document.getElementById('btnResetStampSettings');
 const btnAddStamp = document.getElementById('btnAddStamp');
 
@@ -444,6 +449,19 @@ function initMinguoDate() {
   inputStampDate.value = `${minguoYear}.${m}.${d}`;
 }
 
+function getCurrentStampBlueTone() {
+  if (!inputStampBlueTone) return DEFAULT_STAMP_BLUE_TONE;
+  const v = parseInt(inputStampBlueTone.value, 10);
+  return Number.isFinite(v) ? Math.max(-40, Math.min(40, v)) : DEFAULT_STAMP_BLUE_TONE;
+}
+
+function formatBlueToneLabel(tone) {
+  const t = parseInt(tone, 10) || 0;
+  if (t === 0) return '0 (自動光影)';
+  if (t < 0) return `${t} (偏淡)`;
+  return `+${t} (深藍)`;
+}
+
 // 載入 localStorage 保存的印章設定
 function loadSavedStampSettings() {
   try {
@@ -465,6 +483,13 @@ function loadSavedStampSettings() {
       sliderStampOffsetY.value = DEFAULT_STAMP_OFFSET_Y;
       valStampOffsetY.textContent = `+${DEFAULT_STAMP_OFFSET_Y}px`;
     }
+
+    if (inputStampBlueTone && valStampBlueTone) {
+      const savedTone = localStorage.getItem(STORAGE_KEY_BLUE_TONE);
+      const toneVal = savedTone !== null ? Math.max(-40, Math.min(40, parseInt(savedTone, 10) || 0)) : DEFAULT_STAMP_BLUE_TONE;
+      inputStampBlueTone.value = toneVal;
+      valStampBlueTone.textContent = formatBlueToneLabel(toneVal);
+    }
   } catch (e) {
     console.warn('無法存取 localStorage:', e);
   }
@@ -475,9 +500,23 @@ function updateStampPreview() {
   const dateStr = (inputStampDate.value || '').trim() || '115.11.21';
   const fontSize = parseInt(sliderStampFontSize.value, 10) || DEFAULT_STAMP_FONT_SIZE;
   const offsetY = parseInt(sliderStampOffsetY.value, 10) || 0;
+  const blueTone = getCurrentStampBlueTone();
 
   const stampImg = new Image();
   stampImg.onload = () => {
+    if (window.CardTemplates && typeof window.CardTemplates.adaptStampCanvasToLighting === 'function') {
+      const adapted = window.CardTemplates.adaptStampCanvasToLighting(
+        stampImg,
+        dateStr,
+        fontSize,
+        offsetY,
+        { avgL: 245, avgR: 245, avgG: 245, avgB: 245, leftAvgL: 245, rightAvgL: 245 },
+        blueTone
+      );
+      stampPreviewImg.src = adapted.canvas.toDataURL('image/png');
+      return;
+    }
+
     const stampCanvas = document.createElement('canvas');
     stampCanvas.width = stampImg.width;
     stampCanvas.height = stampImg.height;
@@ -512,6 +551,7 @@ sliderStampFontSize.addEventListener('input', () => {
     localStorage.setItem(STORAGE_KEY_FONT_SIZE, sliderStampFontSize.value);
   } catch (e) {}
   updateStampPreview();
+  if (typeof scheduleLiveStampRefresh === 'function') scheduleLiveStampRefresh();
 });
 
 sliderStampOffsetY.addEventListener('input', () => {
@@ -522,21 +562,67 @@ sliderStampOffsetY.addEventListener('input', () => {
     localStorage.setItem(STORAGE_KEY_OFFSET_Y, sliderStampOffsetY.value);
   } catch (e) {}
   updateStampPreview();
+  if (typeof scheduleLiveStampRefresh === 'function') scheduleLiveStampRefresh();
 });
 
-inputStampDate.addEventListener('input', updateStampPreview);
+inputStampDate.addEventListener('input', () => {
+  updateStampPreview();
+  if (typeof scheduleLiveStampRefresh === 'function') scheduleLiveStampRefresh();
+});
+
+const resetBlueToneToDefault = (showMsg = false) => {
+  if (inputStampBlueTone) inputStampBlueTone.value = DEFAULT_STAMP_BLUE_TONE;
+  if (valStampBlueTone) valStampBlueTone.textContent = formatBlueToneLabel(DEFAULT_STAMP_BLUE_TONE);
+  try {
+    localStorage.removeItem(STORAGE_KEY_BLUE_TONE);
+  } catch (e) {}
+  updateStampPreview();
+  if (typeof refreshAllStampsAppearance === 'function') {
+    refreshAllStampsAppearance(false);
+  }
+  if (showMsg) showToast('已將專櫃藍色深淺歸零（恢復自動光影配色）');
+};
+
+if (inputStampBlueTone) {
+  inputStampBlueTone.addEventListener('input', () => {
+    const toneVal = getCurrentStampBlueTone();
+    if (valStampBlueTone) valStampBlueTone.textContent = formatBlueToneLabel(toneVal);
+    try {
+      localStorage.setItem(STORAGE_KEY_BLUE_TONE, String(toneVal));
+    } catch (e) {}
+    updateStampPreview();
+    if (typeof scheduleLiveStampRefresh === 'function') {
+      scheduleLiveStampRefresh();
+    }
+  });
+  inputStampBlueTone.addEventListener('dblclick', () => {
+    resetBlueToneToDefault(true);
+  });
+}
+
+if (btnResetStampBlueTone) {
+  btnResetStampBlueTone.addEventListener('click', () => {
+    resetBlueToneToDefault(true);
+  });
+}
 
 btnResetStampSettings.addEventListener('click', () => {
   sliderStampFontSize.value = DEFAULT_STAMP_FONT_SIZE;
   valStampFontSize.textContent = `${DEFAULT_STAMP_FONT_SIZE}px`;
   sliderStampOffsetY.value = DEFAULT_STAMP_OFFSET_Y;
   valStampOffsetY.textContent = `+${DEFAULT_STAMP_OFFSET_Y}px`;
+  if (inputStampBlueTone) inputStampBlueTone.value = DEFAULT_STAMP_BLUE_TONE;
+  if (valStampBlueTone) valStampBlueTone.textContent = formatBlueToneLabel(DEFAULT_STAMP_BLUE_TONE);
   try {
     localStorage.removeItem(STORAGE_KEY_FONT_SIZE);
     localStorage.removeItem(STORAGE_KEY_OFFSET_Y);
+    localStorage.removeItem(STORAGE_KEY_BLUE_TONE);
   } catch (e) {}
   updateStampPreview();
-  showToast('已重設印章字體大小與垂直位置');
+  if (typeof refreshAllStampsAppearance === 'function') {
+    refreshAllStampsAppearance(false);
+  }
+  showToast('已重設印章字體、位置與藍色深淺');
 });
 
 // 初始化 PDF.js Worker
@@ -2005,6 +2091,10 @@ window.addEventListener('mouseup', () => {
   }
 
   // 檢查拖曳操作是否有狀態變更以記錄 Undo
+  const movedStampLayer = (activeLayer && activeLayer.type === 'stamp' && (isDragging || isResizing || isRotating))
+    ? activeLayer
+    : null;
+
   if (dragPreSnapshot && hasStateChanged(dragPreSnapshot)) {
     undoStack.push(dragPreSnapshot);
     if (undoStack.length > MAX_UNDO_STEPS) undoStack.shift();
@@ -2028,6 +2118,11 @@ window.addEventListener('mouseup', () => {
   exportCropInitialRect = null;
   resizeHandle = null;
   objInitialState = null;
+
+  // v37: 拖曳或縮放印章圖層放開瞬間，自動重採樣落點紙張光影並更新 Multiply 融合色調
+  if (movedStampLayer && typeof refreshSingleStandaloneStampLayer === 'function') {
+    refreshSingleStandaloneStampLayer(movedStampLayer, true);
+  }
   render();
 });
 
@@ -3320,61 +3415,47 @@ if (btnApplyEraseBox) {
   });
 }
 
-// --- 櫃位印章蓋上畫布 ---
-btnAddStamp.addEventListener('click', () => {
+// --- 櫃位印章蓋上畫布（v37: 自動落點紙張光影採樣 ＋ 同色系深淺 ＋ Multiply 混合）---
+btnAddStamp.addEventListener('click', async () => {
   const dateStr = (inputStampDate.value || '').trim() || '115.11.21';
   const fontSize = parseInt(sliderStampFontSize.value, 10) || DEFAULT_STAMP_FONT_SIZE;
   const offsetY = parseInt(sliderStampOffsetY.value, 10) || 0;
-  showToast(`正在蓋上專櫃印章 (${dateStr})...`);
+  showToast(`正在採樣底紙光影並蓋上專櫃印章 (${dateStr})...`);
 
-  const stampImg = new Image();
-  stampImg.onload = () => {
-    const stampCanvas = document.createElement('canvas');
-    stampCanvas.width = stampImg.width;
-    stampCanvas.height = stampImg.height;
-    const sCtx = stampCanvas.getContext('2d');
-    sCtx.imageSmoothingEnabled = true;
-    sCtx.imageSmoothingQuality = 'high';
-
-    sCtx.drawImage(stampImg, 0, 0);
-
-    const boxCx = 942;
-    const boxCy = 719 + offsetY;
-
-    sCtx.fillStyle = '#003FBC';
-    sCtx.font = `bold ${fontSize}px "DFKai-SB", "BiauKai", "標楷體", "MingLiU", "新細明體", serif`;
-    sCtx.textAlign = 'center';
-    sCtx.textBaseline = 'middle';
-    sCtx.fillText(dateStr, boxCx, boxCy);
-
-    // 依 3508x2480 畫布比例調校印章尺寸 (預設寬度 580px)
+  try {
+    const stampImg = await ensureStampImageLoaded();
     const displayW = 580;
     const displayH = Math.round((displayW * stampImg.height) / stampImg.width);
-
     const posX = Math.round(canvasWidth * 0.44);
     const posY = Math.round(canvasHeight * 0.85);
 
     const newStamp = createLayerObject({
       type: 'stamp',
       name: `專櫃印章 (${dateStr})`,
-      image: stampCanvas,
-      rawImage: stampCanvas,
+      image: stampImg,
+      rawImage: stampImg,
+      blendMode: 'multiply',
       width: displayW,
       height: displayH,
       x: posX,
       y: posY
     });
+    newStamp.stampDate = dateStr;
+    newStamp.stampFontSize = fontSize;
+    newStamp.stampOffsetY = offsetY;
 
     pushUndoState('蓋上專櫃印章');
     layers.push(newStamp);
+    await refreshSingleStandaloneStampLayer(newStamp, true);
     setActiveLayer(newStamp);
-    showToast('專櫃印章已蓋上畫布');
-  };
 
-  if (typeof STAMP_CLEAN_BASE64 !== 'undefined' && STAMP_CLEAN_BASE64) {
-    stampImg.src = STAMP_CLEAN_BASE64;
-  } else {
-    console.warn('STAMP_CLEAN_BASE64 尚未載入，請確認 static/stamp_data.js');
+    const avgL = newStamp.cachedLighting ? newStamp.cachedLighting.avgL : 245;
+    showToast(avgL < 195
+      ? `專櫃印章已自動融合底紙光影 (L=${avgL}) 並套用 Multiply`
+      : '專櫃印章已套用 Multiply 自然融合蓋上畫布');
+  } catch (err) {
+    console.error('手動蓋上印章失敗:', err);
+    showToast('印章圖檔載入失敗，請確認 stamp_data.js');
   }
 });
 
@@ -5977,7 +6058,8 @@ async function autoStampWarrantyCard(targetLayer = null) {
       dateStr,
       fontSize,
       offsetY,
-      stampSpec
+      stampSpec,
+      getCurrentStampBlueTone()
     );
     if (baked && baked.stampedCanvas) {
       pushUndoState('保卡避讓自動蓋章');
@@ -6138,7 +6220,8 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
       dateStr,
       fontSize,
       offsetY,
-      stampSpec
+      stampSpec,
+      getCurrentStampBlueTone()
     );
     if (baked && baked.stampedCanvas) {
       if (!layers.includes(cardLayer)) return false;
@@ -6157,6 +6240,244 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
   } finally {
     cardLayer._isStamping = false;
   }
+}
+
+// =============================================================================
+// 8-2. 手動印章落點紙張光影採樣 ＋ 同色系深淺即時重繪引擎 (v37)
+// =============================================================================
+
+function sampleBackdropLightingForStampLayer(stampLayer) {
+  const defaultLighting = { avgL: 242, avgR: 242, avgG: 242, avgB: 242, leftAvgL: 242, rightAvgL: 242 };
+  if (!stampLayer) return defaultLighting;
+
+  const sampleW = 100;
+  const sampleH = 72;
+  const tmp = document.createElement('canvas');
+  tmp.width = sampleW;
+  tmp.height = sampleH;
+  const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+
+  tCtx.fillStyle = '#FFFFFF';
+  tCtx.fillRect(0, 0, sampleW, sampleH);
+
+  const patchW = Math.max(10, stampLayer.width || 580);
+  const patchH = Math.max(10, stampLayer.height || 420);
+  const patchLeft = stampLayer.x - patchW / 2;
+  const patchTop = stampLayer.y - patchH / 2;
+  const sx = sampleW / patchW;
+  const sy = sampleH / patchH;
+
+  const stampIdx = layers.indexOf(stampLayer);
+  const maxIdx = stampIdx >= 0 ? stampIdx : layers.length;
+
+  tCtx.save();
+  tCtx.scale(sx, sy);
+  tCtx.translate(-patchLeft, -patchTop);
+
+  for (let i = 0; i < maxIdx; i++) {
+    const bg = layers[i];
+    if (!bg || (bg.type !== 'image' && bg.type !== 'pdf_order')) continue;
+    const bgImg = bg.rectifiedCleanCanvas || bg.image;
+    if (!bgImg || !(bgImg.complete || bgImg instanceof HTMLCanvasElement)) continue;
+
+    tCtx.save();
+    tCtx.translate(bg.x, bg.y);
+    tCtx.rotate(bg.rotation || 0);
+    if (bg.flipH) tCtx.scale(-1, 1);
+    tCtx.drawImage(bgImg, -bg.width / 2, -bg.height / 2, bg.width, bg.height);
+    tCtx.restore();
+  }
+  tCtx.restore();
+
+  const data = tCtx.getImageData(0, 0, sampleW, sampleH).data;
+  const candidates = [];
+  const leftCands = [];
+  const rightCands = [];
+  const midX = sampleW / 2;
+
+  for (let py = 0; py < sampleH; py++) {
+    for (let px = 0; px < sampleW; px++) {
+      const idx = (py * sampleW + px) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const item = { r, g, b, lum };
+      candidates.push(item);
+      if (px < midX) leftCands.push(item);
+      else rightCands.push(item);
+    }
+  }
+  if (candidates.length === 0) return defaultLighting;
+
+  const avgSideLum = arr => {
+    if (arr.length === 0) return null;
+    arr.sort((a, b) => b.lum - a.lum);
+    const cnt = Math.max(4, Math.floor(arr.length * 0.55));
+    let s = 0;
+    for (let i = 0; i < cnt; i++) s += arr[i].lum;
+    return Math.round(s / cnt);
+  };
+
+  candidates.sort((a, b) => b.lum - a.lum);
+  const topCount = Math.max(10, Math.floor(candidates.length * 0.55));
+  let sumR = 0, sumG = 0, sumB = 0, sumL = 0;
+  for (let i = 0; i < topCount; i++) {
+    sumR += candidates[i].r;
+    sumG += candidates[i].g;
+    sumB += candidates[i].b;
+    sumL += candidates[i].lum;
+  }
+
+  const avgL = Math.round(sumL / topCount);
+  return {
+    avgL,
+    avgR: Math.round(sumR / topCount),
+    avgG: Math.round(sumG / topCount),
+    avgB: Math.round(sumB / topCount),
+    leftAvgL: avgSideLum(leftCands) ?? avgL,
+    rightAvgL: avgSideLum(rightCands) ?? avgL
+  };
+}
+
+async function refreshSingleStandaloneStampLayer(stampLayer, resampleLighting = true) {
+  if (!stampLayer || stampLayer.type !== 'stamp') return;
+  if (!window.CardTemplates || typeof window.CardTemplates.adaptStampCanvasToLighting !== 'function') return;
+
+  let stampImg;
+  try {
+    stampImg = await ensureStampImageLoaded();
+  } catch (e) {
+    return;
+  }
+
+  const dateStr = (inputStampDate && inputStampDate.value.trim()) || stampLayer.stampDate || '115.11.21';
+  const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || stampLayer.stampFontSize || DEFAULT_STAMP_FONT_SIZE;
+  const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) ?? (stampLayer.stampOffsetY || 0);
+  const blueTone = getCurrentStampBlueTone();
+
+  if (resampleLighting || !stampLayer.cachedLighting) {
+    stampLayer.cachedLighting = sampleBackdropLightingForStampLayer(stampLayer);
+  }
+
+  const adapted = window.CardTemplates.adaptStampCanvasToLighting(
+    stampImg,
+    dateStr,
+    fontSize,
+    offsetY,
+    stampLayer.cachedLighting,
+    blueTone
+  );
+  stampLayer.image = adapted.canvas;
+  stampLayer.blendMode = 'multiply';
+  stampLayer.stampDate = dateStr;
+  stampLayer.stampFontSize = fontSize;
+  stampLayer.stampOffsetY = offsetY;
+  stampLayer.name = `專櫃印章 (${dateStr})`;
+  updateLayersListUI();
+  render();
+}
+
+let isRefreshingAllStamps = false;
+let pendingStampRefreshResample = false;
+
+async function refreshAllStampsAppearance(resampleLighting = false) {
+  if (isRefreshingAllStamps) {
+    pendingStampRefreshResample = pendingStampRefreshResample || resampleLighting;
+    return;
+  }
+  isRefreshingAllStamps = true;
+  try {
+    let stampImg = null;
+    try {
+      stampImg = await ensureStampImageLoaded();
+    } catch (e) {
+      return;
+    }
+
+    const dateStr = (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
+    const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
+    const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
+    const blueTone = getCurrentStampBlueTone();
+    const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
+
+    let changed = false;
+    for (let i = 0; i < layers.length; i++) {
+      const l = layers[i];
+      if (!l) continue;
+
+      if (l.type === 'stamp' && window.CardTemplates && typeof window.CardTemplates.adaptStampCanvasToLighting === 'function') {
+        if (resampleLighting || !l.cachedLighting) {
+          l.cachedLighting = sampleBackdropLightingForStampLayer(l);
+        }
+        const adapted = window.CardTemplates.adaptStampCanvasToLighting(
+          stampImg,
+          dateStr,
+          fontSize,
+          offsetY,
+          l.cachedLighting,
+          blueTone
+        );
+        l.image = adapted.canvas;
+        l.blendMode = 'multiply';
+        l.stampDate = dateStr;
+        l.stampFontSize = fontSize;
+        l.stampOffsetY = offsetY;
+        l.name = `專櫃印章 (${dateStr})`;
+        changed = true;
+      } else if (
+        l.type === 'image' &&
+        l.hasBakedStamp &&
+        l.rectifiedCleanCanvas &&
+        window.CardTemplates &&
+        typeof window.CardTemplates.compositeStampOnOffscreenCard === 'function'
+      ) {
+        const tpl = resolveCardTemplate(l.cardTemplateId || modeVal);
+        const stampSpec = (tpl && tpl.stampSpec) || {
+          centerX: 0.845,
+          centerY: 0.395,
+          widthRatio: 0.210,
+          tiltRangeDeg: 1.5,
+          blendMode: 'multiply'
+        };
+        const baked = window.CardTemplates.compositeStampOnOffscreenCard(
+          l.rectifiedCleanCanvas,
+          stampImg,
+          dateStr,
+          fontSize,
+          offsetY,
+          stampSpec,
+          blueTone
+        );
+        if (baked && baked.stampedCanvas) {
+          l.warpedImage = baked.stampedCanvas;
+          l.image = baked.stampedCanvas;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      updateLayersListUI();
+      render();
+    }
+  } finally {
+    isRefreshingAllStamps = false;
+    if (pendingStampRefreshResample) {
+      const nextResample = pendingStampRefreshResample;
+      pendingStampRefreshResample = false;
+      refreshAllStampsAppearance(nextResample);
+    }
+  }
+}
+
+let liveStampRefreshTimer = null;
+function scheduleLiveStampRefresh() {
+  if (liveStampRefreshTimer) clearTimeout(liveStampRefreshTimer);
+  liveStampRefreshTimer = setTimeout(() => {
+    liveStampRefreshTimer = null;
+    refreshAllStampsAppearance(false);
+  }, 45);
 }
 
 async function finalizeWarrantyCardStampAfterLayout(cardLayer) {

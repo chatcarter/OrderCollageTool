@@ -1118,3 +1118,13 @@ input:checked + .switch-slider:before {
 .stealth-dot.filled {
   background: #64748b;
 }
+
+/* 專櫃藍色深淺滑桿刻度提示 (v37) */
+.stamp-tone-scale-hints {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  padding: 0 2px;
+}
