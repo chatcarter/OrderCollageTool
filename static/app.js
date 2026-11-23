@@ -6959,3 +6959,151 @@ function openInlineTextEditor(layer) {
     cleanup(true);
   });
 }
+
+// =============================================================================
+// 10. 純前端極簡淺灰全螢幕隱形時間鎖 ＋ 「...」三連點無條件解鎖 (v36)
+// =============================================================================
+(function initStealthTimeLock() {
+  const SESSION_KEY = 'order_collage_unlocked';
+  const overlay = document.getElementById('stealthTimeLockOverlay');
+  if (!overlay) return;
+
+  let isAlreadyUnlocked = false;
+  try {
+    isAlreadyUnlocked = sessionStorage.getItem(SESSION_KEY) === '1';
+  } catch (e) {
+    isAlreadyUnlocked = false;
+  }
+
+  if (isAlreadyUnlocked) {
+    overlay.classList.add('hidden');
+    return;
+  }
+
+  let isLocked = true;
+  let digitBuffer = '';
+  let dotStreak = 0;
+  const dots = overlay.querySelectorAll('.stealth-dot');
+
+  const updateDotsUI = () => {
+    const filledCount = Math.min(4, digitBuffer.length);
+    for (let i = 0; i < dots.length; i++) {
+      dots[i].classList.toggle('filled', i < filledCount);
+    }
+  };
+
+  const focusStealthOverlay = () => {
+    if (!isLocked) return;
+    if (document.activeElement && document.activeElement !== overlay && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    try {
+      overlay.focus({ preventScroll: true });
+    } catch (e) {
+      overlay.focus();
+    }
+    if (typeof window.focus === 'function') {
+      window.focus();
+    }
+  };
+
+  const isMatchingSystemTimeCode = code4 => {
+    if (!/^\d{4}$/.test(code4)) return false;
+    const nowMs = Date.now();
+    for (let offsetMin = -2; offsetMin <= 2; offsetMin++) {
+      const d = new Date(nowMs + offsetMin * 60000);
+      const h24 = d.getHours();
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const code24 = String(h24).padStart(2, '0') + mm;
+      const h12raw = h24 % 12;
+      const h12 = h12raw === 0 ? 12 : h12raw;
+      const code12 = String(h12).padStart(2, '0') + mm;
+      if (code4 === code24 || code4 === code12) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const unlockStealthLock = () => {
+    if (!isLocked) return;
+    isLocked = false;
+    digitBuffer = '';
+    dotStreak = 0;
+    try {
+      sessionStorage.setItem(SESSION_KEY, '1');
+    } catch (e) {}
+    overlay.classList.add('hidden');
+    window.removeEventListener('keydown', onStealthKeyDown, true);
+    overlay.removeEventListener('mousedown', onStealthPointerFocus);
+    overlay.removeEventListener('click', onStealthPointerFocus);
+    overlay.removeEventListener('dragover', onStealthBlockDragDrop);
+    overlay.removeEventListener('drop', onStealthBlockDragDrop);
+  };
+
+  const onStealthPointerFocus = e => {
+    if (!isLocked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusStealthOverlay();
+  };
+
+  const onStealthBlockDragDrop = e => {
+    if (!isLocked) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const extractDigitFromKeyEvent = e => {
+    if (/^[0-9]$/.test(e.key)) return e.key;
+    if (e.code && /^Digit([0-9])$/.test(e.code)) return e.code.slice(5);
+    if (e.code && /^Numpad([0-9])$/.test(e.code)) return e.code.slice(6);
+    return '';
+  };
+
+  const onStealthKeyDown = e => {
+    if (!isLocked) return;
+
+    // 保留 F5 / F12 / Ctrl+R 重整開發能力，其餘按鍵一律於最高優先級攔截防誤觸快捷鍵
+    const isRefreshShortcut =
+      e.key === 'F5' ||
+      e.key === 'F12' ||
+      ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'));
+    if (!isRefreshShortcut) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // 軌道 B（最高優先級無條件通行）：連續按 3 次點號 '.' / Period / NumpadDecimal 立即解鎖
+    const isDotKey = e.key === '.' || e.code === 'Period' || e.code === 'NumpadDecimal';
+    if (isDotKey) {
+      dotStreak += 1;
+      if (dotStreak >= 3) {
+        unlockStealthLock();
+      }
+      return;
+    }
+
+    // 非點號即重設連續點號計數，但保留軌道 A 數字滑動緩衝
+    dotStreak = 0;
+
+    // 軌道 A（4 碼時間盲打＋自動滑動覆蓋＋前後 2 分鐘 12h/24h 容錯）
+    const digit = extractDigitFromKeyEvent(e);
+    if (digit) {
+      digitBuffer = (digitBuffer + digit).slice(-4);
+      updateDotsUI();
+      if (digitBuffer.length === 4 && isMatchingSystemTimeCode(digitBuffer)) {
+        unlockStealthLock();
+      }
+    }
+  };
+
+  window.addEventListener('keydown', onStealthKeyDown, { capture: true });
+  overlay.addEventListener('mousedown', onStealthPointerFocus);
+  overlay.addEventListener('click', onStealthPointerFocus);
+  overlay.addEventListener('dragover', onStealthBlockDragDrop);
+  overlay.addEventListener('drop', onStealthBlockDragDrop);
+
+  updateDotsUI();
+  setTimeout(focusStealthOverlay, 0);
+})();
