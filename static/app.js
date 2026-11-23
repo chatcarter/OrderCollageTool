@@ -2899,6 +2899,582 @@ async function handleFiles(fileList) {
   }
 }
 
+// --- 專櫃訂購單 PDF 原生座標精準遮白 ＋ 前 6 欄裁切 ＋ 贈品過濾切片重組引擎 (v43) ---
+function extractPdfMappedItems(textContent, page, viewport, scale) {
+  const Util = window.pdfjsLib && window.pdfjsLib.Util;
+  const pageView = page && page.view ? page.view : [0, 0, viewport.width / scale, viewport.height / scale];
+  const vx0 = pageView[0] || 0;
+  const vy0 = pageView[1] || 0;
+  const pageH = (pageView[3] - vy0) || (viewport.height / scale);
+  const mapped = [];
+
+  (textContent.items || []).forEach(item => {
+    const str = item.str || '';
+    if (!str.trim()) return;
+    let x, baselineY, hPx;
+    if (Util && typeof Util.transform === 'function' && item.transform) {
+      const tx = Util.transform(viewport.transform, item.transform);
+      x = tx[4];
+      baselineY = tx[5];
+      const vecH = Math.hypot(tx[2], tx[3]);
+      hPx = Math.max(8, (item.height ? item.height * scale : vecH) || (10 * scale));
+    } else {
+      const ptX = (item.transform ? item.transform[4] : 0) - vx0;
+      const ptY = (item.transform ? item.transform[5] : 0) - vy0;
+      x = ptX * scale;
+      baselineY = (pageH - ptY) * scale;
+      hPx = Math.max(8, (item.height || 10) * scale);
+    }
+    const wPx = Math.max(2, (item.width || 0) * scale);
+    const top = baselineY - hPx * 0.92;
+    const bottom = baselineY + hPx * 0.24;
+    const midY = (top + bottom) * 0.5;
+    mapped.push({
+      str,
+      x,
+      right: x + wPx,
+      top,
+      bottom,
+      midY,
+      h: hPx,
+      w: wPx
+    });
+  });
+
+  return mapped;
+}
+
+function groupPdfItemsIntoRows(mappedItems, scale) {
+  const sorted = [...mappedItems].sort((a, b) => a.midY - b.midY || a.x - b.x);
+  const rows = [];
+
+  sorted.forEach(it => {
+    const tolY = Math.max(4 * scale, it.h * 0.55);
+    let targetRow = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (Math.abs(rows[i].midY - it.midY) <= tolY) {
+        targetRow = rows[i];
+        break;
+      }
+      if (it.midY - rows[i].midY > tolY * 2.5) break;
+    }
+    if (!targetRow) {
+      targetRow = {
+        items: [it],
+        top: it.top,
+        bottom: it.bottom,
+        midY: it.midY
+      };
+      rows.push(targetRow);
+    } else {
+      targetRow.items.push(it);
+      targetRow.top = Math.min(targetRow.top, it.top);
+      targetRow.bottom = Math.max(targetRow.bottom, it.bottom);
+      let sumMid = 0;
+      targetRow.items.forEach(m => { sumMid += m.midY; });
+      targetRow.midY = sumMid / targetRow.items.length;
+    }
+  });
+
+  rows.forEach(r => {
+    r.items.sort((a, b) => a.x - b.x);
+    r.fullText = r.items.map(i => i.str).join(' ');
+  });
+
+  return rows;
+}
+
+function findPdfHorizontalGridLineY(srcCanvas, minY, maxY, xStart, xEnd, fallbackY) {
+  const y0 = Math.max(0, Math.floor(minY));
+  const y1 = Math.min(srcCanvas.height - 1, Math.ceil(maxY));
+  const x0 = Math.max(0, Math.floor(xStart));
+  const x1 = Math.min(srcCanvas.width - 1, Math.ceil(xEnd));
+  if (y1 <= y0 || x1 <= x0 + 20) return fallbackY;
+
+  const ctx = srcCanvas.getContext('2d');
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  const data = ctx.getImageData(x0, y0, w, h).data;
+  const stepX = Math.max(2, Math.floor(w / 180));
+
+  let bestY = -1;
+  let bestRatio = 0;
+  for (let py = 0; py < h; py++) {
+    let dark = 0;
+    let total = 0;
+    const rowOff = py * w * 4;
+    for (let px = 0; px < w; px += stepX) {
+      const idx = rowOff + px * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 190) dark++;
+      total++;
+    }
+    const ratio = total > 0 ? dark / total : 0;
+    if (ratio >= 0.42 && ratio > bestRatio) {
+      bestRatio = ratio;
+      bestY = y0 + py;
+    }
+  }
+  return bestY >= 0 ? bestY : fallbackY;
+}
+
+function findPdfVerticalGridLineX(srcCanvas, minX, maxX, yStart, yEnd, fallbackX) {
+  const x0 = Math.max(0, Math.floor(minX));
+  const x1 = Math.min(srcCanvas.width - 1, Math.ceil(maxX));
+  const y0 = Math.max(0, Math.floor(yStart));
+  const y1 = Math.min(srcCanvas.height - 1, Math.ceil(yEnd));
+  if (x1 <= x0 || y1 <= y0 + 10) return fallbackX;
+
+  const ctx = srcCanvas.getContext('2d');
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  const data = ctx.getImageData(x0, y0, w, h).data;
+  const stepY = Math.max(1, Math.floor(h / 40));
+
+  let bestX = -1;
+  let bestRatio = 0;
+  for (let px = 0; px < w; px++) {
+    let dark = 0;
+    let total = 0;
+    for (let py = 0; py < h; py += stepY) {
+      const idx = (py * w + px) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 190) dark++;
+      total++;
+    }
+    const ratio = total > 0 ? dark / total : 0;
+    if (ratio >= 0.45 && ratio > bestRatio) {
+      bestRatio = ratio;
+      bestX = x0 + px;
+    }
+  }
+  return bestX >= 0 ? bestX : fallbackX;
+}
+
+function findBestWhiteSplitX(srcCanvas, approxX, topY, bottomY, searchRadius) {
+  const x0 = Math.max(0, Math.floor(approxX - searchRadius));
+  const x1 = Math.min(srcCanvas.width - 1, Math.ceil(approxX + searchRadius));
+  const y0 = Math.max(0, Math.floor(topY));
+  const y1 = Math.min(srcCanvas.height - 1, Math.ceil(bottomY));
+  if (x1 <= x0 || y1 <= y0) return Math.round(approxX);
+
+  const ctx = srcCanvas.getContext('2d');
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  const data = ctx.getImageData(x0, y0, w, h).data;
+
+  let bestX = Math.round(approxX);
+  let bestScore = Infinity;
+  for (let px = 0; px < w; px++) {
+    let inkSum = 0;
+    for (let py = 0; py < h; py++) {
+      const idx = (py * w + px) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      inkSum += (255 - lum);
+    }
+    const absDist = Math.abs((x0 + px) - approxX);
+    const score = inkSum + absDist * 4;
+    if (score < bestScore) {
+      bestScore = score;
+      bestX = x0 + px;
+    }
+  }
+  return bestX;
+}
+
+function maskFieldClusterOnRow(ctx, row, labelRegex, stopRegex, scale) {
+  let masked = 0;
+  for (let i = 0; i < row.items.length; i++) {
+    const startItem = row.items[i];
+    if (!labelRegex.test(startItem.str)) continue;
+
+    let minX = startItem.x;
+    let maxR = startItem.right;
+    let minT = startItem.top;
+    let maxB = startItem.bottom;
+    let j = i + 1;
+
+    while (j < row.items.length) {
+      const next = row.items[j];
+      const gap = next.x - maxR;
+      if (gap > 36 * scale || (stopRegex && stopRegex.test(next.str))) {
+        break;
+      }
+      maxR = Math.max(maxR, next.right);
+      minT = Math.min(minT, next.top);
+      maxB = Math.max(maxB, next.bottom);
+      j++;
+    }
+
+    const padX = Math.round(4 * scale);
+    const padY = Math.round(2.5 * scale);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(
+      Math.max(0, Math.floor(minX - padX)),
+      Math.max(0, Math.floor(minT - padY)),
+      Math.ceil(maxR - minX + padX * 2),
+      Math.ceil(maxB - minT + padY * 2)
+    );
+    masked++;
+    i = j - 1;
+  }
+  return masked;
+}
+
+function purifyDepartmentSalespersonRow(workCanvas, row, scale) {
+  const ctx = workCanvas.getContext('2d');
+  const startIdx = row.items.findIndex(it => it.str.includes('專櫃名稱'));
+  if (startIdx < 0) return false;
+
+  const cluster = [row.items[startIdx]];
+  let maxR = row.items[startIdx].right;
+  for (let j = startIdx + 1; j < row.items.length; j++) {
+    const next = row.items[j];
+    const gap = next.x - maxR;
+    if (gap > 34 * scale || /訂單單號|訂單編號|頁次|製表日期|客戶名稱/.test(next.str)) {
+      break;
+    }
+    cluster.push(next);
+    maxR = Math.max(maxR, next.right);
+  }
+
+  let combined = '';
+  const charSegments = [];
+  const measCanvas = document.createElement('canvas');
+  const measCtx = measCanvas.getContext('2d');
+
+  cluster.forEach(it => {
+    const str = it.str || '';
+    measCtx.font = `${Math.max(10, Math.round(it.h))}px "Microsoft JhengHei", "PingFang TC", sans-serif`;
+    const charWidths = [];
+    let totalW = 0;
+    for (let k = 0; k < str.length; k++) {
+      const cw = measCtx.measureText(str[k]).width || 1;
+      charWidths.push(cw);
+      totalW += cw;
+    }
+    let acc = 0;
+    for (let k = 0; k < str.length; k++) {
+      const x0 = it.x + it.w * (acc / Math.max(1, totalW));
+      acc += charWidths[k];
+      const x1 = it.x + it.w * (acc / Math.max(1, totalW));
+      charSegments.push({ ch: str[k], x0, x1, top: it.top, bottom: it.bottom });
+      combined += str[k];
+    }
+  });
+
+  const deptIdx = combined.indexOf('專櫃名稱');
+  if (deptIdx < 0) return false;
+  const deptEndIdx = deptIdx + 4;
+  if (deptEndIdx >= charSegments.length) return false;
+
+  const afterDept = combined.slice(deptEndIdx);
+  const hasSalesLabel = /業務|\/|／/.test(afterDept);
+  if (!hasSalesLabel) return false;
+
+  let colonIdx = -1;
+  for (let k = deptEndIdx; k < combined.length; k++) {
+    if (combined[k] === ':' || combined[k] === '：') {
+      colonIdx = k;
+      break;
+    }
+  }
+  if (colonIdx < 0) return false;
+
+  let tailSlashIdx = combined.length;
+  for (let k = colonIdx + 1; k < combined.length; k++) {
+    if (combined[k] === '/' || combined[k] === '／') {
+      tailSlashIdx = k;
+      break;
+    }
+  }
+  if (tailSlashIdx <= colonIdx + 1) return false;
+
+  let rowTop = cluster[0].top;
+  let rowBottom = cluster[0].bottom;
+  cluster.forEach(it => {
+    rowTop = Math.min(rowTop, it.top);
+    rowBottom = Math.max(rowBottom, it.bottom);
+  });
+  const clipTop = Math.max(0, Math.floor(rowTop - 2.5 * scale));
+  const clipBottom = Math.min(workCanvas.height, Math.ceil(rowBottom + 2.5 * scale));
+  const clipH = Math.max(1, clipBottom - clipTop);
+
+  const rawAfterDeptX = charSegments[deptEndIdx - 1].x1;
+  const rawColonX = charSegments[colonIdx].x0;
+  const rawAfterStoreX = charSegments[tailSlashIdx - 1].x1;
+
+  const xAfterDept = findBestWhiteSplitX(workCanvas, rawAfterDeptX, clipTop, clipBottom, 3 * scale);
+  const xColon = findBestWhiteSplitX(workCanvas, rawColonX, clipTop, clipBottom, 3 * scale);
+  const xAfterStore = findBestWhiteSplitX(workCanvas, rawAfterStoreX, clipTop, clipBottom, 3 * scale);
+  const xClearEnd = Math.min(workCanvas.width, Math.ceil(maxR + 10 * scale));
+
+  const storeSliceW = Math.max(1, xAfterStore - xColon);
+  const storeSliceCanvas = document.createElement('canvas');
+  storeSliceCanvas.width = storeSliceW;
+  storeSliceCanvas.height = clipH;
+  storeSliceCanvas.getContext('2d').drawImage(
+    workCanvas,
+    xColon, clipTop, storeSliceW, clipH,
+    0, 0, storeSliceW, clipH
+  );
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(xAfterDept, clipTop, Math.max(1, xClearEnd - xAfterDept), clipH);
+
+  const pasteX = Math.round(xAfterDept + Math.max(1, scale * 0.8));
+  ctx.drawImage(storeSliceCanvas, pasteX, clipTop);
+  return true;
+}
+
+function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, scale, fallbackCropY) {
+  const workCanvas = document.createElement('canvas');
+  workCanvas.width = fullCanvas.width;
+  workCanvas.height = fullCanvas.height;
+  workCanvas.getContext('2d').drawImage(fullCanvas, 0, 0);
+
+  const mappedItems = extractPdfMappedItems(textContent, page, viewport, scale);
+  if (mappedItems.length < 5) {
+    const fb = document.createElement('canvas');
+    fb.width = fullCanvas.width;
+    fb.height = fallbackCropY;
+    fb.getContext('2d').drawImage(workCanvas, 0, 0, fullCanvas.width, fallbackCropY, 0, 0, fullCanvas.width, fallbackCropY);
+    return { canvas: fb, cropRatio: fallbackCropY / fullCanvas.height, removedGiftCount: 0, maskedCount: 0 };
+  }
+
+  const rows = groupPdfItemsIntoRows(mappedItems, scale);
+  const workCtx = workCanvas.getContext('2d');
+  let maskedCount = 0;
+
+  // 1 & 2. 遮蓋左側「頁次」「製表日期」與右側「訂單單號」
+  const maskLabelRegex = /頁次|製表日期|訂單單號|訂單編號/;
+  const maskStopRegex = /專櫃名稱|客戶名稱|客戶電話|訂單日期|項次|序號|品名/;
+  rows.forEach(row => {
+    if (maskLabelRegex.test(row.fullText)) {
+      maskedCount += maskFieldClusterOnRow(workCtx, row, maskLabelRegex, maskStopRegex, scale);
+    }
+  });
+
+  // 3. 將「專櫃名稱/業務姓名:宏匯/許庭愷」向量像素重組為「專櫃名稱:宏匯」
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].fullText.includes('專櫃名稱')) {
+      purifyDepartmentSalespersonRow(workCanvas, rows[i], scale);
+      break;
+    }
+  }
+
+  // 4. 偵測明細表頭與第 6 欄「數量」右緣（裁除預計交貨日、贈品否、贈品活動訖日）
+  const headerIdx = rows.findIndex(r =>
+    r.items.some(it => it.str.includes('數量')) &&
+    (
+      r.items.some(it => /預計交貨日|交貨日|贈品否|贈品活動/.test(it.str)) ||
+      r.items.some(it => /品名|品號|貨號|序號|項次|規格/.test(it.str))
+    )
+  );
+
+  let cropRightX = workCanvas.width;
+  if (headerIdx >= 0) {
+    const headerRow = rows[headerIdx];
+    const qtyItem = headerRow.items.find(it => it.str.includes('數量'));
+    const rightHeaderCandidates = headerRow.items.filter(it => qtyItem && it.x > qtyItem.right + 4 * scale);
+    const nextRightColItem = rightHeaderCandidates.length > 0 ? rightHeaderCandidates[0] : null;
+
+    if (qtyItem && nextRightColItem) {
+      let maxQtyColRight = qtyItem.right;
+      const qtyColLeftBound = qtyItem.x - 18 * scale;
+      const qtyColRightBound = nextRightColItem.x - 3 * scale;
+      for (let rIdx = headerIdx + 1; rIdx < rows.length; rIdx++) {
+        const rr = rows[rIdx];
+        if (/收款|實收訂金|尚餘尾款|總金額|施工確認|注意事項/.test(rr.fullText)) break;
+        rr.items.forEach(it => {
+          if (it.x >= qtyColLeftBound && it.right <= qtyColRightBound) {
+            maxQtyColRight = Math.max(maxQtyColRight, it.right);
+          }
+        });
+      }
+
+      const scanMinX = Math.max(qtyItem.right, maxQtyColRight) + 2 * scale;
+      const scanMaxX = nextRightColItem.x - 2 * scale;
+      const fallbackRightX = Math.min(
+        nextRightColItem.x - 5 * scale,
+        Math.max(qtyItem.right, maxQtyColRight) + 18 * scale
+      );
+      const borderX = scanMaxX > scanMinX + 2
+        ? findPdfVerticalGridLineX(workCanvas, scanMinX, scanMaxX, headerRow.top, headerRow.bottom + 40 * scale, -1)
+        : -1;
+      cropRightX = borderX >= 0
+        ? Math.min(nextRightColItem.x - 2 * scale, borderX + Math.ceil(scale * 0.6))
+        : Math.round(fallbackRightX);
+      cropRightX = Math.max(Math.round(workCanvas.width * 0.45), Math.min(workCanvas.width, cropRightX));
+    }
+  }
+
+  // 5 & 6. 商品明細黑名單過濾贈品列 ＋ 底部收款明細／金額區無縫貼齊
+  let bottomStartIdx = -1;
+  if (headerIdx >= 0) {
+    bottomStartIdx = rows.findIndex((r, idx) =>
+      idx > headerIdx && /收款日期|收款方式|收款:|收款：|實收訂金|訂金金額|尚餘尾款|總金額/.test(r.fullText)
+    );
+  }
+
+  if (headerIdx >= 0 && bottomStartIdx > headerIdx) {
+    const headerRow = rows[headerIdx];
+    const bottomFirstRow = rows[bottomStartIdx];
+    const itemRows = rows.slice(headerIdx + 1, bottomStartIdx);
+
+    if (itemRows.length > 0) {
+      const seqHeader = headerRow.items.find(it => /序號|項次|序|項/.test(it.str));
+      const seqMaxX = seqHeader ? (seqHeader.right + 28 * scale) : (cropRightX * 0.14);
+
+      const itemBlocks = [];
+      itemRows.forEach(r => {
+        const leftItems = r.items.filter(it => it.x < cropRightX);
+        if (leftItems.length === 0) return;
+        const firstIt = leftItems[0];
+        const isSeqStart = firstIt.x <= seqMaxX && /^\d{1,4}$/.test(firstIt.str.trim());
+        const rowLeft6Text = leftItems.map(it => it.str).join(' ');
+
+        if (isSeqStart || itemBlocks.length === 0) {
+          itemBlocks.push({
+            rows: [r],
+            text: rowLeft6Text
+          });
+        } else {
+          const curBlock = itemBlocks[itemBlocks.length - 1];
+          curBlock.rows.push(r);
+          curBlock.text += ' ' + rowLeft6Text;
+        }
+      });
+
+      if (itemBlocks.length > 0) {
+        const lineScanLeft = Math.round(cropRightX * 0.06);
+        const lineScanRight = Math.round(cropRightX * 0.94);
+
+        const firstItemTop = itemBlocks[0].rows[0].top;
+        const headerBottomMid = Math.round((headerRow.bottom + firstItemTop) * 0.5);
+        const headerBottomLineY = findPdfHorizontalGridLineY(
+          workCanvas,
+          headerRow.bottom - 1 * scale,
+          firstItemTop + 1 * scale,
+          lineScanLeft,
+          lineScanRight,
+          headerBottomMid
+        );
+        const headerSliceEndY = Math.min(firstItemTop - 1, headerBottomLineY + Math.ceil(1.2 * scale));
+
+        const lastItemRow = itemBlocks[itemBlocks.length - 1].rows[itemBlocks[itemBlocks.length - 1].rows.length - 1];
+        const paymentTopMid = Math.round((lastItemRow.bottom + bottomFirstRow.top) * 0.5);
+        const paymentTopLineY = findPdfHorizontalGridLineY(
+          workCanvas,
+          lastItemRow.bottom + 1 * scale,
+          bottomFirstRow.top - 1 * scale,
+          lineScanLeft,
+          lineScanRight,
+          paymentTopMid
+        );
+        const itemsAreaEndY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(1.0 * scale));
+        const paymentSliceStartY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(2.5 * scale));
+
+        for (let b = 0; b < itemBlocks.length; b++) {
+          const blk = itemBlocks[b];
+          blk.topY = (b === 0) ? headerSliceEndY : itemBlocks[b - 1].bottomY;
+          if (b < itemBlocks.length - 1) {
+            const curEnd = blk.rows[blk.rows.length - 1].bottom;
+            const nextStart = itemBlocks[b + 1].rows[0].top;
+            const sepMid = Math.round((curEnd + nextStart) * 0.5);
+            const gridY = findPdfHorizontalGridLineY(
+              workCanvas,
+              curEnd - 1 * scale,
+              nextStart + 1 * scale,
+              lineScanLeft,
+              lineScanRight,
+              sepMid
+            );
+            blk.bottomY = Math.min(nextStart - 1, gridY + Math.ceil(1.2 * scale));
+          } else {
+            blk.bottomY = itemsAreaEndY;
+          }
+          blk.isGift = /贈品|獨家贈|贈|GIFT|SP-/i.test(blk.text);
+        }
+
+        const filteredBlocks = itemBlocks.filter(blk => !blk.isGift);
+        const keptBlocks = filteredBlocks.length > 0 ? filteredBlocks : itemBlocks;
+        const removedGiftCount = itemBlocks.length - keptBlocks.length;
+
+        const summaryEndRows = rows.filter((r, idx) =>
+          idx >= bottomStartIdx && /實收訂金|尚餘尾款|總金額|含稅|訂金金額/.test(r.fullText)
+        );
+        const cutoffRows = rows.filter((r, idx) =>
+          idx >= bottomStartIdx && /施工確認|注意事項|客戶簽名|訂購人簽名/.test(r.fullText)
+        );
+        const summaryMaxBottom = summaryEndRows.length > 0
+          ? Math.max(...summaryEndRows.map(r => r.bottom))
+          : bottomFirstRow.bottom;
+        const cutoffMinTop = cutoffRows.length > 0
+          ? Math.min(...cutoffRows.map(r => r.top))
+          : Math.min(workCanvas.height, fallbackCropY + 20 * scale);
+        const summaryBottomLineY = findPdfHorizontalGridLineY(
+          workCanvas,
+          summaryMaxBottom + 1 * scale,
+          Math.min(cutoffMinTop - 2 * scale, summaryMaxBottom + 24 * scale),
+          lineScanLeft,
+          lineScanRight,
+          Math.min(cutoffMinTop - 4 * scale, Math.max(fallbackCropY, summaryMaxBottom + 5 * scale))
+        );
+        const bottomSliceEndY = Math.max(
+          paymentSliceStartY + 20,
+          Math.min(workCanvas.height, Math.round(summaryBottomLineY + 3 * scale))
+        );
+        const headerSliceH = Math.max(10, headerSliceEndY);
+        const keptItemsH = keptBlocks.reduce((sum, blk) => sum + Math.max(1, blk.bottomY - blk.topY), 0);
+        const bottomGap = Math.round(3 * scale);
+        const bottomSliceH = Math.max(10, bottomSliceEndY - paymentSliceStartY);
+        const totalStitchedH = headerSliceH + keptItemsH + bottomGap + bottomSliceH;
+
+        const stitchedCanvas = document.createElement('canvas');
+        stitchedCanvas.width = cropRightX;
+        stitchedCanvas.height = totalStitchedH;
+        const sCtx = stitchedCanvas.getContext('2d');
+        sCtx.fillStyle = '#FFFFFF';
+        sCtx.fillRect(0, 0, cropRightX, totalStitchedH);
+
+        let destY = 0;
+        sCtx.drawImage(workCanvas, 0, 0, cropRightX, headerSliceH, 0, destY, cropRightX, headerSliceH);
+        destY += headerSliceH;
+
+        keptBlocks.forEach(blk => {
+          const bh = Math.max(1, blk.bottomY - blk.topY);
+          sCtx.drawImage(workCanvas, 0, blk.topY, cropRightX, bh, 0, destY, cropRightX, bh);
+          destY += bh;
+        });
+
+        destY += bottomGap;
+        sCtx.drawImage(workCanvas, 0, paymentSliceStartY, cropRightX, bottomSliceH, 0, destY, cropRightX, bottomSliceH);
+
+        return {
+          canvas: stitchedCanvas,
+          cropRatio: 1.0,
+          removedGiftCount,
+          maskedCount
+        };
+      }
+    }
+  }
+
+  // Fallback：維持水平裁切（若命中前 6 欄）與底部裁切
+  const simpleH = Math.max(150, Math.min(workCanvas.height, fallbackCropY));
+  const fallbackCanvas = document.createElement('canvas');
+  fallbackCanvas.width = cropRightX;
+  fallbackCanvas.height = simpleH;
+  fallbackCanvas.getContext('2d').drawImage(workCanvas, 0, 0, cropRightX, simpleH, 0, 0, cropRightX, simpleH);
+  return {
+    canvas: fallbackCanvas,
+    cropRatio: simpleH / workCanvas.height,
+    removedGiftCount: 0,
+    maskedCount
+  };
+}
+
 // --- 訂購單 6.0x 超高取樣文字銳利化讀取與 +12px 精準切線 ---
 async function importPdfPureFrontend(file) {
   if (!window.pdfjsLib) {
@@ -2975,19 +3551,18 @@ async function importPdfPureFrontend(file) {
     }
 
     cropYInCanvas = Math.max(150, Math.min(fullCanvas.height, cropYInCanvas));
-    const cropRatio = cropYInCanvas / fullCanvas.height;
 
-    const croppedCanvas = document.createElement('canvas');
-    croppedCanvas.width = fullCanvas.width;
-    croppedCanvas.height = cropYInCanvas;
-    const cropCtx = croppedCanvas.getContext('2d');
-    cropCtx.imageSmoothingEnabled = true;
-    cropCtx.imageSmoothingQuality = 'high';
-    cropCtx.drawImage(
+    // v43: 保留完整 rawPdfText 與型號答案庫後，執行遮白去敏 ＋ 前 6 欄裁切 ＋ 贈品過濾重組
+    const purifiedRes = buildPurifiedOrderSheetCanvas(
       fullCanvas,
-      0, 0, fullCanvas.width, cropYInCanvas,
-      0, 0, fullCanvas.width, cropYInCanvas
+      textContent,
+      page,
+      viewport,
+      scale,
+      cropYInCanvas
     );
+    const croppedCanvas = purifiedRes.canvas;
+    const cropRatio = purifiedRes.cropRatio;
 
     const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
     const orderDisplayW = autoLayoutEnabled ? (canvasWidth - 20) : Math.round(canvasWidth * 0.63);
@@ -3003,7 +3578,7 @@ async function importPdfPureFrontend(file) {
       name: file.name,
       image: croppedCanvas,
       rawImage: croppedCanvas,
-      fullCanvas: fullCanvas,
+      fullCanvas: croppedCanvas,
       rawPdfText: extractedStrings.join(' '),
       cropRatio: cropRatio,
       width: orderDisplayW,
@@ -3024,7 +3599,8 @@ async function importPdfPureFrontend(file) {
     if (typeof autoArrangeWorkbenchLayout === 'function') {
       autoArrangeWorkbenchLayout(false);
     }
-    showToast(`PDF 訂購單已以 6.0x 超高取樣置頂滿版進場`);
+    const giftNote = purifiedRes.removedGiftCount > 0 ? `（已自動略過 ${purifiedRes.removedGiftCount} 筆贈品列）` : '';
+    showToast(`PDF 訂購單已完成去敏精簡與 6.0x 置頂滿版進場${giftNote}`);
   } catch (err) {
     showToast(`PDF 讀取失敗: ${err.message}`);
     console.error(err);
