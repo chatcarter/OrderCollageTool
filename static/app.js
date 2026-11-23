@@ -309,6 +309,8 @@ window.addEventListener('DOMContentLoaded', () => {
   initMinguoDate();
   loadSavedStampSettings();
   updateStampPreview();
+  if (typeof initMobileWorkbenchControls === 'function') initMobileWorkbenchControls();
+  if (typeof detectMobileWorkbenchMode === 'function') detectMobileWorkbenchMode();
   updateCanvasSizeUI();
   fitCanvasToViewport();
   updateExportDimensionDisplay();
@@ -319,9 +321,15 @@ window.addEventListener('DOMContentLoaded', () => {
   initHandwritingGenerator();
   initSmartWarrantyModule();
   if (typeof initStampDateModal === 'function') initStampDateModal();
-  if (typeof initMobileWorkbenchControls === 'function') initMobileWorkbenchControls();
-  if (typeof detectMobileWorkbenchMode === 'function') detectMobileWorkbenchMode();
   if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
+  if (document.body.classList.contains('is-mobile-mode')) {
+    requestAnimationFrame(() => fitMobileCanvasToViewport());
+    setTimeout(() => {
+      if (document.body.classList.contains('is-mobile-mode') && !getMobileEditingStampLayer()) {
+        fitMobileCanvasToViewport();
+      }
+    }, 100);
+  }
 });
 
 // --- 歷史復原（Undo）核心函式 ---
@@ -674,11 +682,18 @@ function initPdfJsWorker() {
 }
 
 // --- 縮放與視窗適應 ---
+let mobileFitScale = 0.1;
+let mobileViewScale = 1.0;
+
 function updateCanvasSizeUI() {
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
-  canvasWrapper.style.width = `${canvasWidth}px`;
-  canvasWrapper.style.height = `${canvasHeight}px`;
+  if (document.body.classList.contains('is-mobile-mode')) {
+    setZoom(currentZoom);
+  } else {
+    canvasWrapper.style.width = `${canvasWidth}px`;
+    canvasWrapper.style.height = `${canvasHeight}px`;
+  }
   if (canvasSizeLabel) {
     canvasSizeLabel.textContent = `圖紙尺寸：${canvasWidth} × ${canvasHeight} px`;
   }
@@ -686,27 +701,45 @@ function updateCanvasSizeUI() {
 
 function setZoom(zoom) {
   const isMobile = document.body.classList.contains('is-mobile-mode');
-  const minZoom = isMobile ? 0.03 : 0.15;
-  currentZoom = Math.max(minZoom, Math.min(2.0, zoom));
-  canvasWrapper.style.width = `${canvasWidth}px`;
-  canvasWrapper.style.height = `${canvasHeight}px`;
-  canvasWrapper.style.transform = `scale(${currentZoom})`;
-  canvasWrapper.style.transformOrigin = 'top left';
-  canvasWrapper.style.marginLeft = '';
-  canvasWrapper.style.marginTop = '';
-  canvasWrapper.style.marginRight = '';
-  canvasWrapper.style.marginBottom = '';
+  if (isMobile) {
+    const minZoom = Math.max(0.03, Math.min(mobileFitScale || 0.05, 1.0));
+    const maxZoom = 3.0;
+    currentZoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+    mobileViewScale = currentZoom;
 
-  if (canvasStage) {
-    if (isMobile) {
-      const visualW = Math.max(1, Math.round(canvasWidth * currentZoom));
-      const visualH = Math.max(1, Math.round(canvasHeight * currentZoom));
+    const visualW = Math.max(1, Math.round(canvasWidth * currentZoom));
+    const visualH = Math.max(1, Math.round(canvasHeight * currentZoom));
+
+    if (canvasStage) {
       canvasStage.style.width = `${visualW}px`;
       canvasStage.style.height = `${visualH}px`;
-    } else {
+    }
+    canvasWrapper.style.width = `${visualW}px`;
+    canvasWrapper.style.height = `${visualH}px`;
+    canvasWrapper.style.transform = 'none';
+    canvasWrapper.style.transformOrigin = 'top left';
+    canvasWrapper.style.marginLeft = '';
+    canvasWrapper.style.marginTop = '';
+    canvasWrapper.style.marginRight = '';
+    canvasWrapper.style.marginBottom = '';
+    canvas.style.width = `${visualW}px`;
+    canvas.style.height = `${visualH}px`;
+  } else {
+    currentZoom = Math.max(0.15, Math.min(2.0, zoom));
+    if (canvasStage) {
       canvasStage.style.width = '';
       canvasStage.style.height = '';
     }
+    canvasWrapper.style.width = `${canvasWidth}px`;
+    canvasWrapper.style.height = `${canvasHeight}px`;
+    canvasWrapper.style.transform = `scale(${currentZoom})`;
+    canvasWrapper.style.transformOrigin = 'top left';
+    canvasWrapper.style.marginLeft = '';
+    canvasWrapper.style.marginTop = '';
+    canvasWrapper.style.marginRight = '';
+    canvasWrapper.style.marginBottom = '';
+    canvas.style.width = '';
+    canvas.style.height = '';
   }
 
   if (zoomPercent) {
@@ -714,18 +747,32 @@ function setZoom(zoom) {
   }
 }
 
+function fitMobileCanvasToViewport() {
+  if (!canvasViewport) return;
+  const pad = 12;
+  const availW = Math.max(120, canvasViewport.clientWidth - pad * 2);
+  const availH = Math.max(120, canvasViewport.clientHeight - pad * 2);
+  const scaleW = availW / Math.max(1, canvasWidth);
+  const scaleH = availH / Math.max(1, canvasHeight);
+  const fitScale = Math.max(0.03, Math.min(scaleW, scaleH));
+  mobileFitScale = fitScale;
+  mobileViewScale = fitScale;
+  setZoom(mobileViewScale);
+  canvasViewport.scrollLeft = 0;
+  canvasViewport.scrollTop = 0;
+}
+
 function fitCanvasToViewport() {
-  const isMobile = document.body.classList.contains('is-mobile-mode');
-  const pad = isMobile ? 10 : 32;
+  if (document.body.classList.contains('is-mobile-mode')) {
+    fitMobileCanvasToViewport();
+    return;
+  }
+  const pad = 32;
   const availW = Math.max(120, canvasViewport.clientWidth - pad * 2);
   const availH = Math.max(120, canvasViewport.clientHeight - pad * 2);
   const scaleW = availW / canvasWidth;
   const scaleH = availH / canvasHeight;
   setZoom(Math.min(scaleW, scaleH));
-  if (isMobile && canvasViewport) {
-    canvasViewport.scrollLeft = 0;
-    canvasViewport.scrollTop = 0;
-  }
 }
 
 function getCanvasCoords(e) {
@@ -2254,13 +2301,12 @@ canvasViewport.addEventListener('touchstart', e => {
     }
 
     mobileStampPinchState = null;
+    const stageRect = (canvasStage || canvasWrapper).getBoundingClientRect();
     mobilePinchState = {
       startDist: dist,
       startZoom: currentZoom,
-      startScrollLeft: canvasViewport.scrollLeft,
-      startScrollTop: canvasViewport.scrollTop,
-      startMidX: midX,
-      startMidY: midY,
+      startStageX: (midX - stageRect.left) / Math.max(0.01, currentZoom),
+      startStageY: (midY - stageRect.top) / Math.max(0.01, currentZoom),
       viewRect: canvasViewport.getBoundingClientRect()
     };
     return;
@@ -2384,10 +2430,13 @@ canvasViewport.addEventListener('touchmove', e => {
     setZoom(targetZoom);
 
     const rect = mobilePinchState.viewRect;
-    const focalContentX = (mobilePinchState.startScrollLeft + (mobilePinchState.startMidX - rect.left)) / mobilePinchState.startZoom;
-    const focalContentY = (mobilePinchState.startScrollTop + (mobilePinchState.startMidY - rect.top)) / mobilePinchState.startZoom;
-    canvasViewport.scrollLeft = Math.max(0, focalContentX * currentZoom - (curMidX - rect.left));
-    canvasViewport.scrollTop = Math.max(0, focalContentY * currentZoom - (curMidY - rect.top));
+    const pad = 12;
+    const visualW = Math.round(canvasWidth * currentZoom);
+    const visualH = Math.round(canvasHeight * currentZoom);
+    const marginLeft = Math.max(pad, (canvasViewport.clientWidth - visualW) / 2);
+    const marginTop = Math.max(pad, (canvasViewport.clientHeight - visualH) / 2);
+    canvasViewport.scrollLeft = Math.max(0, marginLeft + mobilePinchState.startStageX * currentZoom - (curMidX - rect.left));
+    canvasViewport.scrollTop = Math.max(0, marginTop + mobilePinchState.startStageY * currentZoom - (curMidY - rect.top));
     return;
   }
 
@@ -7960,9 +8009,12 @@ async function handleMobileCanvasDoubleTap(coords) {
     }
   }
 
-  // 4. 若目前在印章編輯中且雙擊空白區，退出編輯
+  // 4. 若目前在印章編輯中且雙擊空白區，退出編輯；平時看圖模式雙擊空白區則恢復滿版置中檢視 (v42)
   if (getMobileEditingStampLayer()) {
     exitMobileEditMode(false);
+  } else if (document.body.classList.contains('is-mobile-mode')) {
+    fitMobileCanvasToViewport();
+    showToast('已恢復整張畫布滿版置中檢視');
   }
 }
 

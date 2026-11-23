@@ -1285,6 +1285,7 @@ body.is-mobile-mode .workbench-container {
   flex: 1 1 0%;
   width: 100%;
   height: auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1294,7 +1295,7 @@ body.is-mobile-mode .workbench-container {
 body.is-mobile-mode .canvas-section {
   flex: 1 1 0%;
   width: 100%;
-  height: 100%;
+  height: auto;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1306,10 +1307,10 @@ body.is-mobile-mode .canvas-section {
 body.is-mobile-mode .canvas-viewport {
   flex: 1 1 0%;
   width: 100%;
-  height: 100%;
+  height: auto;
   min-width: 0;
   min-height: 0;
-  padding: 10px;
+  padding: 12px;
   display: flex;
   overflow: auto;
   touch-action: pan-x pan-y;
@@ -1327,13 +1328,21 @@ body.is-mobile-mode .canvas-stage {
   position: relative;
   flex-shrink: 0;
   margin: auto;
+  overflow: visible;
 }
 
 body.is-mobile-mode .canvas-wrapper {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
+  display: block;
+  transform: none;
   transform-origin: top left;
+  overflow: visible;
+}
+
+body.is-mobile-mode #mainCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 body.is-mobile-mode .mobile-bottom-bar {

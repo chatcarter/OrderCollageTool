@@ -53,6 +53,19 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 01:56:25] (第 42 版 / v42)
+- **執行項目**：**手機工作區一開始即全開滿版置中 ＋ 無裁切兩指縮放（v42）** — 徹底重構手機端畫布外層全開展開與內層容器尺寸計算機制，改以真實 CSS 縮放尺寸取代會造成 Safari/Chrome 捲動裁切之 `transform: scale()` 殘留盒模型，實作初始空白頁即滿版置中（`fitMobileCanvasToViewport()`）與無跳動兩指縮放／單指平移瀏覽及雙擊空白恢復滿版。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v42`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner` 及 `.mobile-ver-badge` 為 `v42 (2026.11.24)`，並將資源參數更新為 `style.css?v=42`、`card_templates.js?v=42` 與 `app.js?v=42`。
+  2. **解除內層畫布包裝盒裁切，外層工作區 100% 全開展開**：
+     - 調整 `static/style.css` `.is-mobile-mode` 下 `.workbench-container`、`.canvas-section`、`.canvas-viewport`、`#canvasStage`、`.canvas-wrapper` 與 `#mainCanvas`：外層區域 100% 撐滿上下工具列之間所有可用空間，移除對齊左上角之 `position: absolute` 與隱形尺寸殘留；於 `setZoom()` 嚴格同步設定 `#canvasStage`、`#canvasWrapper` 與 `#mainCanvas` 之 CSS 寬高為「畫布邏輯寬高 × `mobileViewScale`」（並設定 `transform: none`），同時保留 `#mainCanvas` 300DPI 原生邏輯像素解析度不降質。
+  3. **初始與合成完成自動滿版置中縮放（`fitMobileCanvasToViewport()`）**：
+     - 調整 `DOMContentLoaded` 執行順序，先偵測手機模式再計算初始滿版縮放，並於 `rAF` 與 `100ms` 後再校準；`fitMobileCanvasToViewport()` 依據 `#canvasViewport` 扣掉四邊 `12px` 呼吸邊距自動計算 `mobileFitScale` 置中顯示整張空白白紙，並於三樣物件組合與蓋章完成後立即重新計算滿版，四邊絕不裁切。
+  4. **優化手機端「兩指縮放（`fitScale` ～ `3.0x`）＋ 單指自由瀏覽 ＋ 雙擊空白復原」**：
+     - 修正 `mobilePinchState` 以 `#canvasStage` 實際邊界推算焦點座標，解決從置中狀態放大時之視窗跳動；放大後可用單指於全開工作區自由上下左右瀏覽所有細節，雙擊畫布空白處一鍵復原 `fitMobileCanvasToViewport()`；雙擊專櫃印章則仍專屬進入藍色框編輯（支援「改日期」、藍色深淺滑桿、歸零、單指移動與雙指獨立縮放印章）。
+  5. 建立 `_backup/20261124_015427/` 備份，通過 `HTML_SYNC_OK=True`、JS 語法平衡 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 01:48:24] (第 41 版 / v41)
 - **執行項目**：**手機工作區全開展開 ＋ 製作完成大字提示 ＋ 雙擊印章「改日期」按鈕（v41）** — 徹底修復手機端畫布在匯入後出現左上角小視窗裁切的問題，並於三樣組合蓋章完成後於螢幕正中央顯示四行大字穿透式提示，同時於雙擊印章浮動編輯列「歸零」鈕左側新增「改日期」快捷鈕。
 - **具體進度**：
