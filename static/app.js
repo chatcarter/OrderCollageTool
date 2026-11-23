@@ -133,6 +133,12 @@ const mobileTextEditTextarea = document.getElementById('mobileTextEditTextarea')
 const btnCancelMobileTextEdit = document.getElementById('btnCancelMobileTextEdit');
 const btnConfirmMobileTextEdit = document.getElementById('btnConfirmMobileTextEdit');
 const mobileCompleteOverlay = document.getElementById('mobileCompleteOverlay');
+const desktopBatchStatusPanel = document.getElementById('desktopBatchStatusPanel');
+const desktopBatchRows = document.getElementById('desktopBatchRows');
+const desktopStatusOrder = document.getElementById('desktopStatusOrder');
+const desktopStatusReceipt = document.getElementById('desktopStatusReceipt');
+const desktopStatusCard = document.getElementById('desktopStatusCard');
+const desktopBatchCompleteCard = document.getElementById('desktopBatchCompleteCard');
 
 // 縮放、圖紙尺寸與復原控制
 const btnUndo = document.getElementById('btnUndo');
@@ -2858,10 +2864,185 @@ function deleteActiveLayer() {
   if (activeLayer) deleteLayer(activeLayer);
 }
 
+// --- 電腦版三件組純 CSS 零耗能進度面板控制 (v45) ---
+const desktopBatchProgress = {
+  hasShownComplete: false,
+  switchTimer: null,
+  fadeTimer: null,
+  hideTimer: null
+};
+
+function clearDesktopBatchTimers() {
+  if (desktopBatchProgress.switchTimer) {
+    clearTimeout(desktopBatchProgress.switchTimer);
+    desktopBatchProgress.switchTimer = null;
+  }
+  if (desktopBatchProgress.fadeTimer) {
+    clearTimeout(desktopBatchProgress.fadeTimer);
+    desktopBatchProgress.fadeTimer = null;
+  }
+  if (desktopBatchProgress.hideTimer) {
+    clearTimeout(desktopBatchProgress.hideTimer);
+    desktopBatchProgress.hideTimer = null;
+  }
+}
+
+function setDesktopRoleRowState(role, state) {
+  const rowMap = {
+    order: { el: desktopStatusOrder, label: '訂單' },
+    receipt: { el: desktopStatusReceipt, label: '發票' },
+    card: { el: desktopStatusCard, label: '保卡' }
+  };
+  const target = rowMap[role];
+  if (!target || !target.el) return;
+
+  const iconEl = target.el.querySelector('.batch-status-icon');
+  const textEl = target.el.querySelector('.batch-status-text');
+
+  if (state === 'hidden') {
+    target.el.classList.add('hidden');
+    target.el.classList.remove('is-done');
+    return;
+  }
+
+  target.el.classList.remove('hidden');
+  if (state === 'done') {
+    target.el.classList.add('is-done');
+    if (iconEl) iconEl.textContent = '✓';
+    if (textEl) textEl.textContent = `${target.label} 處理完成`;
+  } else {
+    target.el.classList.remove('is-done');
+    if (iconEl) iconEl.textContent = '⏳';
+    if (textEl) textEl.textContent = `${target.label} 處理中...`;
+  }
+}
+
+function resetDesktopBatchStatusPanel() {
+  clearDesktopBatchTimers();
+  desktopBatchProgress.hasShownComplete = false;
+  if (desktopBatchStatusPanel) {
+    desktopBatchStatusPanel.classList.add('hidden');
+    desktopBatchStatusPanel.classList.remove('fade-out', 'is-complete-center');
+  }
+  if (desktopBatchRows) desktopBatchRows.classList.remove('hidden');
+  if (desktopBatchCompleteCard) desktopBatchCompleteCard.classList.add('hidden');
+  setDesktopRoleRowState('order', 'hidden');
+  setDesktopRoleRowState('receipt', 'hidden');
+  setDesktopRoleRowState('card', 'hidden');
+}
+
+function beginDesktopBatchProgress(files) {
+  if (document.body.classList.contains('is-mobile-mode') || !desktopBatchStatusPanel) return;
+  clearDesktopBatchTimers();
+
+  let hasPdf = false;
+  let imageCount = 0;
+  files.forEach(f => {
+    const ext = (f.name || '').split('.').pop().toLowerCase();
+    if (ext === 'pdf') hasPdf = true;
+    else if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) imageCount++;
+  });
+
+  if (!hasPdf && imageCount === 0) return;
+
+  const hasOrderLayer = layers.some(l => l.type === 'pdf_order' || l.docRole === 'order_sheet');
+  const hasReceiptLayer = layers.some(l => l.type === 'image' && (l.docRole === 'receipt' || l.isReceipt));
+  const cardLayers = layers.filter(l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard));
+  const hasCardLayer = cardLayers.length > 0;
+  const isCardDone = hasCardLayer && (cardLayers.some(c => c.hasBakedStamp) || layers.some(s => s.type === 'stamp'));
+
+  desktopBatchStatusPanel.classList.remove('hidden', 'fade-out', 'is-complete-center');
+  if (desktopBatchRows) desktopBatchRows.classList.remove('hidden');
+  if (desktopBatchCompleteCard) desktopBatchCompleteCard.classList.add('hidden');
+
+  if (hasPdf) {
+    setDesktopRoleRowState('order', 'processing');
+  } else if (hasOrderLayer) {
+    setDesktopRoleRowState('order', 'done');
+  } else {
+    setDesktopRoleRowState('order', 'hidden');
+  }
+
+  if (imageCount >= 2 && (hasPdf || hasOrderLayer)) {
+    setDesktopRoleRowState('receipt', 'processing');
+    setDesktopRoleRowState('card', 'processing');
+  } else {
+    setDesktopRoleRowState('receipt', hasReceiptLayer ? 'done' : 'hidden');
+    setDesktopRoleRowState('card', isCardDone ? 'done' : (hasCardLayer ? 'processing' : 'hidden'));
+  }
+}
+
+function markDesktopBatchRoleStatus(role, state) {
+  if (document.body.classList.contains('is-mobile-mode') || !desktopBatchStatusPanel) return;
+  clearDesktopBatchTimers();
+  desktopBatchStatusPanel.classList.remove('hidden', 'fade-out', 'is-complete-center');
+  if (desktopBatchRows) desktopBatchRows.classList.remove('hidden');
+  if (desktopBatchCompleteCard) desktopBatchCompleteCard.classList.add('hidden');
+  setDesktopRoleRowState(role, state);
+}
+
+function checkDesktopBatchCompletion(isBatchEnd = false) {
+  if (document.body.classList.contains('is-mobile-mode') || !desktopBatchStatusPanel) return;
+
+  const hasOrder = layers.some(l => l.type === 'pdf_order' || l.docRole === 'order_sheet');
+  const hasReceipt = layers.some(l => l.type === 'image' && (l.docRole === 'receipt' || l.isReceipt));
+  const cardLayers = layers.filter(l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard));
+  const hasCard = cardLayers.length > 0;
+  const isCardStamped = hasCard && (cardLayers.some(c => c.hasBakedStamp) || layers.some(s => s.type === 'stamp'));
+
+  if (!hasOrder || !hasReceipt || !hasCard) {
+    desktopBatchProgress.hasShownComplete = false;
+  }
+
+  if (hasOrder) setDesktopRoleRowState('order', 'done');
+  if (hasReceipt) setDesktopRoleRowState('receipt', 'done');
+  if (isCardStamped) setDesktopRoleRowState('card', 'done');
+
+  if (hasOrder && hasReceipt && isCardStamped) {
+    if (desktopBatchProgress.hasShownComplete) return;
+    desktopBatchProgress.hasShownComplete = true;
+    clearDesktopBatchTimers();
+
+    desktopBatchProgress.switchTimer = setTimeout(() => {
+      if (!desktopBatchStatusPanel || document.body.classList.contains('is-mobile-mode')) return;
+      if (desktopBatchRows) desktopBatchRows.classList.add('hidden');
+      if (desktopBatchCompleteCard) desktopBatchCompleteCard.classList.remove('hidden');
+      desktopBatchStatusPanel.classList.remove('hidden', 'fade-out');
+      desktopBatchStatusPanel.classList.add('is-complete-center');
+
+      desktopBatchProgress.fadeTimer = setTimeout(() => {
+        if (!desktopBatchStatusPanel) return;
+        desktopBatchStatusPanel.classList.add('fade-out');
+        desktopBatchProgress.hideTimer = setTimeout(() => {
+          resetDesktopBatchStatusPanel();
+          desktopBatchProgress.hasShownComplete = true;
+        }, 380);
+      }, 1500);
+    }, 260);
+    return;
+  }
+
+  if (isBatchEnd) {
+    const waitingCardDate = hasCard && !isCardStamped && typeof pendingStampDateWaiter !== 'undefined' && !!pendingStampDateWaiter;
+    if (!waitingCardDate) {
+      clearDesktopBatchTimers();
+      desktopBatchProgress.fadeTimer = setTimeout(() => {
+        if (!desktopBatchStatusPanel) return;
+        desktopBatchStatusPanel.classList.add('fade-out');
+        desktopBatchProgress.hideTimer = setTimeout(() => {
+          if (desktopBatchStatusPanel) desktopBatchStatusPanel.classList.add('hidden');
+        }, 380);
+      }, 950);
+    }
+  }
+}
+
 // --- 檔案匯入處理 (純前端解析；第一時間轉靜態陣列快照防手機多選參考釋放) ---
 async function handleFiles(fileList) {
   const files = Array.from(fileList || []);
   if (files.length === 0) return;
+
+  beginDesktopBatchProgress(files);
 
   let hasImageFile = false;
   for (let i = 0; i < files.length; i++) {
@@ -2888,6 +3069,8 @@ async function handleFiles(fileList) {
       showToast(`不支援的檔案格式: ${file.name}`);
     }
   }
+
+  checkDesktopBatchCompletion(true);
 
   if (document.body.classList.contains('is-mobile-mode')) {
     if (typeof getMobileEditingStampLayer === 'function' && !getMobileEditingStampLayer()) {
@@ -3655,6 +3838,7 @@ async function importPdfPureFrontend(file) {
     if (typeof autoArrangeWorkbenchLayout === 'function') {
       autoArrangeWorkbenchLayout(false);
     }
+    markDesktopBatchRoleStatus('order', 'done');
     const giftNote = purifiedRes.removedGiftCount > 0 ? `（已自動略過 ${purifiedRes.removedGiftCount} 筆贈品列）` : '';
     showToast(`PDF 訂購單已完成去敏精簡與 6.0x 置頂滿版進場${giftNote}`);
   } catch (err) {
@@ -3739,6 +3923,10 @@ function importImagePureFrontend(file) {
         const isReceiptImg = docRole === 'receipt';
         const isOrderSheetImg = docRole === 'order_sheet';
         const isWarrantyCandidate = docRole === 'warranty_card';
+
+        if (isReceiptImg) markDesktopBatchRoleStatus('receipt', 'processing');
+        else if (isOrderSheetImg) markDesktopBatchRoleStatus('order', 'processing');
+        else if (isWarrantyCandidate) markDesktopBatchRoleStatus('card', 'processing');
 
         let trimmedCanvas = null;
         let activeImg = img;
@@ -3943,6 +4131,14 @@ function importImagePureFrontend(file) {
 
         if (typeof updateMobileWorkflowBadges === 'function') {
           updateMobileWorkflowBadges();
+        }
+
+        if (isReceiptImg) {
+          markDesktopBatchRoleStatus('receipt', 'done');
+        } else if (isOrderSheetImg) {
+          markDesktopBatchRoleStatus('order', 'done');
+        } else if (isWarrantyCandidate && (newLayer.hasBakedStamp || !autoSmartEnabled)) {
+          markDesktopBatchRoleStatus('card', 'done');
         }
 
         if (newLayer.hasBakedStamp) {
@@ -5527,6 +5723,7 @@ function clearWorkbenchSession(forceConfirm = true) {
   if (inputCardSerial) inputCardSerial.value = '';
   if (typeof exitMobileEditMode === 'function') exitMobileEditMode(true);
   if (typeof resetMobileCompletionOverlayState === 'function') resetMobileCompletionOverlayState();
+  if (typeof resetDesktopBatchStatusPanel === 'function') resetDesktopBatchStatusPanel();
   setActiveLayer(null);
   if (typeof updateMobileWorkflowBadges === 'function') updateMobileWorkflowBadges();
   if (document.body.classList.contains('is-mobile-mode')) fitCanvasToViewport();
@@ -7168,6 +7365,12 @@ async function autoStampWarrantyCard(targetLayer = null) {
       } else {
         render();
       }
+      if (typeof markDesktopBatchRoleStatus === 'function') {
+        markDesktopBatchRoleStatus('card', 'done');
+      }
+      if (typeof checkDesktopBatchCompletion === 'function') {
+        checkDesktopBatchCompletion(false);
+      }
       const lightingNote = baked.lighting && baked.lighting.avgL < 190 ? ` · 暗部油墨融合 L=${baked.lighting.avgL}` : '';
       showToast(`已於保卡合成專櫃印章 (${dateStr}${lightingNote})`);
       return;
@@ -7325,6 +7528,12 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
       cardLayer.bakedStampMeta = { dateStr, fontSize, offsetY, stampSpec };
       updateLayersListUI();
       render();
+      if (typeof markDesktopBatchRoleStatus === 'function') {
+        markDesktopBatchRoleStatus('card', 'done');
+      }
+      if (typeof checkDesktopBatchCompletion === 'function') {
+        checkDesktopBatchCompletion(false);
+      }
       if (document.body.classList.contains('is-mobile-mode')) {
         requestAnimationFrame(() => {
           if (typeof getMobileEditingStampLayer === 'function' && !getMobileEditingStampLayer()) {

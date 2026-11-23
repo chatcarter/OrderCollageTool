@@ -1000,6 +1000,98 @@ input:checked + .switch-slider:before {
   color: #f0fdf4;
 }
 
+/* 電腦版三件組即時進度狀態列 ＋ 合併製作完成大字提示 (v45: 純 CSS 零耗能切換) */
+.desktop-batch-status-panel {
+  position: fixed;
+  top: 108px;
+  left: 36%;
+  transform: translateX(-50%);
+  z-index: 450;
+  pointer-events: none !important;
+  user-select: none !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  transition: opacity 0.35s ease;
+}
+
+.desktop-batch-status-panel.hidden,
+body.is-mobile-mode .desktop-batch-status-panel {
+  display: none !important;
+}
+
+.desktop-batch-status-panel.fade-out {
+  opacity: 0;
+}
+
+.desktop-batch-status-panel.is-complete-center {
+  top: 50%;
+  left: 36%;
+  transform: translate(-50%, -50%);
+}
+
+.batch-status-rows {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 10px 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.batch-status-rows.hidden {
+  display: none !important;
+}
+
+.batch-status-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1.5px solid #93c5fd;
+  white-space: nowrap;
+}
+
+.batch-status-row.hidden {
+  display: none !important;
+}
+
+.batch-status-row.is-done {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #22c55e;
+}
+
+.batch-status-complete {
+  background: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  border: 2px solid #22c55e;
+  border-radius: 16px;
+  padding: 18px 38px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.28);
+  white-space: nowrap;
+}
+
+.batch-status-complete.hidden {
+  display: none !important;
+}
+
 /* 保卡印章民國年日期輸入對話框 (v34) */
 .stamp-date-modal-backdrop {
   position: fixed;

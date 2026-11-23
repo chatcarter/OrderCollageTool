@@ -53,6 +53,18 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 02:47:03] (第 45 版 / v45)
+- **執行項目**：**電腦版三件組即時進度狀態列 ＋ 合併製作完成大字提示（v45）** — 在不影響電腦版與手機端既有核心效能的前提下，以純 CSS 類別切換（零 `setInterval`、零動畫迴圈、零 `backdrop-filter`）實作電腦版三件組即時進度面板，並於訂單、發票、保卡全數處理並排版蓋章完成時呈現穿透式 `🎉 合併製作完成` 大字提示。
+- **具體進度**：
+  1. **版本徽章更新與靜態資源防快取（`v45`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner` 及 `.mobile-ver-badge` 為 `v45 (2026.11.24)`，並將資源參數更新為 `style.css?v=45`、`card_templates.js?v=45` 與 `app.js?v=45`。
+  2. **電腦版三件組純 CSS 即時進度面板（`#desktopBatchStatusPanel`）**：
+     - 於雙份 HTML `#canvasViewport` 內新增 `#desktopBatchStatusPanel`（僅電腦版顯示、`.is-mobile-mode` 自動完全隱藏），包含 `訂單 處理中...`、`發票 處理中...`、`保卡 處理中...` 三條放大清晰（`16px` 粗體）狀態列。
+     - 一次拖入三件組時透過 `beginDesktopBatchProgress()` 瞬間同步點亮三條狀態列，各別完成時透過 `markDesktopBatchRoleStatus()` 即時轉為綠色 `✓ ... 處理完成`，全程僅靠純 CSS 類別（`.is-done` / `.hidden`）切換，辨識結束立即 `display: none` 釋放零佔用。
+  3. **三樣全數完成穿透式「🎉 合併製作完成」大字提示**：
+     - 透過 `checkDesktopBatchCompletion()` 偵測當電腦版「訂單 ＋ 發票 ＋ 已蓋章保卡」皆轉為完成並重繪後，切換為中央醒目大字（`28px`）之 `#desktopBatchCompleteCard`（`🎉 合併製作完成`），設定 `pointer-events: none; user-select: none;` 不阻斷滑鼠任何操作，停留 `1.5s` 後平滑淡出（`0.35s`）並自動隱藏。
+  4. 建立 `_backup/20261124_024457/` 備份，通過 `HTML_SYNC_OK=True`、JS 語法平衡 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 02:35:45] (第 44 版 / v44)
 - **執行項目**：**訂購單紫線安全裁切 ＋ 紅框純白挖空 ＋ 鎖定圖紙與保卡發票原始比例（v44）** — 完整保留 v43 去敏遮白（隱藏 `頁次`、`製表日期`、`訂單單號` 及 `專櫃名稱:宏匯`）與黑名單贈品過濾收合，改以「注意：...。」與「總金額(含稅):...」安全右緣作為垂直裁切線（紫線），純白挖空右側三欄明細區（紅框），並鎖定下方保卡 70%＋發票 27% 及 5 行文字原始比例絕不縮小。
 - **具體進度**：

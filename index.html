@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="static/style.css?v=44">
+  <link rel="stylesheet" href="static/style.css?v=45">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36/v38: 電腦「...」/ 盲打時間；手機三連擊 / 數字鍵盤) -->
@@ -39,7 +39,7 @@
   <div id="mobileTopBar" class="mobile-top-bar">
     <div class="mobile-top-left">
       <span class="mobile-top-title">拼貼工作台</span>
-      <span class="version-badge mobile-ver-badge">v44 (2026.11.24)</span>
+      <span class="version-badge mobile-ver-badge">v45 (2026.11.24)</span>
     </div>
     <div class="mobile-progress-badges" id="mobileProgressBadges">
       <span class="mobile-step-badge" id="mBadgeOrder">訂購單</span>
@@ -71,7 +71,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v44 (2026.11.24)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v45 (2026.11.24)</span>
     </div>
 
     <div class="header-actions">
@@ -131,6 +131,26 @@
       <!-- Canvas Viewport -->
       <div class="canvas-viewport" id="canvasViewport">
         <div id="canvasOcrStatusPill" class="canvas-ocr-pill hidden"></div>
+        <!-- 電腦版三件組即時進度面板 (v45: 純 CSS 零耗能切換，pointer-events: none) -->
+        <div id="desktopBatchStatusPanel" class="desktop-batch-status-panel hidden" aria-hidden="true">
+          <div class="batch-status-rows" id="desktopBatchRows">
+            <div class="batch-status-row hidden" id="desktopStatusOrder">
+              <span class="batch-status-icon">⏳</span>
+              <span class="batch-status-text">訂單 處理中...</span>
+            </div>
+            <div class="batch-status-row hidden" id="desktopStatusReceipt">
+              <span class="batch-status-icon">⏳</span>
+              <span class="batch-status-text">發票 處理中...</span>
+            </div>
+            <div class="batch-status-row hidden" id="desktopStatusCard">
+              <span class="batch-status-icon">⏳</span>
+              <span class="batch-status-text">保卡 處理中...</span>
+            </div>
+          </div>
+          <div class="batch-status-complete hidden" id="desktopBatchCompleteCard">
+            🎉 合併製作完成
+          </div>
+        </div>
         <div class="canvas-stage" id="canvasStage">
           <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="mainCanvas" width="3508" height="2480"></canvas>
@@ -153,10 +173,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v44) -->
+      <!-- 目前版本資訊橫幅 (v45) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v44 (2026.11.24)</span>
+        <span class="version-badge">v45 (2026.11.24)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -895,9 +915,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v44) -->
-  <script src="static/card_templates.js?v=44"></script>
-  <!-- 主互動程式碼 (v44) -->
-  <script src="static/app.js?v=44"></script>
+  <!-- 品牌保卡智慧模板庫 (v45) -->
+  <script src="static/card_templates.js?v=45"></script>
+  <!-- 主互動程式碼 (v45) -->
+  <script src="static/app.js?v=45"></script>
 </body>
 </html>
