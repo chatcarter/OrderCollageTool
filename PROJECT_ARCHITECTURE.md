@@ -81,6 +81,13 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 23:17] (第 57 版 / v57)
+- **執行項目**：**單點鎖定三菱保證書 `mitsubishi_tw` 印章垂直座標（`centerY: 0.788`、底緣弧線切齊底部黑外框線）** — 嚴格凍結 `static/app.js`（v56 互動印章與 `🔄 重新讀取`）、`05-calculator.js`、`08-ui-desktop.js` 以及 Panasonic、LG 與三菱 OCR 核心，僅調整三菱印章 Y 軸對位。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_231710/` 備份，雙份 HTML 升級為 `v57 (2026.11.24)` 與 `?v=57`。
+  2. **垂直底線對位（`static/card_templates.js`）**：保持 `centerX: 0.218`、`widthRatio: 0.285` 不變，將 `MITSUBISHI_TW_STAMP_SPEC.centerY` 更新至 **`0.788`**，並讓 `detectMitsubishiDealerStampSpec()` 直接以 `bottomLineNorm - estStampHNorm * 0.5`（夾限 `[0.775, 0.802]`）使印章底緣弧線最低點切齊底部黑色水平外框線。
+  3. **驗證與推送**：通過 HTML 雙份雜湊一致、`CRLF`、`JS_BALANCE`（`errors=0`）檢查並推送至 `origin/main`。
+
 ### [2026-11-24 23:06] (第 56 版 / v56)
 - **執行項目**：**互動式印章圖層升級、頂部極簡工具列＋`🔄 重新讀取` ＋ 三菱印章右移 2mm（v56）** — 嚴格凍結 Panasonic 與 LG `lg_tw` 已封版核心，將保卡自動蓋章全面升級為不破壞底圖的互動式 `Multiply` 獨立印章圖層，新增原始檔案快照池與頂部一鍵重新讀取功能。
 - **具體進度**：

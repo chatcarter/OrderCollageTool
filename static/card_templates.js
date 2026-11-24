@@ -184,7 +184,7 @@
    */
   const MITSUBISHI_TW_STAMP_SPEC = Object.freeze({
     centerX: 0.218,
-    centerY: 0.765,
+    centerY: 0.788,
     widthRatio: 0.285,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
@@ -3700,33 +3700,17 @@
       stampWidthRatio = fallbackSpec.widthRatio;
     }
 
-    // 垂直落點：頂端拱頂貼齊「購買日期：年」下方橫線、底弧貼齊最底緣外框線、中央日期框對齊左側「電話：」一列（保底 0.765）
+    // v57 垂直落點單點鎖定：保持 horizontal centerX / widthRatio 不變，直接將印章底緣弧線最低點切齊表格最底部黑色水平外框線（保底 0.788，夾限 [0.775, 0.802]）
     const estStampHNorm = (stampWidthRatio * cw / 1.2806) / ch;
-    const topLineNorm = (purchaseBottomNorm !== null)
-      ? purchaseBottomNorm
-      : (typeof anchors.purchaseBottomY === 'number' ? anchors.purchaseBottomY + 0.006 : 0.648);
-    const bottomLineNorm = (tableBottomNorm !== null) ? Math.max(0.84, tableBottomNorm) : 0.882;
-    const cellMidY = (topLineNorm + bottomLineNorm) * 0.5;
-    const phoneY = (typeof anchors.phoneCenterY === 'number' && anchors.phoneCenterY >= 0.70 && anchors.phoneCenterY <= 0.82)
-      ? anchors.phoneCenterY
-      : null;
-
-    let stampCenterY = phoneY !== null ? (phoneY * 0.55 + cellMidY * 0.45) : cellMidY;
-    const minSafeCenterY = topLineNorm + estStampHNorm * 0.5 - 0.002;
-    const maxSafeCenterY = bottomLineNorm - estStampHNorm * 0.5 + 0.003;
-    if (minSafeCenterY <= maxSafeCenterY) {
-      stampCenterY = Math.max(minSafeCenterY, Math.min(maxSafeCenterY, stampCenterY));
-    } else {
-      stampCenterY = (minSafeCenterY + maxSafeCenterY) * 0.5;
-    }
-
-    if (purchaseBottomNorm === null && tableBottomNorm === null && phoneY === null) {
-      stampCenterY = fallbackSpec.centerY;
+    let stampCenterY = fallbackSpec.centerY;
+    if (tableBottomNorm !== null) {
+      const bottomLineNorm = Math.max(0.84, tableBottomNorm);
+      stampCenterY = bottomLineNorm - estStampHNorm * 0.5;
     }
 
     return {
       centerX: Number(Math.max(0.195, Math.min(0.245, stampCenterX)).toFixed(4)),
-      centerY: Number(Math.max(0.720, Math.min(0.805, stampCenterY)).toFixed(4)),
+      centerY: Number(Math.max(0.775, Math.min(0.802, stampCenterY)).toFixed(4)),
       widthRatio: Number(stampWidthRatio.toFixed(4)),
       tiltRangeDeg: 1.5,
       blendMode: 'multiply'
