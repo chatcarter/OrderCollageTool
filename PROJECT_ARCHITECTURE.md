@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 23:27] (第 58 版 / v58)
+- **執行項目**：**升級三菱電機保證書 `mitsubishi_tw` 四綠框十字定位機型精準辨識（v58）** — 嚴格凍結 v57 三菱印章座標（`centerX: 0.218`, `centerY: 0.788`, `widthRatio: 0.285`）、v56 互動式印章與「🔄 重新讀取」快照池、以及 Panasonic 與 LG 已封版核心。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_232452/` 備份，雙份 HTML 升級為 `v58 (2026.11.24)` 與 `?v=58`。
+  2. **四綠框十字避讓與 `4.0x` 點陣補點（`static/card_templates.js`、`static/app.js`）**：收緊 `ocrRegions.model` 至 `x: 0.112, y: 0.158, w: 0.130, h: 0.058`，新增 `detectMitsubishiModelTableBounds()` 與 `createMitsubishiDotMatrixOcrCropCanvas()`，實現表格框線 `3px` 內縮切除、`4.0x` 放大、對比拉伸與 `3x3` 暗像素筆畫連通補點。
+  3. **型號防呆與交叉校正（`static/card_templates.js`、`static/app.js`）**：升級 `filterMitsubishiModelResult()` 校準 `MR-`/`MJ-`/`MSZ-`/`MUZ-` 前綴、容量數字區與 `-W-C` 尾碼，並於 `runMitsubishiCardTargetedOcr()` 加入訂購單模糊前綴補強比對與強制寫回。
+  4. **驗證與推送**：通過 HTML 雙份雜湊一致、`CRLF`、雙 JS 語法檢查（`errors=0`）並推送至 `origin/main`。
+
 ### [2026-11-24 23:17] (第 57 版 / v57)
 - **執行項目**：**單點鎖定三菱保證書 `mitsubishi_tw` 印章垂直座標（`centerY: 0.788`、底緣弧線切齊底部黑外框線）** — 嚴格凍結 `static/app.js`（v56 互動印章與 `🔄 重新讀取`）、`05-calculator.js`、`08-ui-desktop.js` 以及 Panasonic、LG 與三菱 OCR 核心，僅調整三菱印章 Y 軸對位。
 - **具體進度**：

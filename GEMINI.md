@@ -53,6 +53,19 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 23:27] (第 58 版 / v58)
+- **執行項目**：**升級台灣三菱電機保證書 `mitsubishi_tw`「四綠框十字定位」機型精準辨識（v58）** — 嚴格鎖死 v57 已封版的三菱印章座標（`centerX: 0.218`, `centerY: 0.788`, `widthRatio: 0.285`）、v56 互動式可拖曳印章、「🔄 重新讀取」快照池、以及已封版 Panasonic 國際牌與 LG `lg_tw` 所有核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v58`）**：
+     - 建立 `_backup/20261124_232452/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v58 (2026.11.24)` 與 `?v=58`。
+  2. **四綠框十字定位純淨裁切（`static/card_templates.js`、`static/app.js`）**：
+     - 收緊 `MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.model` 預設區至 `x: 0.112, y: 0.158, w: 0.130, h: 0.058`。
+     - 新增 `detectMitsubishiModelTableBounds()` 與升級 `runMitsubishiCardTargetedOcr()`：鎖定上「`三菱`」、左「`機型：`」、右「`製造號碼：`」、下「`姓名：`」四向地標避讓，偵測上下水平框線與中柱垂直分隔線各向內內縮 `3px` 徹底切除黑色框線與中文字干擾。
+  3. **`4.0x` 點陣針式字體強化與型號結構防呆（`static/card_templates.js`、`static/app.js`）**：
+     - 新增 `createMitsubishiDotMatrixOcrCropCanvas()`：切邊後進行 `4.0x` 放大、對比度百分比拉伸、自適應二值化及 `3x3` 暗像素鄰域筆畫連通補點，以 `psm = 7` ＋ 純英數連字號白名單辨識。
+     - 升級 `filterMitsubishiModelResult()` 校準台灣三菱家電標準前綴（`MR-`/`MJ-`/`MSZ-`/`MUZ-` 與缺連字號修補）、容量數字誤讀校正（`G/b->6`, `I/L->1`, `O/D/Q->0`, `S->5`, `Z->2`, `B->8`）與末端色碼字母保護（如 `-W-C`），並強化訂購單交叉模糊前綴比對與強制寫回左下 5 行大字。
+  4. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、全修改檔 `LF-only=0`（`CRLF`）、雙 JS 檔案語法檢查（`errors=0`）並推送至 `origin/main`。
+
 ### [2026-11-24 23:17] (第 57 版 / v57)
 - **執行項目**：**單點鎖定台灣三菱電機保證書 `mitsubishi_tw` 印章垂直座標（`centerY: 0.788`、底緣弧線最低點切齊表格最底部黑色外框線）** — 嚴格保留 v56 互動式印章圖層、`🔄 重新讀取`、極簡工具列、`centerX: 0.218`、`widthRatio: 0.285`、三菱文字辨識及已封版之 Panasonic 與 LG `lg_tw` 所有核心邏輯。
 - **具體進度**：

@@ -7948,6 +7948,8 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
       let crossVerifiedNote = '';
       let modelLabelBox = null;
       let serialLabelBox = null;
+      let brandHeaderBox = null;
+      let nameLabelBox = null;
 
       let chiEngWorker = null;
       try {
@@ -7956,7 +7958,7 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
         console.warn('共用中英 Worker 初始化受限:', wErr2);
       }
 
-      // 1. 掃描上方「機型」與「製造號碼」欄位區塊取得文字錨點與備援文字
+      // 1. 掃描上方「三菱 / 機型： / 製造號碼： / 姓名：」四綠框十字包圍網地標取得文字錨點
       const topRegion = (tpl.ocrRegions && tpl.ocrRegions.topFormBlock)
         ? tpl.ocrRegions.topFormBlock
         : { x: 0.025, y: 0.125, w: 0.620, h: 0.130 };
@@ -7990,28 +7992,52 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
         for (let i = 0; i < topItems.length; i++) {
           const item = topItems[i];
           const compact = item.text.replace(/\s+/g, '');
-          if (!modelLabelBox && item.x0 <= 0.16 && item.x1 <= 0.22 && (/機型|MODEL/i.test(compact) || compact === '型')) {
+          if (!brandHeaderBox && item.x0 <= 0.25 && item.y1 <= 0.172 && /三菱|MITSUBISHI/i.test(compact)) {
+            brandHeaderBox = item;
+          }
+          if (!modelLabelBox && item.x0 <= 0.145 && item.x1 <= 0.18 && item.y0 >= 0.135 && item.y1 <= 0.235 && (/機型|MODEL/i.test(compact) || compact === '型')) {
             modelLabelBox = item;
           }
-          if (!serialLabelBox && item.x0 >= 0.22 && item.x1 <= 0.42 && (/製造號碼|製造|號碼|SERIAL/i.test(compact) || compact === '碼')) {
+          if (!serialLabelBox && item.x0 >= 0.22 && item.x1 <= 0.42 && item.y0 >= 0.135 && item.y1 <= 0.235 && (/製造號碼|製造|號碼|SERIAL/i.test(compact) || compact === '碼')) {
             serialLabelBox = item;
+          }
+          if (!nameLabelBox && item.x0 <= 0.20 && item.y0 >= 0.195 && (/姓名|名|NAME/i.test(compact))) {
+            nameLabelBox = item;
           }
         }
       }
 
-      // 2. 局部 3.0x 自適應二值化單行專項辨識（機型 MR-JX61N-W-C / 製造號碼 600067）
+      // 2. 四綠框十字避讓（左：「機型：」後、右：「製造號碼：」中柱線前內縮 3px、上：「三菱」橫線下 3px、下：「姓名：」橫線上 3px）＋ 4.0x 點陣筆畫補點專項 OCR
+      const dotMatrixCropFn = window.CardTemplates.createMitsubishiDotMatrixOcrCropCanvas || window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas;
       const cropFn = window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas || window.CardTemplates.createEnhancedOcrCropCanvas;
-      if (cropFn) {
-        const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model) || { x: 0.090, y: 0.140, w: 0.185, h: 0.095 };
+      if (dotMatrixCropFn || cropFn) {
+        const baseModelReg = (tpl.ocrRegions && tpl.ocrRegions.model) || { x: 0.112, y: 0.158, w: 0.130, h: 0.058 };
+        const defaultModelReg = window.CardTemplates.detectMitsubishiModelTableBounds
+          ? window.CardTemplates.detectMitsubishiModelTableBounds(srcCanvas, baseModelReg)
+          : baseModelReg;
         const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial) || { x: 0.340, y: 0.140, w: 0.195, h: 0.095 };
 
         const anchorModelRoi = (modelLabelBox && modelLabelBox.x1 <= 0.16)
           ? (() => {
-              const rx = Math.max(0.065, modelLabelBox.x1 - 0.004);
-              const rxEnd = serialLabelBox ? Math.max(rx + 0.14, serialLabelBox.x0 - 0.008) : Math.min(0.32, rx + 0.20);
-              const ry = Math.max(0.115, modelLabelBox.y0 - 0.018);
-              const rh = Math.min(0.105, Math.max(0.060, (modelLabelBox.y1 - modelLabelBox.y0) + 0.036));
-              return { x: rx, y: ry, w: Math.max(0.13, rxEnd - rx), h: rh };
+              const rx = Math.max(0.105, modelLabelBox.x1 + 0.004);
+              const rxEnd = serialLabelBox
+                ? Math.max(rx + 0.105, Math.min(0.252, serialLabelBox.x0 - 0.012))
+                : 0.242;
+              const ry = brandHeaderBox
+                ? Math.max(0.150, brandHeaderBox.y1 + 0.004)
+                : Math.max(0.152, modelLabelBox.y0 - 0.006);
+              const rb = nameLabelBox
+                ? Math.min(0.220, Math.max(ry + 0.044, nameLabelBox.y0 - 0.004))
+                : Math.min(0.218, Math.max(ry + 0.044, modelLabelBox.y1 + 0.008));
+              const rawRoi = {
+                x: rx,
+                y: ry,
+                w: Math.max(0.105, rxEnd - rx),
+                h: Math.max(0.042, rb - ry)
+              };
+              return window.CardTemplates.detectMitsubishiModelTableBounds
+                ? window.CardTemplates.detectMitsubishiModelTableBounds(srcCanvas, rawRoi)
+                : rawRoi;
             })()
           : null;
 
@@ -8026,12 +8052,20 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
           : null;
 
         const modelRois = anchorModelRoi ? [anchorModelRoi, defaultModelReg] : [defaultModelReg];
+        const scoreMitsuModel = m => {
+          if (!m) return 0;
+          let s = 1;
+          if (/^(?:MR|MJ|MSZ|MUZ)-/.test(m)) s += 50;
+          if (/^(?:MR|MJ|MSZ|MUZ)-[A-Z]{1,3}\d{2,3}[A-Z]?(?:-[A-Z0-9]{1,3}){1,3}$/.test(m)) s += 30;
+          if (/\d{2,3}/.test(m)) s += 10;
+          return s;
+        };
+        let bestModelScore = 0;
+
         for (let i = 0; i < modelRois.length; i++) {
-          const mCrop = cropFn(srcCanvas, modelRois[i], 3.0, {
-            despeckle: true,
-            stripDottedUnderline: true,
-            stripBottomDotBand: false
-          });
+          const mCrop = dotMatrixCropFn
+            ? dotMatrixCropFn(srcCanvas, modelRois[i], 4.0, { trimTableBorders: true })
+            : cropFn(srcCanvas, modelRois[i], 4.0, { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false });
           let rawM = '';
           if (worker) {
             await worker.setParameters({
@@ -8046,9 +8080,11 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
           }
           if (rawM && window.CardTemplates.filterMitsubishiModelResult) {
             const parsedM = window.CardTemplates.filterMitsubishiModelResult(rawM);
-            if (parsedM) {
+            const sc = scoreMitsuModel(parsedM);
+            if (parsedM && sc > bestModelScore) {
+              bestModelScore = sc;
               modelClean = parsedM;
-              break;
+              if (sc >= 90) break;
             }
           }
         }
@@ -8147,19 +8183,47 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
         }
       }
 
-      // 4. 訂購單品名型號交叉比對校正
-      if (
-        modelClean &&
-        Array.isArray(cachedOrderItemModels) &&
-        cachedOrderItemModels.length > 0 &&
-        window.CardTemplates.crossVerifyModelWithOrderSheet
-      ) {
-        const cv = window.CardTemplates.crossVerifyModelWithOrderSheet(modelClean, cachedOrderItemModels, 'MITSUBISHI');
-        if (cv && cv.corrected && cv.model) {
-          crossVerifiedNote = `（已依訂購單交叉校正：${modelClean} ➔ ${cv.model}）`;
-          modelClean = cv.model;
-        } else if (cv && cv.similarity >= 0.65 && cv.model === modelClean) {
-          crossVerifiedNote = '（已與訂購單 100% 核對無誤）';
+      // 4. 訂購單品名型號交叉比對校正（優先比對三菱品牌條目；若缺前綴或僅讀出數字段亦執行模糊前綴匹配）
+      if (Array.isArray(cachedOrderItemModels) && cachedOrderItemModels.length > 0) {
+        if (modelClean && window.CardTemplates.crossVerifyModelWithOrderSheet) {
+          const cv = window.CardTemplates.crossVerifyModelWithOrderSheet(modelClean, cachedOrderItemModels, 'MITSUBISHI');
+          if (cv && cv.corrected && cv.model) {
+            crossVerifiedNote = `（已依訂購單交叉校正：${modelClean} ➔ ${cv.model}）`;
+            modelClean = cv.model;
+          } else if (cv && cv.similarity >= 0.65 && cv.model === modelClean) {
+            crossVerifiedNote = '（已與訂購單 100% 核對無誤）';
+          }
+        }
+        if (!crossVerifiedNote) {
+          const mitsuOrderPool = cachedOrderItemModels.filter(item =>
+            item && item.model && (
+              (item.brand && item.brand.toUpperCase().includes('MITSUBISHI')) ||
+              /^(?:MR|MJ|MSZ|MUZ)-/i.test(item.model.trim())
+            )
+          );
+          if (mitsuOrderPool.length > 0) {
+            const normClean = (modelClean || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanDigits = normClean.match(/\d{2,3}/);
+            let fuzzyMatched = null;
+            if (normClean) {
+              fuzzyMatched = mitsuOrderPool.find(item => {
+                const stdNorm = item.model.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (stdNorm.includes(normClean) || normClean.includes(stdNorm)) return true;
+                if (cleanDigits && stdNorm.includes(cleanDigits[0]) && stdNorm.slice(0, 2) === normClean.slice(0, 2)) return true;
+                if (cleanDigits && cleanDigits[0].length >= 2 && stdNorm.includes(cleanDigits[0]) && mitsuOrderPool.length === 1) return true;
+                return false;
+              });
+            } else if (mitsuOrderPool.length === 1) {
+              fuzzyMatched = mitsuOrderPool[0];
+            }
+            if (fuzzyMatched && fuzzyMatched.model) {
+              const stdModel = fuzzyMatched.model.toUpperCase().trim();
+              crossVerifiedNote = modelClean
+                ? `（已依訂購單模糊前綴校正：${modelClean} ➔ ${stdModel}）`
+                : `（已由訂購單補齊三菱型號：${stdModel}）`;
+              modelClean = stdModel;
+            }
+          }
         }
       }
 

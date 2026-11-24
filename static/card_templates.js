@@ -196,7 +196,7 @@
     borderColorType: 'mitsubishi_white_dual_red',
     stampSpec: MITSUBISHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
-      model: Object.freeze({ label: '機型（三菱）', x: 0.090, y: 0.140, w: 0.185, h: 0.095 }),
+      model: Object.freeze({ label: '機型（三菱）', x: 0.112, y: 0.158, w: 0.130, h: 0.058 }),
       serial: Object.freeze({ label: '製造號碼（三菱）', x: 0.340, y: 0.140, w: 0.195, h: 0.095 }),
       topFormBlock: Object.freeze({ label: '三菱機型與製造號碼區', x: 0.025, y: 0.125, w: 0.620, h: 0.130 }),
       dealerStampZone: Object.freeze({ label: '三菱左下經銷商與電話錨點區', x: 0.015, y: 0.500, w: 0.480, h: 0.430 })
@@ -678,6 +678,312 @@
 
     for (let i = 0; i < total; i++) {
       const val = bin[i] ? 0 : 255;
+      const p = i * 4;
+      d[p] = val;
+      d[p + 1] = val;
+      d[p + 2] = val;
+      d[p + 3] = 255;
+    }
+
+    cCtx.putImageData(imgData, 0, 0);
+    return cropCanvas;
+  }
+
+  /**
+   * 台灣三菱電機保證書「四綠框十字包圍網」表格線避讓裁切 (v58)：
+   * 在基準框周邊偵測上水平框線、下水平框線及右側「製造號碼：」垂直中柱線，
+   * 各自向內內縮 3px 徹底切除黑色框線與中文字干擾，僅保留純白底針式英數區。
+   */
+  function detectMitsubishiModelTableBounds(srcCanvas, baseRect = null) {
+    const base = baseRect || { x: 0.112, y: 0.158, w: 0.130, h: 0.058 };
+    if (!srcCanvas || !srcCanvas.width || !srcCanvas.height) return { ...base };
+
+    const sw = srcCanvas.width;
+    const sh = srcCanvas.height;
+    const sLeft = Math.max(0, Math.round(Math.max(0.085, base.x - 0.018) * sw));
+    const sRight = Math.min(sw - 1, Math.round(Math.min(0.295, base.x + base.w + 0.035) * sw));
+    const sTop = Math.max(0, Math.round(Math.max(0.115, base.y - 0.032) * sh));
+    const sBot = Math.min(sh - 1, Math.round(Math.min(0.245, base.y + base.h + 0.032) * sh));
+    const rw = sRight - sLeft + 1;
+    const rh = sBot - sTop + 1;
+    if (rw < 30 || rh < 16) return { ...base };
+
+    const tmp = document.createElement('canvas');
+    tmp.width = rw;
+    tmp.height = rh;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(srcCanvas, sLeft, sTop, rw, rh, 0, 0, rw, rh);
+    const data = tCtx.getImageData(0, 0, rw, rh).data;
+
+    const lums = [];
+    for (let i = 0; i < rw * rh; i += 2) {
+      const p = i * 4;
+      lums.push(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+    }
+    lums.sort((a, b) => a - b);
+    const paperLum = lums[Math.floor(lums.length * 0.78)] || 225;
+    const lineThresh = Math.max(60, paperLum - 34);
+
+    // 水平線掃描（避開左側「機型：」區域，僅檢查中間空白＋數值帶）
+    const hx0 = Math.max(0, Math.round(0.115 * sw) - sLeft);
+    const hx1 = Math.min(rw - 1, Math.round(0.245 * sw) - sLeft);
+    const hSpan = Math.max(10, hx1 - hx0 + 1);
+    const rowDark = new Int32Array(rh);
+    for (let y = 0; y < rh; y++) {
+      let cnt = 0;
+      for (let x = hx0; x <= hx1; x++) {
+        const p = (y * rw + x) * 4;
+        if (0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2] < lineThresh) cnt++;
+      }
+      rowDark[y] = cnt;
+    }
+
+    const baseTopRel = Math.round(base.y * sh) - sTop;
+    const baseBotRel = Math.round((base.y + base.h) * sh) - sTop;
+    let finalTop = Math.round(base.y * sh);
+    let finalBot = Math.round((base.y + base.h) * sh);
+
+    for (let y = Math.max(0, baseTopRel - Math.round(0.028 * sh)); y <= Math.min(rh - 1, baseTopRel + Math.round(0.015 * sh)); y++) {
+      if (rowDark[y] >= hSpan * 0.45) {
+        finalTop = sTop + y + 3;
+      }
+    }
+    for (let y = Math.min(rh - 1, baseBotRel + Math.round(0.025 * sh)); y >= Math.max(0, baseBotRel - Math.round(0.015 * sh)); y--) {
+      if (rowDark[y] >= hSpan * 0.45) {
+        finalBot = sTop + y - 3;
+      }
+    }
+
+    // 垂直中柱線掃描（位於「製造號碼：」左側約 0.220 ~ 0.280）
+    let finalRight = Math.round((base.x + base.w) * sw);
+    const vy0 = Math.max(0, (finalTop - sTop) - 4);
+    const vy1 = Math.min(rh - 1, (finalBot - sTop) + 4);
+    const vSpan = Math.max(8, vy1 - vy0 + 1);
+    const vxStart = Math.max(0, Math.round(0.215 * sw) - sLeft);
+    const vxEnd = Math.min(rw - 1, Math.round(0.285 * sw) - sLeft);
+    for (let x = vxStart; x <= vxEnd; x++) {
+      let cnt = 0;
+      for (let y = vy0; y <= vy1; y++) {
+        const p = (y * rw + x) * 4;
+        if (0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2] < lineThresh) cnt++;
+      }
+      if (cnt >= vSpan * 0.55) {
+        finalRight = sLeft + x - 3;
+        break;
+      }
+    }
+
+    const finalLeft = Math.max(Math.round(0.106 * sw), Math.round(base.x * sw));
+    if (finalRight - finalLeft < Math.round(0.08 * sw) || finalBot - finalTop < Math.round(0.032 * sh)) {
+      return { ...base };
+    }
+
+    return {
+      x: Number((finalLeft / sw).toFixed(4)),
+      y: Number((finalTop / sh).toFixed(4)),
+      w: Number(((finalRight - finalLeft) / sw).toFixed(4)),
+      h: Number(((finalBot - finalTop) / sh).toFixed(4))
+    };
+  }
+
+  /**
+   * 台灣三菱電機點陣針式列印字體專項 4.0x 強化管線 (v58)：
+   * 1. 切除四邊偶發殘留黑框線（向內內縮 3px）
+   * 2. 4.0x 高解析放大 ＋ 對比度百分比拉伸
+   * 3. 自適應二值化 ＋ 3x3 暗像素鄰域筆畫連通補點（將斷裂灰色墨點連成實線）＋ 去孤立噪點
+   */
+  function createMitsubishiDotMatrixOcrCropCanvas(srcCanvas, region, upscale = 4.0, options = {}) {
+    const sw = srcCanvas.width;
+    const sh = srcCanvas.height;
+    let rx = Math.max(0, Math.round(region.x * sw));
+    let ry = Math.max(0, Math.round(region.y * sh));
+    let rw = Math.max(10, Math.min(sw - rx, Math.round(region.w * sw)));
+    let rh = Math.max(10, Math.min(sh - ry, Math.round(region.h * sh)));
+
+    // 步驟 1：先檢查原始裁切區四邊是否有殘留連續黑框線，若有則內縮 3px 徹底切除
+    if (options.trimTableBorders !== false && rw >= 24 && rh >= 14) {
+      const preC = document.createElement('canvas');
+      preC.width = rw;
+      preC.height = rh;
+      const pCtx = preC.getContext('2d', { willReadFrequently: true });
+      pCtx.drawImage(srcCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+      const pd = pCtx.getImageData(0, 0, rw, rh).data;
+      const pLums = [];
+      for (let i = 0; i < rw * rh; i += 2) {
+        const p = i * 4;
+        pLums.push(0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2]);
+      }
+      pLums.sort((a, b) => a - b);
+      const bgL = pLums[Math.floor(pLums.length * 0.78)] || 222;
+      const borderT = Math.max(58, bgL - 32);
+
+      let trimT = 0, trimB = 0, trimL = 0, trimR = 0;
+      const maxHStrip = Math.min(8, Math.floor(rh * 0.22));
+      for (let y = 0; y < maxHStrip; y++) {
+        let cnt = 0;
+        for (let x = 0; x < rw; x++) {
+          const p = (y * rw + x) * 4;
+          if (0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2] < borderT) cnt++;
+        }
+        if (cnt >= rw * 0.55) trimT = y + 3;
+      }
+      for (let y = rh - 1; y >= Math.max(trimT + 10, rh - maxHStrip); y--) {
+        let cnt = 0;
+        for (let x = 0; x < rw; x++) {
+          const p = (y * rw + x) * 4;
+          if (0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2] < borderT) cnt++;
+        }
+        if (cnt >= rw * 0.55) trimB = (rh - y) + 2;
+      }
+      const maxWStrip = Math.min(8, Math.floor(rw * 0.14));
+      for (let x = 0; x < maxWStrip; x++) {
+        let cnt = 0;
+        for (let y = trimT; y < rh - trimB; y++) {
+          const p = (y * rw + x) * 4;
+          if (0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2] < borderT) cnt++;
+        }
+        if (cnt >= Math.max(4, (rh - trimT - trimB) * 0.62)) trimL = x + 3;
+      }
+      for (let x = rw - 1; x >= Math.max(trimL + 16, rw - maxWStrip); x--) {
+        let cnt = 0;
+        for (let y = trimT; y < rh - trimB; y++) {
+          const p = (y * rw + x) * 4;
+          if (0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2] < borderT) cnt++;
+        }
+        if (cnt >= Math.max(4, (rh - trimT - trimB) * 0.62)) trimR = (rw - x) + 2;
+      }
+
+      if (rw - trimL - trimR >= 20 && rh - trimT - trimB >= 12) {
+        rx += trimL;
+        ry += trimT;
+        rw -= (trimL + trimR);
+        rh -= (trimT + trimB);
+      }
+    }
+
+    // 步驟 2：4.0x 放大並進行對比度拉伸
+    const pad = 24;
+    const contentW = Math.max(32, Math.round(rw * upscale));
+    const contentH = Math.max(24, Math.round(rh * upscale));
+    const outW = contentW + pad * 2;
+    const outH = contentH + pad * 2;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = outW;
+    cropCanvas.height = outH;
+    const cCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    cCtx.fillStyle = '#FFFFFF';
+    cCtx.fillRect(0, 0, outW, outH);
+    cCtx.imageSmoothingEnabled = true;
+    cCtx.imageSmoothingQuality = 'high';
+    cCtx.drawImage(srcCanvas, rx, ry, rw, rh, pad, pad, contentW, contentH);
+
+    const imgData = cCtx.getImageData(0, 0, outW, outH);
+    const d = imgData.data;
+    const total = outW * outH;
+    const grays = new Uint8Array(total);
+    const innerSamples = [];
+    for (let y = pad; y < outH - pad; y++) {
+      for (let x = pad; x < outW - pad; x++) {
+        const i = y * outW + x;
+        const p = i * 4;
+        const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
+        grays[i] = g;
+        if (((x + y) & 1) === 0) innerSamples.push(g);
+      }
+    }
+    innerSamples.sort((a, b) => a - b);
+    const lo = innerSamples.length > 20 ? innerSamples[Math.floor(innerSamples.length * 0.02)] : 40;
+    const hi = innerSamples.length > 20 ? innerSamples[Math.floor(innerSamples.length * 0.80)] : 225;
+    const stretchSpan = Math.max(35, hi - lo);
+
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        const i = y * outW + x;
+        if (x < pad || x >= outW - pad || y < pad || y >= outH - pad) {
+          grays[i] = 255;
+        } else {
+          const p = i * 4;
+          const rawG = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+          grays[i] = Math.max(0, Math.min(255, Math.round(((rawG - lo) / stretchSpan) * 255)));
+        }
+      }
+    }
+
+    // 步驟 3：自適應積分圖二值化（專為較淡針式灰點調低門檻偏移至 -16）
+    const stride = outW + 1;
+    const integral = new Int32Array(stride * (outH + 1));
+    for (let y = 1; y <= outH; y++) {
+      let rowSum = 0;
+      const gRow = (y - 1) * outW;
+      const iRow = y * stride;
+      const prevRow = (y - 1) * stride;
+      for (let x = 1; x <= outW; x++) {
+        rowSum += grays[gRow + x - 1];
+        integral[iRow + x] = integral[prevRow + x] + rowSum;
+      }
+    }
+
+    const rad = Math.max(14, Math.min(58, Math.round(contentH * 0.28)));
+    const bin = new Uint8Array(total);
+    for (let y = pad; y < outH - pad; y++) {
+      const y0 = Math.max(pad, y - rad);
+      const y1 = Math.min(outH - pad - 1, y + rad);
+      const row0 = y0 * stride;
+      const row1 = (y1 + 1) * stride;
+      for (let x = pad; x < outW - pad; x++) {
+        const x0 = Math.max(pad, x - rad);
+        const x1 = Math.min(outW - pad - 1, x + rad);
+        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        const localMean = (integral[row1 + x1 + 1] - integral[row0 + x1 + 1] - integral[row1 + x0] + integral[row0 + x0]) / area;
+        const g = grays[y * outW + x];
+        bin[y * outW + x] = (g < localMean - 16 && g < 215) ? 1 : 0;
+      }
+    }
+
+    // 步驟 4：3x3 暗像素鄰域連通（閉運算／筆畫補點：將針式斷開墨點連成連續實線）
+    const bridged = new Uint8Array(bin);
+    for (let y = pad + 1; y < outH - pad - 1; y++) {
+      const row = y * outW;
+      for (let x = pad + 1; x < outW - pad - 1; x++) {
+        const idx = row + x;
+        if (bin[idx]) continue;
+        const l = bin[idx - 1];
+        const r = bin[idx + 1];
+        const u = bin[idx - outW];
+        const dn = bin[idx + outW];
+        const ul = bin[idx - outW - 1];
+        const ur = bin[idx - outW + 1];
+        const dl = bin[idx + outW - 1];
+        const dr = bin[idx + outW + 1];
+        const nb = l + r + u + dn + ul + ur + dl + dr;
+        if ((l && r) || (u && dn) || (ul && dr) || (ur && dl) || nb >= 4) {
+          bridged[idx] = 1;
+        }
+      }
+    }
+
+    // 輕量去除完全孤立之 1px 雜訊點
+    const finalBin = new Uint8Array(bridged);
+    for (let y = pad + 1; y < outH - pad - 1; y++) {
+      const row = y * outW;
+      for (let x = pad + 1; x < outW - pad - 1; x++) {
+        const idx = row + x;
+        if (!bridged[idx]) continue;
+        let nb = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const rOff = (y + dy) * outW;
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            if (bridged[rOff + x + dx]) nb++;
+          }
+        }
+        if (nb <= 1) finalBin[idx] = 0;
+      }
+    }
+
+    for (let i = 0; i < total; i++) {
+      const val = finalBin[i] ? 0 : 255;
       const p = i * 4;
       d[p] = val;
       d[p + 1] = val;
@@ -3719,48 +4025,117 @@
 
   function filterMitsubishiModelResult(rawText) {
     if (!rawText) return '';
-    const cleaned = String(rawText).toUpperCase()
-      .replace(/MHS[-\s]?\d{2}[-\s]?\d{5,8}/g, ' ')
+    const cleanedRaw = String(rawText)
+      .replace(/MHS[-\s]?\d{2}[-\s]?\d{5,8}/gi, ' ')
       .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
       .replace(/\(02\)\s*\d{4}[-\s]?\d{4}/g, ' ')
       .replace(/2728[-\s]?2288/g, ' ');
+    const cleaned = cleanedRaw.toUpperCase();
 
-    const normalizeMitsuModelToken = rawTok => {
-      let tok = (rawTok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    const mapNumericChar = ch => ({
+      O: '0', D: '0', Q: '0',
+      I: '1', L: '1', l: '1', i: '1',
+      Z: '2', z: '2',
+      S: '5', s: '5',
+      G: '6', b: '6',
+      B: '8'
+    }[ch] || ch.toUpperCase());
+
+    const mapTailAlphaChar = ch => ({
+      '0': 'O', '1': 'I', '2': 'Z', '5': 'S', '6': 'G', '8': 'B'
+    }[ch] || ch);
+
+    const repairPrefixAndHyphen = tok => {
+      let s = (tok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+      if (!s || /^MHS-?\d/.test(s)) return '';
+      // 修補常見前綴連字號漏字（如 MRJX61NWC -> MR-JX61N-W-C / MSZHT50NF -> MSZ-HT50NF）
+      s = s.replace(/^(MR|MJ|MSZ|MUZ)([A-Z][A-Z0-9]{2,})/, '$1-$2');
+      // 針式點陣前綴誤讀自動校準（如 NR/MP/MH/MN/MK -> MR-、NJ/MI/HJ -> MJ-、NSZ/M5Z/HSZ -> MSZ-、NUZ/MU2 -> MUZ-）
+      s = s.replace(/^(?:NR|MP|MH|MN|MB|MK|HR|WR|M8|MA|N1R)-?([A-Z][A-Z0-9]{2,})$/, 'MR-$1');
+      s = s.replace(/^(?:NJ|MI|HJ|M1)-?([EF][A-Z0-9]{2,})$/, 'MJ-$1');
+      s = s.replace(/^(?:NSZ|M5Z|MS2|H5Z|HSZ)-?([A-Z][A-Z0-9]{2,})$/, 'MSZ-$1');
+      s = s.replace(/^(?:NUZ|MU2|M0Z|HVZ)-?([A-Z][A-Z0-9]{2,})$/, 'MUZ-$1');
+      // 修正結尾連續未帶連字號的單字母色碼尾碼（僅限 MR- 系列如 MR-JX61NWC -> MR-JX61N-W-C）
+      s = s.replace(/^(MR-[A-Z]{1,3}\d{2,3}[A-Z])([A-Z])([A-Z])$/, '$1-$2-$3');
+      return s;
+    };
+
+    const normalizeMitsuModelToken = (rawTok, rawCaseTok = '') => {
+      let tok = repairPrefixAndHyphen(rawTok);
       if (!tok || /^MHS-?\d/.test(tok)) return '';
-      const mapDigit = ch => ({ O: '0', D: '0', Q: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
-      // 修正三菱型號數字區段中的字元混淆（如 MR-JXG1N-W-C -> MR-JX61N-W-C、MSZ-HT5ONF -> MSZ-HT50NF）
-      const mitsuMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{1,4})([A-Z0-9]{2,4})([A-Z]?(?:-[A-Z0-9]{1,3}){0,3})$/);
+      const rawCaseCompact = (rawCaseTok || '').replace(/[^A-Za-z0-9-]/g, '');
+
+      // 三菱結構拆分：<家族前綴>-<系列字母><容量數字><規格字母><末端連字號色碼/區域碼>
+      const mitsuMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{1,3})([A-Z0-9]{2,3})([A-Z]?)((?:-[A-Z0-9]{1,4}){0,3})$/);
       if (mitsuMatch) {
-        const fixedNum = mitsuMatch[2].split('').map(mapDigit).join('');
-        if (/^\d{2,4}$/.test(fixedNum)) {
-          tok = `${mitsuMatch[1]}${fixedNum}${mitsuMatch[3]}`;
+        let numRaw = mitsuMatch[2];
+        // 若原始掃描在容量數字位置保留小寫 'b'，優先校正為 6（其餘大寫 B 為 8）
+        if (rawCaseCompact) {
+          const caseMatch = rawCaseCompact.match(/^[A-Za-z]{2,4}-?[A-Za-z]{1,3}([A-Za-z0-9]{2,3})/);
+          if (caseMatch && caseMatch[1].length === numRaw.length) {
+            numRaw = caseMatch[1];
+          }
+        }
+        const fixedNum = numRaw.split('').map(mapNumericChar).join('');
+        let fixedTail = mitsuMatch[4] || '';
+        if (fixedTail && /^M[RJ]-/.test(mitsuMatch[1])) {
+          // 保護末端顏色／規格字母（如 -W-C、-B-C、-TW），防止單字母色碼被當成數字
+          fixedTail = fixedTail.replace(/-(.)(?=-|$)/g, (_, ch) => `-${mapTailAlphaChar(ch)}`);
+        }
+        if (/^\d{2,3}$/.test(fixedNum)) {
+          tok = `${mitsuMatch[1]}${fixedNum}${mitsuMatch[3]}${fixedTail}`;
         }
       }
-      // 數字夾心字母還原（如 6IN -> 61N 中的 IN，或 6I8 -> 618）
-      tok = tok.replace(/(\d)([OIQDGLZB])(\d)/g, (_, a, b, c) => `${a}${mapDigit(b)}${c}`);
+
+      // 數字夾心字母還原（如 6IN -> 61N 中的 6I8 -> 618）
+      tok = tok.replace(/(\d)([OIQDGLZB])(\d)/g, (_, a, b, c) => `${a}${mapNumericChar(b)}${c}`);
       return tok;
     };
 
-    // 優先匹配含多段連字號之三菱型號（如 MR-JX61N-W-C, MR-WX71C-F-C, MSZ-FH50NA）
-    const multiHyphen = cleaned.match(/\b([A-Z]{2,4}\s*-\s*[A-Z0-9]{2,8}(?:\s*-\s*[A-Z0-9]{1,4}){0,3})\b/g);
-    if (multiHyphen) {
-      for (let i = 0; i < multiHyphen.length; i++) {
-        const tok = normalizeMitsuModelToken(multiHyphen[i].replace(/\s+/g, ''));
-        if (tok.length >= 5 && /[A-Z]{2}/.test(tok) && /\d/.test(tok) && !/^MHS/.test(tok)) {
-          return tok;
+    const scoreMitsuCandidate = tok => {
+      if (!tok || tok.length < 5 || tok.length > 22 || /^MHS/.test(tok)) return -1;
+      let sc = 0;
+      if (/^(?:MR|MJ|MSZ|MUZ)-/.test(tok)) sc += 50;
+      if (/^(?:MR|MJ|MSZ|MUZ)-[A-Z]{1,3}\d{2,3}[A-Z]?(?:-[A-Z0-9]{1,3}){1,3}$/.test(tok)) sc += 30;
+      if (/^(?:MR|MJ|MSZ|MUZ)-[A-Z]{1,3}\d{2,3}/.test(tok)) sc += 20;
+      if (/\d{2,3}/.test(tok)) sc += 10;
+      sc += Math.min(10, tok.length * 0.5);
+      return sc;
+    };
+
+    const candidates = [];
+    const multiHyphenRaw = cleanedRaw.match(/\b([A-Za-z]{2,4}\s*-\s*[A-Za-z0-9]{2,8}(?:\s*-\s*[A-Za-z0-9]{1,4}){0,3})\b/g);
+    if (multiHyphenRaw) {
+      multiHyphenRaw.forEach(item => {
+        const compactCase = item.replace(/\s+/g, '');
+        const tok = normalizeMitsuModelToken(compactCase.toUpperCase(), compactCase);
+        if (tok && /[A-Z]{2}/.test(tok) && /\d/.test(tok)) {
+          candidates.push(tok);
         }
+      });
+    }
+
+    const rawTokens = cleanedRaw.split(/[\s\r\n:：/|]+/).filter(Boolean);
+    rawTokens.forEach(rawItem => {
+      const compactCase = rawItem.replace(/[^A-Za-z0-9-]/g, '');
+      const tok = normalizeMitsuModelToken(compactCase.toUpperCase(), compactCase);
+      if (tok && tok.length >= 5 && tok.length <= 22 && !/^\d+$/.test(tok) && /[A-Z]{2,}/.test(tok) && /\d{2,}/.test(tok)) {
+        candidates.push(tok);
+      }
+    });
+
+    // 若因空白誤斷裂為連續片段（如 "MR-" 與 "JX61N-W-C"），合併相鄰兩片段再試一次
+    for (let i = 0; i < rawTokens.length - 1; i++) {
+      const joined = `${rawTokens[i]}${rawTokens[i + 1]}`.replace(/[^A-Za-z0-9-]/g, '');
+      const tok = normalizeMitsuModelToken(joined.toUpperCase(), joined);
+      if (tok && /^(?:MR|MJ|MSZ|MUZ)-[A-Z]{1,3}\d{2,3}/.test(tok)) {
+        candidates.push(tok);
       }
     }
 
-    const tokens = cleaned.split(/[\s\r\n:：]+/).map(t => t.replace(/[^A-Z0-9-]/g, '')).filter(Boolean);
-    for (let i = 0; i < tokens.length; i++) {
-      const tok = normalizeMitsuModelToken(tokens[i]);
-      if (tok.length < 5 || tok.length > 22) continue;
-      if (/^MHS/.test(tok) || /^\d+$/.test(tok)) continue;
-      if (/[A-Z]{2,}/.test(tok) && /\d{2,}/.test(tok)) return tok;
-    }
-    return '';
+    if (candidates.length === 0) return '';
+    candidates.sort((a, b) => scoreMitsuCandidate(b) - scoreMitsuCandidate(a));
+    return candidates[0];
   }
 
   function filterMitsubishiSerialResult(rawText) {
@@ -3842,8 +4217,10 @@
     detectMitsubishiWarrantyByText,
     detectMitsubishiCardQuad,
     detectMitsubishiDealerStampSpec,
+    detectMitsubishiModelTableBounds,
     createEnhancedOcrCropCanvas,
     createAdaptiveBinarizedOcrCropCanvas,
+    createMitsubishiDotMatrixOcrCropCanvas,
     decodeCode128FromCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
