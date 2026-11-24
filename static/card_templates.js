@@ -1415,7 +1415,7 @@
   ];
   const WARRANTY_KEYWORDS = [
     'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017',
-    '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE'
+    '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE', '0800-898-899', 'WWW.LG.COM'
   ];
   const TAIWAN_INVOICE_STRUCT_REGEX = /[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/;
 
@@ -1424,7 +1424,21 @@
       return { role: 'warranty_card', reason: '手動指定國際牌保卡模板' };
     }
 
-    const upper = (ocrText || '').toUpperCase();
+    const upper = String(ocrText || '').toUpperCase();
+
+    // 0. v47 最高優先級：LG 台灣樂金保證書專屬 6 組地標強制判定（優先權高於發票編號／QR Code／比例偵測）
+    const hasPanasonicExclusive = /PANASONIC|台灣松下|國際牌|商品保證書/.test(upper.replace(/\s+/g, ''));
+    if (!hasPanasonicExclusive) {
+      const lgForceMatch = detectLgWarrantyByText(ocrText);
+      if (lgForceMatch && lgForceMatch.isLg) {
+        return {
+          role: 'warranty_card',
+          forcedTemplateId: 'lg_tw',
+          reason: `強制命中 LG 保卡地標 (${lgForceMatch.matchedLandmarks.slice(0, 3).join('、')})`
+        };
+      }
+    }
+
     const orderHits = [];
     const receiptHits = [];
     const warrantyHits = [];
@@ -1667,25 +1681,77 @@
   }
 
   // ===========================================================================
-  // LG 台灣樂金電器保證書獨立引擎 (lg_tw，v46：地標偵測 / 四點擴邊拉正 / 經銷商店章方框校準 / 型號機號防呆)
+  // LG 台灣樂金電器保證書獨立引擎 (lg_tw，v46/v47：6組地標強制分類 / 四點擴邊拉正 / 經銷商店章方框校準 / 型號機號防呆)
   // ===========================================================================
   function detectLgWarrantyByText(ocrText) {
-    const raw = (ocrText || '').toUpperCase();
-    if (!raw) return { isLg: false, hitCount: 0, matchedLandmarks: [] };
+    const rawUpper = String(ocrText || '').toUpperCase();
+    if (!rawUpper.trim()) {
+      return { isLg: false, hitCount: 0, matchedLandmarks: [], uniqueHits: [], comboHits: [] };
+    }
+    const compactUpper = rawUpper.replace(/[\s\-—–‐‑‒―~～_]+/g, '');
 
-    const groups = [
-      { key: 'brand', hit: /台灣樂金|樂金電器|\bLG\b|WWW\.LG\.COM/.test(raw) },
-      { key: 'dealer_box', hit: /經銷商店章|經銷商/.test(raw) && /台灣樂金|樂金電器|\bLG\b|產品註冊/.test(raw) },
-      { key: 'footer_qr', hit: /產品註冊登錄|LG\s*LINE|官方帳號|官方網站|為確保您的權益|MBM\d{6,}/.test(raw) }
-    ];
-    const matched = groups.filter(g => g.hit).map(g => g.key);
-    const hasExplicitDealerBox = /經銷商店章/.test(raw);
-    const hasLgBrand = /台灣樂金|樂金電器|\bLG\b|WWW\.LG\.COM/.test(raw);
-    const isLg = matched.length >= 2 || (hasLgBrand && /保證書/.test(raw)) || (hasExplicitDealerBox && /保證書/.test(raw));
+    const hasCompany =
+      rawUpper.includes('台灣樂金電器股份有限公司') ||
+      compactUpper.includes('台灣樂金電器股份有限公司') ||
+      rawUpper.includes('臺灣樂金電器股份有限公司') ||
+      compactUpper.includes('臺灣樂金電器股份有限公司') ||
+      rawUpper.includes('台灣樂金') ||
+      compactUpper.includes('台灣樂金') ||
+      rawUpper.includes('臺灣樂金') ||
+      compactUpper.includes('臺灣樂金') ||
+      rawUpper.includes('樂金電器') ||
+      compactUpper.includes('樂金電器');
+
+    const hasServicePhone =
+      rawUpper.includes('0800-898-899') ||
+      compactUpper.includes('0800898899');
+
+    const hasWebsite =
+      rawUpper.includes('WWW.LG.COM') ||
+      compactUpper.includes('WWW.LG.COM');
+
+    const hasRegQrLabel =
+      rawUpper.includes('產品註冊登錄') ||
+      compactUpper.includes('產品註冊登錄');
+
+    const uniqueLandmarks = [];
+    if (hasCompany) uniqueLandmarks.push('台灣樂金電器股份有限公司');
+    if (hasServicePhone) uniqueLandmarks.push('0800-898-899');
+    if (hasWebsite) uniqueLandmarks.push('www.lg.com');
+    if (hasRegQrLabel) uniqueLandmarks.push('產品註冊登錄');
+
+    const hasLgBrand =
+      /(?:^|[^A-Z0-9])LG(?:[^A-Z0-9]|$)/.test(rawUpper) ||
+      /(?:^|[^A-Z])LG(?:[^A-Z]|$)/.test(compactUpper);
+
+    const hasWarrantyWord =
+      rawUpper.includes('保證書') ||
+      compactUpper.includes('保證書');
+
+    const hasDealerBoxWord =
+      rawUpper.includes('經銷商店章') ||
+      compactUpper.includes('經銷商店章');
+
+    const hasLineAccountWord =
+      rawUpper.includes('LG LINE官方帳號') ||
+      compactUpper.includes('LGLINE官方帳號') ||
+      rawUpper.includes('LINE官方帳號') ||
+      compactUpper.includes('LINE官方帳號');
+
+    const comboLandmarks = [];
+    if (hasLgBrand) comboLandmarks.push('LG');
+    if (hasWarrantyWord) comboLandmarks.push('保證書');
+    if (hasDealerBoxWord) comboLandmarks.push('經銷商店章');
+    if (hasLineAccountWord) comboLandmarks.push('LG LINE官方帳號');
+
+    const matchedLandmarks = [...uniqueLandmarks, ...comboLandmarks];
+    const isLg = uniqueLandmarks.length >= 1 || comboLandmarks.length >= 2;
     return {
       isLg,
-      hitCount: matched.length,
-      matchedLandmarks: matched
+      hitCount: matchedLandmarks.length,
+      matchedLandmarks,
+      uniqueHits: uniqueLandmarks,
+      comboHits: comboLandmarks
     };
   }
 

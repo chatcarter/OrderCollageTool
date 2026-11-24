@@ -3918,7 +3918,7 @@ function importImagePureFrontend(file) {
 
         const docClassify = (window.CardTemplates && window.CardTemplates.classifyDocumentByTextAndColor)
           ? (isManualLgInit
-              ? { role: 'warranty_card', reason: '手動指定 LG 台灣樂金保證書' }
+              ? { role: 'warranty_card', forcedTemplateId: 'lg_tw', reason: '手動指定 LG 台灣樂金保證書' }
               : window.CardTemplates.classifyDocumentByTextAndColor(preScan.text, detectRes, sw, sh, isManualPanasonicInit))
           : { role: (!isHorizontal && aspectHW > 1.30) ? 'receipt' : 'warranty_card', reason: '比例備援判定' };
 
@@ -3980,14 +3980,19 @@ function importImagePureFrontend(file) {
           const lgMatch = (!isManualPanasonicInit && window.CardTemplates.detectLgWarrantyByText)
             ? window.CardTemplates.detectLgWarrantyByText(preScan.text)
             : { isLg: false };
-          const looksLikeLg = !!(isManualLgInit || (!isManualPanasonicInit && !detectRes.detected && lgMatch.isLg));
-          const looksLikePanasonic = !looksLikeLg && !!(
-            detectRes.detected ||
-            isManualPanasonicInit ||
+          const isPanasonicBrandText =
             preTextUpper.includes('PANASONIC') ||
             preTextUpper.includes('NATIONAL') ||
             preTextUpper.includes('國際牌') ||
-            preTextUpper.includes('台灣松下') ||
+            preTextUpper.includes('台灣松下');
+          const looksLikeLg = !!(
+            isManualLgInit ||
+            (!isManualPanasonicInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'lg_tw' || lgMatch.isLg))
+          );
+          const looksLikePanasonic = !looksLikeLg && !!(
+            detectRes.detected ||
+            isManualPanasonicInit ||
+            isPanasonicBrandText ||
             preTextUpper.includes('松下')
           );
 

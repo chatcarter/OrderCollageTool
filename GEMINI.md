@@ -53,6 +53,18 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:08:23] (第 47 版 / v47)
+- **執行項目**：**鎖死 6 組 LG 保證書專屬地標作為最前端無條件保卡優先分類規則（v47）** — 在完全保留 v46 `lg_tw` 模板規格與已封版 Panasonic 國際牌核心邏輯的前提下，於最前端圖片角色分類守門員（`classifyDocumentByTextAndColor` 與 `detectLgWarrantyByText`）新增最高優先級「LG 保卡強制命中規則」，徹底杜絕 LG 台灣樂金保證書因右下角含雙 QR Code 或條碼 `MBM65176322`（`BM65176322`）而在匯入最前端被誤判為發票的問題。
+- **具體進度**：
+  1. **版本徽章與防快取（`v47`）**：
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner`、`.mobile-ver-badge` 為 `v47 (2026.11.24)`，並將資源參數更新為 `?v=47`。
+  2. **最前端分類器強制優先判定（`static/card_templates.js`）**：
+     - 強化 `detectLgWarrantyByText()`：同步比對原始大寫字串與去除空白／換行／破折號正規化字串，命中任一專屬唯一地標（`台灣樂金電器股份有限公司 / 台灣樂金 / 樂金電器`、`0800-898-899 / 0800898899`、`www.lg.com`、`產品註冊登錄`）或命中任兩項組合地標（`LG`、`保證書`、`經銷商店章`、`LG LINE官方帳號 / LINE官方帳號`），即判定為 LG 保證書。
+     - 於 `classifyDocumentByTextAndColor()` 最頂端（高於發票 `2英+8數`、發票關鍵字、QR Code 與長寬比規則，並隔離 Panasonic 專屬關鍵字）優先套用該規則，命中即無條件回傳 `role: 'warranty_card'` 與 `forcedTemplateId: 'lg_tw'`。
+  3. **匯入管線分流強化（`static/app.js`）**：
+     - 於 `importImagePureFrontend()` 結合 `docClassify.forcedTemplateId === 'lg_tw'`、`detectLgWarrantyByText(preScan.text)` 與 `!isPanasonicBrandText` 路由至 `lg_tw` 獨立管線，避免暖色背景誤觸發框線特徵而被阻擋；確保單筆或批次匯入（含手機雙軌相簿多選）時，LG 保卡進入 `lg_tw` 流程，發票進入發票地標裁切流程。
+  4. **驗證與歸檔**：完成 `HTML_SYNC_OK=True`、雙 JS 檔案語法括號／引號零錯誤檢查、`CRLF` 格式查核與雲端推送。
+
 ### [2026-11-24 19:58:39] (第 46 版 / v46)
 - **執行項目**：**新增 LG 台灣樂金保證書獨立模板 `lg_tw`（v46）** — 開工前先行 `git pull origin main` 同步雲端最新第 45 版，在嚴格隔離絕不修改 Panasonic 國際牌已封版核心的前提下，於品牌模板註冊制新增 LG 台灣樂金電器股份有限公司保證書完整規則（自動偵測與白底貼紙 `0.5cm` 外擴透視拉正、右側「經銷商店章」方框邊界校準與上半部避讓蓋章、機型／機號防呆 OCR ＋ 訂購單交叉比對，以及左下 5 行大字自動填入 `LG`）。
 - **具體進度**：

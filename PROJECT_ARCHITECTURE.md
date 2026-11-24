@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:08:23] (第 47 版 / v47)
+- **執行項目**：**以 6 組專屬關鍵字鎖死 LG 保證書最前端角色分類路由（v47）** — 徹底修復 LG 台灣樂金保證書因雙 QR Code 與 `MBM65176322` 編號導致在匯入分類器被誤判為發票（`receipt`）之問題，保留全部 v46 `lg_tw` 與 Panasonic 封版核心。
+- **具體進度**：
+  1. **版本徽章與靜態快取參數**：建立 `_backup/20261124_200442/` 備份後，更新雙份 HTML 為 `v47 (2026.11.24)` 與 `?v=47`。
+  2. **最高優先級 LG 保卡強制命中規則（`static/card_templates.js`）**：於 `detectLgWarrantyByText()` 同步檢核原始字串與去空白／破折號正規化字串之 4 項專屬唯一地標與 4 項組合地標，並於 `classifyDocumentByTextAndColor()` 最優先級執行（優先權高於發票編碼、發票關鍵字與比例偵測），命中即鎖定 `role: 'warranty_card'` 與 `forcedTemplateId: 'lg_tw'`。
+  3. **匯入路由保護（`static/app.js`）**：更新 `importImagePureFrontend()` 依 `forcedTemplateId === 'lg_tw'` 與 `lgMatch.isLg`（且排除 Panasonic 品牌文字）強制導向 `lg_tw` 獨立管線，確保三件組批次與手機複選上傳時 LG 保卡與發票各自精準分流。
+  4. **驗證與推送**：通過 HTML 雙向同步、語法檢查與 `CRLF` 驗證並推送至 GitHub。
+
 ### [2026-11-24 19:58:39] (第 46 版 / v46)
 - **執行項目**：**新增 LG 台灣樂金保證書獨立模板 `lg_tw`（v46）** — 先行 `git pull origin main` 對齊雲端第 45 版後，在完全不改動 Panasonic 國際牌邏輯前提下，透過品牌註冊制新增 `lg_tw` 獨立規則（地標偵測、白底貼紙 `0.5cm` 外擴拉正、`經銷商店章` 上半部光影蓋章、型號/機號防呆 OCR ＋ 訂購單交叉校正與左下 5 行 `LG` 品牌填入）。
 - **具體進度**：
