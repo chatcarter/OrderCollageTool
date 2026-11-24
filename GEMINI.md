@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:40:05] (第 50 版 / v50)
+- **執行項目**：**LG 印章再左移 0.3cm 對稱置中 ＋ 條碼／局部專項機號寫回優先權鎖定 ＋ 型號尾碼英文校正（v50）** — 在嚴格保留 Panasonic 已封版核心與 v46~v49 既有邏輯下，完成 LG 台灣樂金保證書實測最後一哩路微調。
+- **具體進度**：
+  1. **版本徽章與防快取（`v50`）**：
+     - 建立 `_backup/20261124_203550/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v50 (2026.11.24)` 與 `?v=50`。
+  2. **LG 專櫃印章再往左微調 `0.3cm`（`X -0.015`）對稱置中（`static/card_templates.js`）**：
+     - 維持垂直高度 `Y` 不動，將 `LG_TW_STAMP_SPEC.centerX` 由 `0.760` 調整為 **`0.745`**，並於 `detectLgDealerBoxStampSpec()` 地標對位計算中再向左偏移 `-0.015`，使橢圓印章於「經銷商店章」圓角矩形框內左右完全對稱留白、不再貼近右框線。
+  3. **LG 型號尾碼英文校正 ＋ Code 128 T1–T4 抗模糊解碼強化（`static/card_templates.js` / `static/app.js`）**：
+     - 於 `filterLgModelResult()` 新增型號結尾 2～3 碼規格字母還原規則（`P8 ➔ PB`、`P0 ➔ PO`、`5B ➔ SB`、`8 -> B / 0 -> O / 5 -> S / 1 -> I`），將 `WD-S1818P8` 精準還原為 `WD-S1818PB`。
+     - 升級 `decodeCode128FromCanvas()` 導入 **ISO/IEC 15417 T1–T4 邊緣距抗油墨擴張雜湊表**與列局部滑動均值二值化，並於 `tryDecodeLgUpperBarcodeSerial()` 同步掃描 `1x` 原生銳利裁切、`2.0x` 裁切與原圖 `rawSourceImg`；同步收斂 `findBarcodeBottomGuardNorm()` 掃描帶（`y: 0.13..0.275`, 密度 `>= 0.24`）避免誤截機號字頂。
+  4. **鎖定 `lg_tw` 寫回優先權、杜絕舊全域 OCR 覆蓋（`static/app.js`）**：
+     - 於 `runLgCardTargetedOcr()` 與 `importImagePureFrontend()` 同步鎖定 `layer.templateId = 'lg_tw'`、`layer.cardTemplateId = 'lg_tw'` 與 `layer.ocrData = { brand, model, serial, serialFromBarcode }`；於 `buildAutoFiveLineNoteText()`、`btnRunOcr` 手動辨識、`applyOrderCrossVerificationToCurrentCard()` 及側欄手動輸入即時連動 `syncSidebarCardInputsToFiveLine()` 中鎖死 `lg_tw` 優先權，嚴禁全域全文 OCR 舊值覆蓋機號與型號。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號／引號平衡檢查、`CRLF` 驗證與 GitHub 推送。
+
 ### [2026-11-24 20:26:22] (第 49 版 / v49)
 - **執行項目**：**LG 條碼直接解碼機號 ＋ 去虛點底線 3.5x 專項 OCR ＋ 印章下移 1cm／左移 0.5cm 精準進框（v49）** — 完全保留已封版 Panasonic 國際牌與既有全部核心，徹底解決 LG 台灣樂金保證書實測機號／型號殘留誤值（`010PNNAR657` / `WDSIB18PB`）及印章偏高切上框、偏右壓框、右／下方木桌裁切未盡問題。
 - **具體進度**：

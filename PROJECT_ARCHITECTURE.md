@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:40:05] (第 50 版 / v50)
+- **執行項目**：**LG 印章再左移 0.3cm 對稱置中 ＋ 機號寫回優先權鎖定 ＋ 型號尾碼校正（v50）** — 完整保留 Panasonic 已封版核心，完成 LG `lg_tw` 最後微調。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_203550/` 備份，更新雙份 HTML 至 `v50 (2026.11.24)` 與 `?v=50`。
+  2. **印章水平再左移 `0.3cm`**：維持垂直 `Y` 不動，將 `LG_TW_STAMP_SPEC.centerX` 調整至 **`0.745`**，並於 `detectLgDealerBoxStampSpec()` 套用 `-0.015` 偏移對稱置中。
+  3. **型號尾碼校正與條碼強化**：`filterLgModelResult()` 修復 `WD-S1818P8 ➔ WD-S1818PB`；`decodeCode128FromCanvas()` 實作 ISO/IEC 15417 T1–T4 抗油墨擴張解碼與局部均值二值化，並縮緊 `findBarcodeBottomGuardNorm()` 避免截斷機號字頂。
+  4. **鎖死 `lg_tw` 寫回優先權（`static/app.js`）**：同步寫入 `layer.templateId = 'lg_tw'` 與 `layer.ocrData` 並於 `buildAutoFiveLineNoteText()`／`btnRunOcr`／訂購單比對中禁止舊全域 OCR 覆蓋 `serial` 與 `model`。
+  5. **驗證與推送**：通過 HTML 同步、語法檢查與 `CRLF` 檢核並推送至 `origin/main`。
+
 ### [2026-11-24 20:26:22] (第 49 版 / v49)
 - **執行項目**：**LG 條碼直接解碼機號 ＋ 去虛點 3.5x OCR ＋ 印章下移 1cm／左移 0.5cm 精準進框（v49）** — 嚴格隔離並完整保留 Panasonic 已封版核心，修復實測機號／型號殘留誤讀及印章偏高／偏右切框與木桌留白問題。
 - **具體進度**：

@@ -3976,6 +3976,7 @@ function importImagePureFrontend(file) {
         let isUnmatchedBrandCard = false;
         let preCalibratedStampSpec = null;
         let preLgDealerOcrAnchor = null;
+        let preLgOcrData = null;
         if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
           const preTextUpper = (preScan.text || '').toUpperCase();
           const lgMatch = (!isManualPanasonicInit && window.CardTemplates.detectLgWarrantyByText)
@@ -4054,10 +4055,12 @@ function importImagePureFrontend(file) {
               warpedImage: rectifiedCleanCanvas,
               rectifiedCleanCanvas: rectifiedCleanCanvas,
               rawSourceImg: img,
+              templateId: 'lg_tw',
               cardTemplateId: 'lg_tw'
             };
             await runLgCardTargetedOcr(lgOcrProxy, preScan.text);
             preLgDealerOcrAnchor = lgOcrProxy._lgDealerOcrAnchor || null;
+            preLgOcrData = lgOcrProxy.ocrData || null;
             if (window.CardTemplates.detectLgDealerBoxStampSpec) {
               preCalibratedStampSpec = window.CardTemplates.detectLgDealerBoxStampSpec(
                 rectifiedCleanCanvas,
@@ -4178,8 +4181,14 @@ function importImagePureFrontend(file) {
         });
         newLayer.cardQuadCorners = cardQuadCorners;
         newLayer.cardTemplateId = cardTemplateId;
+        newLayer.templateId = cardTemplateId;
         newLayer.isRectifiedCard = isRectifiedCard;
         newLayer.isUnmatchedBrandCard = isUnmatchedBrandCard;
+        if (preLgOcrData) {
+          newLayer.ocrData = preLgOcrData;
+          newLayer._lgVerifiedModel = preLgOcrData.model || '';
+          newLayer._lgVerifiedSerial = preLgOcrData.serial || '';
+        }
         if (preLgDealerOcrAnchor) newLayer._lgDealerOcrAnchor = preLgDealerOcrAnchor;
         if (preCalibratedStampSpec) newLayer._calibratedStampSpec = preCalibratedStampSpec;
 
@@ -5142,6 +5151,12 @@ btnRunOcr.addEventListener('click', async () => {
     }
 
     const parsed = parseReceiptAndWarrantyText(photoOcrText, pdfText);
+    const activeWarrantyCard = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
+    if (activeWarrantyCard && (activeWarrantyCard.cardTemplateId === 'lg_tw' || activeWarrantyCard.templateId === 'lg_tw') && activeWarrantyCard.ocrData) {
+      parsed.brand = 'LG';
+      if (activeWarrantyCard.ocrData.model) parsed.model = activeWarrantyCard.ocrData.model;
+      if (activeWarrantyCard.ocrData.serial) parsed.serialNo = activeWarrantyCard.ocrData.serial;
+    }
     const formattedOutput = [
       `發票購買日期   ${parsed.date}`,
       `發票號碼  ${parsed.invoiceNo}`,
@@ -7098,8 +7113,9 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
     if (!tpl) return;
 
     layer.cardTemplateId = 'lg_tw';
+    layer.templateId = 'lg_tw';
     if (cardTemplateBadge) cardTemplateBadge.textContent = tpl.shortLabel;
-    setCanvasOcrPill('🔍 正在執行 LG 保卡 2.5x 局部二值化放大辨識與雙地標定位...', 'loading');
+    setCanvasOcrPill('🔍 正在執行 LG 保卡一維條碼解碼與 3.5x 局部專項辨識...', 'loading');
 
     if (!window.Tesseract) {
       const msg = getOcrErrorDisplayMessage(new Error('Tesseract 未載入'));
@@ -7108,7 +7124,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
       return;
     }
 
-    setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在辨識機型／機號與經銷商店章...`, true);
+    setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在解碼條碼並辨識機型／機號...`, true);
 
     let worker = null;
     try {
@@ -7117,15 +7133,15 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
       console.warn('Tesseract Eng Worker 初始化受限:', wErr);
     }
 
-    // 偵測「機號」上方一維條碼下緣，避免任何條碼垂直黑線混入機號單行 ROI
+    // 偵測「機號」上方一維條碼下緣（限定於條碼帶 y 0.13..0.275 與高密度門檻 0.24，絕不截到下方機號文字頂端）
     const findBarcodeBottomGuardNorm = (canvas, regX0, regX1) => {
       try {
         const cw = canvas.width;
         const ch = canvas.height;
         const rx = Math.max(0, Math.round(cw * regX0));
         const rw = Math.max(20, Math.round(cw * (regX1 - regX0)));
-        const ry = Math.max(0, Math.round(ch * 0.14));
-        const rh = Math.max(20, Math.round(ch * 0.21));
+        const ry = Math.max(0, Math.round(ch * 0.13));
+        const rh = Math.max(16, Math.round(ch * 0.145));
         const tCan = document.createElement('canvas');
         tCan.width = rw;
         tCan.height = rh;
@@ -7134,7 +7150,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         const d = tCtx.getImageData(0, 0, rw, rh).data;
         let runStart = -1;
         let lastBarcodeEnd = -1;
-        const minRunH = Math.max(6, Math.round(ch * 0.028));
+        const minRunH = Math.max(6, Math.round(ch * 0.025));
         for (let y = 0; y < rh; y++) {
           let darkCnt = 0;
           for (let x = 0; x < rw; x += 2) {
@@ -7143,7 +7159,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
             if (lum < 115) darkCnt++;
           }
           const frac = (darkCnt * 2) / rw;
-          if (frac >= 0.19) {
+          if (frac >= 0.24) {
             if (runStart < 0) runStart = y;
           } else if (runStart >= 0) {
             if (y - runStart >= minRunH) lastBarcodeEnd = y;
@@ -7152,7 +7168,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         }
         if (runStart >= 0 && rh - runStart >= minRunH) lastBarcodeEnd = rh;
         if (lastBarcodeEnd >= 0) {
-          return Math.min(0.32, (ry + lastBarcodeEnd) / ch + 0.008);
+          return Math.min(0.280, (ry + lastBarcodeEnd) / ch + 0.005);
         }
       } catch (_) {}
       return null;
@@ -7199,11 +7215,12 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
       let modelLabelBox = null;
       let serialLabelBox = null;
 
-      // 0. 第一優先（100% 零誤字）：直接解碼「機號」正上方一維條碼（Code 128）
-      const tryDecodeLgUpperBarcodeSerial = async canvas => {
+      // 0. 第一優先（100% 零誤字）：直接解碼「機號」正上方一維條碼（Code 128：支援 1x 原生銳利畫素 ＋ 2.5x 對比增強 ＋ 原圖保底）
+      const tryDecodeLgUpperBarcodeSerial = async (canvas, rawSrcImg = null) => {
         const defaultBarcodeReg = (tpl.ocrRegions && tpl.ocrRegions.barcodeSerial) || { x: 0.595, y: 0.145, w: 0.370, h: 0.175 };
+        const tightBarcodeReg = { x: 0.61, y: 0.16, w: 0.34, h: 0.13 };
         const widerBarcodeReg = { x: 0.54, y: 0.10, w: 0.44, h: 0.25 };
-        const rawRegs = [defaultBarcodeReg, widerBarcodeReg];
+        const rawRegs = [tightBarcodeReg, defaultBarcodeReg, widerBarcodeReg];
         const candidateCanvases = [];
 
         rawRegs.forEach(reg => {
@@ -7211,9 +7228,16 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
           const ry = Math.max(0, Math.round(reg.y * canvas.height));
           const rw = Math.max(20, Math.min(canvas.width - rx, Math.round(reg.w * canvas.width)));
           const rh = Math.max(20, Math.min(canvas.height - ry, Math.round(reg.h * canvas.height)));
+
+          const native1x = document.createElement('canvas');
+          native1x.width = rw;
+          native1x.height = rh;
+          native1x.getContext('2d', { willReadFrequently: true }).drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+          candidateCanvases.push(native1x);
+
           const rawCrop = document.createElement('canvas');
-          rawCrop.width = Math.round(rw * 2.5);
-          rawCrop.height = Math.round(rh * 2.5);
+          rawCrop.width = Math.round(rw * 2.0);
+          rawCrop.height = Math.round(rh * 2.0);
           const rCtx = rawCrop.getContext('2d', { willReadFrequently: true });
           rCtx.imageSmoothingEnabled = true;
           rCtx.imageSmoothingQuality = 'high';
@@ -7221,10 +7245,13 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
           candidateCanvases.push(rawCrop);
 
           if (window.CardTemplates.createEnhancedOcrCropCanvas) {
-            candidateCanvases.push(window.CardTemplates.createEnhancedOcrCropCanvas(canvas, reg, 2.5));
+            candidateCanvases.push(window.CardTemplates.createEnhancedOcrCropCanvas(canvas, reg, 2.0));
           }
         });
         candidateCanvases.push(canvas);
+        if (rawSrcImg && rawSrcImg !== canvas) {
+          candidateCanvases.push(rawSrcImg);
+        }
 
         const acceptBarcodeCandidate = rawVal => {
           const txt = String(rawVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -7255,8 +7282,10 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         }
 
         if (window.CardTemplates && typeof window.CardTemplates.decodeCode128FromCanvas === 'function') {
-          for (let i = 0; i < candidateCanvases.length - 1; i++) {
-            const jsDecoded = window.CardTemplates.decodeCode128FromCanvas(candidateCanvases[i]);
+          for (let i = 0; i < candidateCanvases.length; i++) {
+            const c = candidateCanvases[i];
+            if (!c || !c.width || !c.height || typeof c.getContext !== 'function') continue;
+            const jsDecoded = window.CardTemplates.decodeCode128FromCanvas(c);
             const hit = acceptBarcodeCandidate(jsDecoded);
             if (hit) return hit;
           }
@@ -7264,7 +7293,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         return '';
       };
 
-      const barcodeHitSerial = await tryDecodeLgUpperBarcodeSerial(srcCanvas);
+      const barcodeHitSerial = await tryDecodeLgUpperBarcodeSerial(srcCanvas, layer.rawSourceImg || layer.rawImage);
       if (barcodeHitSerial) {
         serialClean = barcodeHitSerial;
         serialFromBarcode = true;
@@ -7343,14 +7372,17 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
           ? (() => {
               const rx = Math.max(0.62, serialLabelBox.x1 - 0.004);
               const rw = Math.max(0.16, Math.min(0.975 - rx, 0.295));
-              const rawY = Math.max(0.22, serialLabelBox.y0 - 0.025);
-              const ry = barcodeGuardTop ? Math.max(rawY, barcodeGuardTop) : rawY;
-              const rh = Math.min(0.105, Math.max(0.060, serialLabelBox.y1 + 0.015 - ry));
+              const rawY = Math.max(0.21, serialLabelBox.y0 - 0.032);
+              const guardSafe = (barcodeGuardTop && barcodeGuardTop <= serialLabelBox.y0 - 0.020)
+                ? barcodeGuardTop
+                : rawY;
+              const ry = Math.max(rawY, guardSafe);
+              const rh = Math.min(0.105, Math.max(0.062, serialLabelBox.y1 + 0.015 - ry));
               return { x: rx, y: ry, w: rw, h: rh };
             })()
           : (() => {
-              const ry = barcodeGuardTop ? Math.max(defaultSerialReg.y, barcodeGuardTop) : defaultSerialReg.y;
-              const rh = Math.max(0.062, defaultSerialReg.y + defaultSerialReg.h - ry);
+              const ry = barcodeGuardTop ? Math.max(defaultSerialReg.y - 0.012, barcodeGuardTop) : defaultSerialReg.y;
+              const rh = Math.max(0.065, defaultSerialReg.y + defaultSerialReg.h - ry);
               return { x: defaultSerialReg.x, y: ry, w: defaultSerialReg.w, h: rh };
             })();
 
@@ -7448,11 +7480,18 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         }
       }
 
-      // 關鍵修正（v49）：無條件強制寫回專項/條碼辨識結果，徹底覆蓋全域全文 OCR 舊值
+      // 關鍵修正（v49/v50）：無條件強制寫回 layer.ocrData / 專項輸入與全域快取，禁止舊全域 OCR 覆蓋條碼／局部結果
       if (inputCardModel) inputCardModel.value = modelClean || '';
       if (inputCardSerial) inputCardSerial.value = serialClean || '';
-      layer._lgVerifiedModel = modelClean;
-      layer._lgVerifiedSerial = serialClean;
+      layer._lgVerifiedModel = modelClean || '';
+      layer._lgVerifiedSerial = serialClean || '';
+      layer.ocrData = {
+        brand: 'LG',
+        model: modelClean || '',
+        serial: serialClean || '',
+        serialFromBarcode: !!serialFromBarcode,
+        updatedAt: Date.now()
+      };
 
       mergeOcrSummaryFields('warranty_card', {
         brand: 'LG',
@@ -8516,6 +8555,12 @@ function initSmartWarrantyModule() {
       inputNewNote.value = lines.join('\n');
       if (modelVal) cachedReceiptOcrInfo.model = modelVal;
       if (serialVal) cachedReceiptOcrInfo.serialNo = serialVal;
+      const cardTarget = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
+      if (cardTarget) {
+        if (!cardTarget.ocrData) cardTarget.ocrData = {};
+        if (modelVal) { cardTarget.ocrData.model = modelVal; cardTarget._lgVerifiedModel = modelVal; }
+        if (serialVal) { cardTarget.ocrData.serial = serialVal; cardTarget._lgVerifiedSerial = serialVal; }
+      }
       if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
         syncSummaryTextLayer(true);
       }
@@ -8536,8 +8581,18 @@ function initSmartWarrantyModule() {
   }
 
   const syncSidebarCardInputsToFiveLine = () => {
-    if (inputCardModel) cachedReceiptOcrInfo.model = inputCardModel.value.trim();
-    if (inputCardSerial) cachedReceiptOcrInfo.serialNo = inputCardSerial.value.trim();
+    const modelStr = inputCardModel ? inputCardModel.value.trim() : '';
+    const serialStr = inputCardSerial ? inputCardSerial.value.trim() : '';
+    if (inputCardModel) cachedReceiptOcrInfo.model = modelStr;
+    if (inputCardSerial) cachedReceiptOcrInfo.serialNo = serialStr;
+    const cardTarget = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
+    if (cardTarget) {
+      if (!cardTarget.ocrData) cardTarget.ocrData = {};
+      cardTarget.ocrData.model = modelStr;
+      cardTarget.ocrData.serial = serialStr;
+      cardTarget._lgVerifiedModel = modelStr;
+      cardTarget._lgVerifiedSerial = serialStr;
+    }
     if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
       syncSummaryTextLayer(true);
     }
@@ -8610,11 +8665,16 @@ function applyOrderCrossVerificationToCurrentCard() {
   if (!curModel) return false;
 
   const targetCard = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
-  const targetBrandKey = (targetCard && targetCard.cardTemplateId === 'lg_tw') ? 'LG' : 'PANASONIC';
+  const targetBrandKey = (targetCard && (targetCard.cardTemplateId === 'lg_tw' || targetCard.templateId === 'lg_tw')) ? 'LG' : 'PANASONIC';
   const cv = window.CardTemplates.crossVerifyModelWithOrderSheet(curModel, cachedOrderItemModels, targetBrandKey);
   if (cv && cv.corrected && cv.model) {
     cachedReceiptOcrInfo.model = cv.model;
     if (inputCardModel) inputCardModel.value = cv.model;
+    if (targetCard) {
+      if (!targetCard.ocrData) targetCard.ocrData = {};
+      targetCard.ocrData.model = cv.model;
+      targetCard._lgVerifiedModel = cv.model;
+    }
     setCardSmartStatus(
       `✅ 已依訂購單交叉校正型號：${curModel} ➔ ${cv.model}（相似度 ${Math.round(cv.similarity * 100)}%）`,
       false
@@ -8802,12 +8862,31 @@ async function runReceiptHighResOcr(fullResSource, preScanText = '') {
  * 串接發票與保卡 OCR 結果產生標準 5 行核對資訊
  */
 function buildAutoFiveLineNoteText() {
-  const cardModel = (inputCardModel && inputCardModel.value.trim()) || cachedReceiptOcrInfo.model || 'XXXXXXXX';
-  const cardSerial = (inputCardSerial && inputCardSerial.value.trim()) || cachedReceiptOcrInfo.serialNo || 'XXXXXXXXXXX';
+  const cardLayer = getTargetWarrantyImageLayer();
+  const isLgCard = !!(cardLayer && (cardLayer.cardTemplateId === 'lg_tw' || cardLayer.templateId === 'lg_tw'));
+
+  const cardModel = isLgCard
+    ? (
+        (cardLayer.ocrData && cardLayer.ocrData.model) ||
+        cardLayer._lgVerifiedModel ||
+        (inputCardModel && inputCardModel.value.trim()) ||
+        cachedReceiptOcrInfo.model ||
+        'XXXXXXXX'
+      )
+    : ((inputCardModel && inputCardModel.value.trim()) || cachedReceiptOcrInfo.model || 'XXXXXXXX');
+
+  const cardSerial = isLgCard
+    ? (
+        (cardLayer.ocrData && cardLayer.ocrData.serial) ||
+        cardLayer._lgVerifiedSerial ||
+        (inputCardSerial && inputCardSerial.value.trim()) ||
+        cachedReceiptOcrInfo.serialNo ||
+        'XXXXXXXXXXX'
+      )
+    : ((inputCardSerial && inputCardSerial.value.trim()) || cachedReceiptOcrInfo.serialNo || 'XXXXXXXXXXX');
 
   let brandName = cachedReceiptOcrInfo.brand || '國際';
-  const cardLayer = getTargetWarrantyImageLayer();
-  if (cardLayer && cardLayer.cardTemplateId === 'lg_tw') {
+  if (isLgCard) {
     brandName = 'LG';
   } else if (cardLayer && cardLayer.cardTemplateId && cardLayer.cardTemplateId.startsWith('panasonic')) {
     brandName = '國際';

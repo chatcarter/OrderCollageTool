@@ -127,10 +127,10 @@
   CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
 
   /**
-   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v49)
+   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v50)
    */
   const LG_TW_STAMP_SPEC = Object.freeze({
-    centerX: 0.760,
+    centerX: 0.745,
     centerY: 0.620,
     widthRatio: 0.162,
     tiltRangeDeg: 1.5,
@@ -2507,11 +2507,13 @@
     if (topWallRel >= 0) boxTopNorm = (ry + topWallRel) / ch;
     if (bottomWallRel >= 0) boxBottomNorm = (ry + bottomWallRel) / ch;
 
-    // 3. 依實測微調校准（v49）：往左 0.5cm (X -0.025)、往下 1.0cm (Y +0.055) 並收進 94%~96% 框寬，完全貼齊經銷商店章方框內緣
-    let finalCenterX = boxCenterX !== null
-      ? ((boxCenterX * 0.72) + (coaxialGuessX * 0.28))
-      : (coaxialGuessX - 0.025);
-    if (boxCenterX === null && !validLabelAnchor && !qrAnchor) {
+    // 3. 依實測微調校准（v49/v50）：Y 軸不動，水平 X 再往左微調 0.3cm (-0.015) 使左右與圓角方框完全對稱置中
+    let finalCenterX;
+    if (boxCenterX !== null) {
+      finalCenterX = ((boxCenterX * 0.72) + (coaxialGuessX * 0.28)) - 0.015;
+    } else if (validLabelAnchor || qrAnchor) {
+      finalCenterX = coaxialGuessX - 0.040;
+    } else {
       finalCenterX = fallbackSpec.centerX;
     }
 
@@ -2566,6 +2568,19 @@
     '114131','311141','411131','211412','211214','211232','2331112'
   ];
 
+  // 預先建立 ISO/IEC 15417 T1-T4 邊緣到同類邊緣雜湊表（抗油墨擴張與陰影模糊）
+  const CODE128_T_TABLE = (() => {
+    const map = Object.create(null);
+    for (let idx = 0; idx < 106; idx++) {
+      const p = CODE128_PATTERNS[idx];
+      const d = [Number(p[0]), Number(p[1]), Number(p[2]), Number(p[3]), Number(p[4]), Number(p[5])];
+      const key = `${d[0] + d[1]}-${d[1] + d[2]}-${d[2] + d[3]}-${d[3] + d[4]}`;
+      if (!map[key]) map[key] = [];
+      map[key].push({ idx, d, barSum: d[0] + d[2] + d[4] });
+    }
+    return map;
+  })();
+
   function decodeCode128FromCanvas(srcCanvas) {
     if (!srcCanvas || !srcCanvas.width || !srcCanvas.height) return '';
     const w = srcCanvas.width;
@@ -2579,21 +2594,43 @@
       if (sum <= 0) return -1;
       const modW = sum / 11;
       if (modW < 0.7) return -1;
+
+      // 優先比對標準 6 寬度字串
       let pat = '';
       for (let i = 0; i < 6; i++) {
         const m = Math.max(1, Math.min(4, Math.round(widths6[i] / modW)));
         pat += String(m);
       }
-      return CODE128_PATTERNS.indexOf(pat);
+      const exactIdx = CODE128_PATTERNS.indexOf(pat);
+      if (exactIdx >= 0) return exactIdx;
+
+      // 抗油墨擴張：以 T1-T4 邊緣距（b+s 抵銷邊緣位移 δ）精準比對
+      const t1 = Math.max(2, Math.min(7, Math.round((widths6[0] + widths6[1]) / modW)));
+      const t2 = Math.max(2, Math.min(7, Math.round((widths6[1] + widths6[2]) / modW)));
+      const t3 = Math.max(2, Math.min(7, Math.round((widths6[2] + widths6[3]) / modW)));
+      const t4 = Math.max(2, Math.min(7, Math.round((widths6[3] + widths6[4]) / modW)));
+      const cands = CODE128_T_TABLE[`${t1}-${t2}-${t3}-${t4}`];
+      if (!cands || cands.length === 0) return -1;
+      if (cands.length === 1) return cands[0].idx;
+
+      const obsBarNorm = ((widths6[0] + widths6[2] + widths6[4]) / sum) * 11;
+      let bestCand = cands[0];
+      let bestErr = Infinity;
+      for (let c = 0; c < cands.length; c++) {
+        const err = Math.abs(obsBarNorm - cands[c].barSum);
+        if (err < bestErr) {
+          bestErr = err;
+          bestCand = cands[c];
+        }
+      }
+      return bestCand.idx;
     };
 
     const decodeRowRuns = runs => {
       if (!runs || runs.length < 20) return '';
-      // runs: 交替白/黑，先找出所有長度 >= 6 的 Start A/B/C 符號（黑條起點）
       for (let sIdx = 0; sIdx + 18 < runs.length; sIdx++) {
         if (!runs[sIdx].isDark) continue;
-        // 需有足夠安靜區（前一個白區寬 >= 第一黑條寬 * 1.5）
-        if (sIdx > 0 && runs[sIdx - 1].len < runs[sIdx].len * 1.2) continue;
+        if (sIdx > 0 && runs[sIdx - 1].len < runs[sIdx].len * 0.85) continue;
         const w6 = [
           runs[sIdx].len, runs[sIdx + 1].len, runs[sIdx + 2].len,
           runs[sIdx + 3].len, runs[sIdx + 4].len, runs[sIdx + 5].len
@@ -2668,25 +2705,52 @@
     };
 
     const ySamples = [];
-    for (let frac = 0.22; frac <= 0.78; frac += 0.06) {
+    for (let frac = 0.16; frac <= 0.84; frac += 0.05) {
       ySamples.push(Math.max(1, Math.min(h - 2, Math.round(h * frac))));
     }
     const threshOffsets = [0, -14, 14, -26, 26];
+    const halfWin = Math.max(16, Math.round(w * 0.10));
 
     for (let yi = 0; yi < ySamples.length; yi++) {
       const y = ySamples[yi];
       const rowLums = new Float32Array(w);
+      const prefix = new Float32Array(w + 1);
       let minL = 255, maxL = 0;
       for (let x = 0; x < w; x++) {
         const p = (y * w + x) * 4;
         const l = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
         rowLums[x] = l;
+        prefix[x + 1] = prefix[x] + l;
         if (l < minL) minL = l;
         if (l > maxL) maxL = l;
       }
-      if (maxL - minL < 28) continue;
-      const baseMid = (minL + maxL) * 0.5;
+      if (maxL - minL < 24) continue;
 
+      // 先以局部滑動均值二值化（抗左右陰影漸層）
+      for (const localBias of [-8, 0, -16]) {
+        const runs = [];
+        const th0 = (prefix[Math.min(w, halfWin + 1)] / Math.min(w, halfWin + 1)) + localBias;
+        let curDark = rowLums[0] < th0;
+        let runLen = 1;
+        for (let x = 1; x < w; x++) {
+          const x0 = Math.max(0, x - halfWin);
+          const x1 = Math.min(w - 1, x + halfWin);
+          const localMean = (prefix[x1 + 1] - prefix[x0]) / (x1 - x0 + 1);
+          const isD = rowLums[x] < localMean + localBias;
+          if (isD === curDark) {
+            runLen++;
+          } else {
+            runs.push({ isDark: curDark, len: runLen });
+            curDark = isD;
+            runLen = 1;
+          }
+        }
+        runs.push({ isDark: curDark, len: runLen });
+        const decodedLocal = decodeRowRuns(runs);
+        if (decodedLocal) return decodedLocal;
+      }
+
+      const baseMid = (minL + maxL) * 0.5;
       for (let ti = 0; ti < threshOffsets.length; ti++) {
         const th = baseMid + threshOffsets[ti];
         const runs = [];
@@ -2722,17 +2786,19 @@
       let tok = (rawTok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
       if (!tok) return '';
       const mapDigitChar = ch => ({ B: '8', O: '0', D: '0', I: '1', L: '1', S: '5', Z: '2', G: '6', T: '7' }[ch] || ch);
-      // 修復遺失連字號之 LG 洗乾衣機／家電型號（如 WDSIB18PB -> WD-S1818PB、WDS1B18PB -> WD-S1818PB）
-      const noHyphenWd = tok.match(/^WD-?([A-Z])([A-Z0-9]{4})([A-Z]{2,3})$/);
+      const mapTailAlphaChar = ch => ({ '8': 'B', '0': 'O', '5': 'S', '1': 'I', '2': 'Z', '6': 'G' }[ch] || ch);
+      // 修復遺失連字號之 LG 洗乾衣機／家電型號（如 WDSIB18PB / WDS1818P8 -> WD-S1818PB）
+      const noHyphenWd = tok.match(/^WD-?([A-Z])([A-Z0-9]{4})([A-Z0-9]{2,3})$/);
       if (noHyphenWd) {
         const seriesLetter = noHyphenWd[1];
         const fixedDigits = noHyphenWd[2].split('').map(mapDigitChar).join('');
-        if (/^\d{4}$/.test(fixedDigits)) {
-          tok = `WD-${seriesLetter}${fixedDigits}${noHyphenWd[3]}`;
+        if (/^\d{4}$/.test(fixedDigits) && /[A-Z]/.test(noHyphenWd[3])) {
+          const fixedTail = noHyphenWd[3].split('').map(mapTailAlphaChar).join('');
+          tok = `WD-${seriesLetter}${fixedDigits}${fixedTail}`;
         }
       }
       // 修正在型號數字區段中的字元混淆（如 WD-S1B18PB -> WD-S1818PB、WD-SB818PB -> WD-S8818PB）
-      const washMatch = tok.match(/^([A-Z]{1,4}-[A-Z])([A-Z0-9]{3,6})([A-Z]{0,4})$/);
+      const washMatch = tok.match(/^([A-Z]{1,4}-[A-Z])([A-Z0-9]{3,6})([A-Z0-9]{0,4})$/);
       if (washMatch) {
         const head = washMatch[1];
         const mid = washMatch[2];
@@ -2748,6 +2814,11 @@
         prev = tok;
         tok = tok.replace(/(\d)([BOISZ])(\d)/g, (_, d1, midCh, d2) => `${d1}${mapDigitChar(midCh)}${d2}`);
       } while (tok !== prev);
+      // 結尾 2~3 碼英文顏色／規格碼校正（例如 WD-S1818P8 -> WD-S1818PB、P0 -> PO、5B -> SB）
+      const tailSpecMatch = tok.match(/^([A-Z]{1,4}-[A-Z]{1,4}\d{2,4})([A-Z][085126]|[085126][A-Z]|[A-Z]{2}[085126])$/);
+      if (tailSpecMatch) {
+        tok = `${tailSpecMatch[1]}${tailSpecMatch[2].split('').map(mapTailAlphaChar).join('')}`;
+      }
       return tok;
     };
 
