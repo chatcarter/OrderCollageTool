@@ -7055,7 +7055,7 @@ async function quickPreScanImageText(img) {
 /**
  * v28: 非空值 OCR 狀態合併保護 — 嚴格隔離發票欄位與保卡欄位，空字串絕不洗掉既有有效結果
  */
-function mergeOcrSummaryFields(sourceRole, fields) {
+function mergeOcrSummaryFields(sourceRole, fields, options = {}) {
   if (!fields || typeof cachedReceiptOcrInfo === 'undefined') return;
   const isValidNonEmpty = val => {
     if (typeof val !== 'string') return false;
@@ -7072,9 +7072,19 @@ function mergeOcrSummaryFields(sourceRole, fields) {
       cachedReceiptOcrInfo.sellerTaxId = fields.sellerTaxId.trim();
     }
   } else if (sourceRole === 'warranty_card') {
-    if (isValidNonEmpty(fields.brand)) cachedReceiptOcrInfo.brand = fields.brand.trim();
-    if (isValidNonEmpty(fields.model)) cachedReceiptOcrInfo.model = fields.model.trim();
-    if (isValidNonEmpty(fields.serialNo)) cachedReceiptOcrInfo.serialNo = fields.serialNo.trim();
+    if (options && options.forceOverwrite) {
+      if (isValidNonEmpty(fields.brand)) cachedReceiptOcrInfo.brand = fields.brand.trim();
+      if (typeof fields.model === 'string') {
+        cachedReceiptOcrInfo.model = isValidNonEmpty(fields.model) ? fields.model.trim() : '';
+      }
+      if (typeof fields.serialNo === 'string') {
+        cachedReceiptOcrInfo.serialNo = isValidNonEmpty(fields.serialNo) ? fields.serialNo.trim() : '';
+      }
+    } else {
+      if (isValidNonEmpty(fields.brand)) cachedReceiptOcrInfo.brand = fields.brand.trim();
+      if (isValidNonEmpty(fields.model)) cachedReceiptOcrInfo.model = fields.model.trim();
+      if (isValidNonEmpty(fields.serialNo)) cachedReceiptOcrInfo.serialNo = fields.serialNo.trim();
+    }
   }
 }
 
@@ -7182,11 +7192,83 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
     try {
       let modelClean = '';
       let serialClean = '';
+      let serialFromBarcode = false;
       let fallbackRowModel = '';
       let fallbackRowSerial = '';
       let crossVerifiedNote = '';
       let modelLabelBox = null;
       let serialLabelBox = null;
+
+      // 0. 第一優先（100% 零誤字）：直接解碼「機號」正上方一維條碼（Code 128）
+      const tryDecodeLgUpperBarcodeSerial = async canvas => {
+        const defaultBarcodeReg = (tpl.ocrRegions && tpl.ocrRegions.barcodeSerial) || { x: 0.595, y: 0.145, w: 0.370, h: 0.175 };
+        const widerBarcodeReg = { x: 0.54, y: 0.10, w: 0.44, h: 0.25 };
+        const rawRegs = [defaultBarcodeReg, widerBarcodeReg];
+        const candidateCanvases = [];
+
+        rawRegs.forEach(reg => {
+          const rx = Math.max(0, Math.round(reg.x * canvas.width));
+          const ry = Math.max(0, Math.round(reg.y * canvas.height));
+          const rw = Math.max(20, Math.min(canvas.width - rx, Math.round(reg.w * canvas.width)));
+          const rh = Math.max(20, Math.min(canvas.height - ry, Math.round(reg.h * canvas.height)));
+          const rawCrop = document.createElement('canvas');
+          rawCrop.width = Math.round(rw * 2.5);
+          rawCrop.height = Math.round(rh * 2.5);
+          const rCtx = rawCrop.getContext('2d', { willReadFrequently: true });
+          rCtx.imageSmoothingEnabled = true;
+          rCtx.imageSmoothingQuality = 'high';
+          rCtx.drawImage(canvas, rx, ry, rw, rh, 0, 0, rawCrop.width, rawCrop.height);
+          candidateCanvases.push(rawCrop);
+
+          if (window.CardTemplates.createEnhancedOcrCropCanvas) {
+            candidateCanvases.push(window.CardTemplates.createEnhancedOcrCropCanvas(canvas, reg, 2.5));
+          }
+        });
+        candidateCanvases.push(canvas);
+
+        const acceptBarcodeCandidate = rawVal => {
+          const txt = String(rawVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (!txt || /^MBM\d+/.test(txt) || /^REV/.test(txt) || txt.length < 9 || txt.length > 15) return '';
+          if (/^\d{3}[A-Z]{6}\d{3}$/.test(txt)) return txt;
+          if (/^\d{3}[A-Z0-9]{6,11}$/.test(txt) && (txt.match(/\d/g) || []).length >= 5) return txt;
+          if (window.CardTemplates.filterLgSerialResult) {
+            return window.CardTemplates.filterLgSerialResult(txt);
+          }
+          return '';
+        };
+
+        if (typeof window.BarcodeDetector === 'function') {
+          try {
+            const detector = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'itf'] });
+            for (let i = 0; i < candidateCanvases.length; i++) {
+              const detected = await detector.detect(candidateCanvases[i]);
+              if (Array.isArray(detected)) {
+                for (let j = 0; j < detected.length; j++) {
+                  const hit = acceptBarcodeCandidate(detected[j] && detected[j].rawValue);
+                  if (hit) return hit;
+                }
+              }
+            }
+          } catch (bdErr) {
+            console.warn('原生 BarcodeDetector 條碼解碼略過，切換純 JS Code 128:', bdErr);
+          }
+        }
+
+        if (window.CardTemplates && typeof window.CardTemplates.decodeCode128FromCanvas === 'function') {
+          for (let i = 0; i < candidateCanvases.length - 1; i++) {
+            const jsDecoded = window.CardTemplates.decodeCode128FromCanvas(candidateCanvases[i]);
+            const hit = acceptBarcodeCandidate(jsDecoded);
+            if (hit) return hit;
+          }
+        }
+        return '';
+      };
+
+      const barcodeHitSerial = await tryDecodeLgUpperBarcodeSerial(srcCanvas);
+      if (barcodeHitSerial) {
+        serialClean = barcodeHitSerial;
+        serialFromBarcode = true;
+      }
 
       let chiEngWorker = null;
       try {
@@ -7238,7 +7320,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         }
       }
 
-      // 2. 局部 2.5x 放大 ＋ 自適應二值化 ＋ 純英數單行白名單專項 OCR（精準修復 6/0、8/B、EQ/AR、87/5T）
+      // 2. 第二優先：局部 3.5x 放大 ＋ 去虛點底線自適應二值化 ＋ 純英數單行白名單專項 OCR（保留連字號 '-')
       const cropFn = window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas || window.CardTemplates.createEnhancedOcrCropCanvas;
       if (cropFn) {
         const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model) || { x: 0.415, y: 0.285, w: 0.220, h: 0.095 };
@@ -7272,8 +7354,8 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
               return { x: defaultSerialReg.x, y: ry, w: defaultSerialReg.w, h: rh };
             })();
 
-        const modelCrop = cropFn(srcCanvas, modelRoi, 2.5);
-        const serialCrop = cropFn(srcCanvas, serialRoi, 2.5);
+        const modelCrop = cropFn(srcCanvas, modelRoi, 3.5, { stripDottedUnderline: true });
+        const serialCrop = !serialFromBarcode ? cropFn(srcCanvas, serialRoi, 3.5, { stripDottedUnderline: true }) : null;
 
         let rawModel = '';
         let rawSerial = '';
@@ -7284,19 +7366,23 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
           });
           const mRes = await worker.recognize(modelCrop);
           rawModel = (mRes && mRes.data && mRes.data.text) || '';
-          const sRes = await worker.recognize(serialCrop);
-          rawSerial = (sRes && sRes.data && sRes.data.text) || '';
+          if (serialCrop) {
+            const sRes = await worker.recognize(serialCrop);
+            rawSerial = (sRes && sRes.data && sRes.data.text) || '';
+          }
         } else {
           const mRes = await window.Tesseract.recognize(modelCrop, 'eng');
           rawModel = (mRes && mRes.data && mRes.data.text) || '';
-          const sRes = await window.Tesseract.recognize(serialCrop, 'eng');
-          rawSerial = (sRes && sRes.data && sRes.data.text) || '';
+          if (serialCrop) {
+            const sRes = await window.Tesseract.recognize(serialCrop, 'eng');
+            rawSerial = (sRes && sRes.data && sRes.data.text) || '';
+          }
         }
 
         if (rawModel && window.CardTemplates.filterLgModelResult) {
           modelClean = window.CardTemplates.filterLgModelResult(rawModel);
         }
-        if (rawSerial && window.CardTemplates.filterLgSerialResult) {
+        if (!serialFromBarcode && rawSerial && window.CardTemplates.filterLgSerialResult) {
           serialClean = window.CardTemplates.filterLgSerialResult(rawSerial);
         }
       }
@@ -7362,25 +7448,29 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
         }
       }
 
-      if (inputCardModel && modelClean) inputCardModel.value = modelClean;
-      if (inputCardSerial && serialClean) inputCardSerial.value = serialClean;
+      // 關鍵修正（v49）：無條件強制寫回專項/條碼辨識結果，徹底覆蓋全域全文 OCR 舊值
+      if (inputCardModel) inputCardModel.value = modelClean || '';
+      if (inputCardSerial) inputCardSerial.value = serialClean || '';
+      layer._lgVerifiedModel = modelClean;
+      layer._lgVerifiedSerial = serialClean;
 
       mergeOcrSummaryFields('warranty_card', {
         brand: 'LG',
         model: modelClean,
         serialNo: serialClean
-      });
+      }, { forceOverwrite: true });
 
       if (typeof syncSummaryTextLayer === 'function') {
         syncSummaryTextLayer(true);
       }
 
+      const serialSrcLabel = serialFromBarcode ? '【條碼直讀】' : '';
       setCardSmartStatus(
-        `✅ 辨識完成（${tpl.shortLabel}）${crossVerifiedNote}\n機型：${modelClean || '未讀出'} ｜ 機號：${serialClean || '未讀出'}`,
+        `✅ 辨識完成（${tpl.shortLabel}）${crossVerifiedNote}\n機型：${modelClean || '未讀出'} ｜ 機號${serialSrcLabel}：${serialClean || '未讀出'}`,
         false
       );
       setCanvasOcrPill(`✅ LG 保卡辨識完成：${modelClean || '-'} / ${serialClean || '-'}`, 'success');
-      showToast(`LG 保卡辨識完成：${modelClean || '-'} / ${serialClean || '-'}`);
+      showToast(`LG 保卡辨識完成${serialSrcLabel}：${modelClean || '-'} / ${serialClean || '-'}`);
     } catch (err) {
       console.error('LG 保卡 OCR 失敗:', err);
       const errMsg = getOcrErrorDisplayMessage(err);

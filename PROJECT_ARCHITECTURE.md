@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:26:22] (第 49 版 / v49)
+- **執行項目**：**LG 條碼直接解碼機號 ＋ 去虛點 3.5x OCR ＋ 印章下移 1cm／左移 0.5cm 精準進框（v49）** — 嚴格隔離並完整保留 Panasonic 已封版核心，修復實測機號／型號殘留誤讀及印章偏高／偏右切框與木桌留白問題。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_202229/` 備份，更新雙份 HTML 為 `v49 (2026.11.24)` 與 `?v=49`。
+  2. **條碼直讀機號與強制覆寫（`static/card_templates.js` / `static/app.js`）**：於 `runLgCardTargetedOcr()` 第一優先整合原生 `BarcodeDetector` 與純 JS `decodeCode128FromCanvas()`（Mod-103 校驗）讀取 `機號` 上方條碼；第二優先採 `3.5x` 去虛點底線自適應二值化與 `filterLgModelResult()` 修復 `WDSIB18PB ➔ WD-S1818PB`；搭配 `mergeOcrSummaryFields(..., { forceOverwrite: true })` 無條件覆寫全域 OCR 舊值。
+  3. **印章偏移進框與收緊白紙裁切**：調整 `LG_TW_STAMP_SPEC` 至 `centerX: 0.760, centerY: 0.620, widthRatio: 0.162`（盒寬 `94%~96%`），修正 `detectLgDealerBoxStampSpec()` 盒內投影避免左側文字誤觸，並強化 `detectLgCardQuad()` 右／下暗部裁切與 `0.6%`（約 `3mm`）極窄紙邊。
+  4. **驗證與推送**：通過 HTML 同步、語法檢核與 `CRLF` 檢查並推送至 `origin/main`。
+
 ### [2026-11-24 20:17:19] (第 48 版 / v48)
 - **執行項目**：**升級 LG `lg_tw` 白紙去背透視 ＋ 「經銷商店章＋右側QR碼」垂直雙地標蓋章 ＋ 2.5x 自適應二值化專項 OCR（v48）** — 在嚴格隔離不改動 Panasonic 已封版核心與 v47 分類路由下，修復木桌背景裁切、印章右偏壓字與機型／機號識別錯誤。
 - **具體進度**：
