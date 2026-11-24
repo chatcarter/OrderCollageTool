@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 23:06] (第 56 版 / v56)
+- **執行項目**：**工作台互動式印章圖層升級、極簡工具列與 `🔄 重新讀取` ＋ 三菱印章右移 2mm（v56）** — 嚴格保留已封版 Panasonic 國際牌與 LG `lg_tw` 所有核心邏輯，精準完成 `mitsubishi_tw` 印章右偏補償、互動式獨立印章圖層（一壓即亮虛線框＋直接拖曳／雙擊原地改期調色、永不烘烤消失）以及頂部工具列去蕪存菁與原始檔快照重讀。
+- **具體進度**：
+  1. **備份與版本徽章（`v56`）**：
+     - 建立 `_backup/20261124_230006/` 完整備份，同步更新 `index.html`、`static/index.html` 至 `v56 (2026.11.24)` 與 `?v=56`。
+  2. **三菱保證書 `mitsubishi_tw` 印章水平右移 `+2mm`（`static/card_templates.js`）**：
+     - 保持 `centerY: 0.765` 與 `widthRatio: 0.285` 不變，僅將 `MITSUBISHI_TW_STAMP_SPEC.centerX` 由 `0.208` 調升至 **`0.218`**，並於 `detectMitsubishiDealerStampSpec()` 同步平移 `+0.010`（夾限 `[0.195, 0.245]`）。
+  3. **最高敏感度互動式印章圖層（`static/app.js`、`static/style.css`）**：
+     - 重構 `autoStampWarrantyCard` 與 `applyConfirmedStampToCardLayer`，改透過 `attachInteractiveStampToCardLayer()` 保留乾淨未蓋章保卡底圖（`rectifiedCleanCanvas`、`hasBakedStamp = false`），掛載 `type: 'stamp'` + `blendMode: 'multiply'` 獨立圖層，徹底解決重編／雙擊後印章消失問題。
+     - `hitTest()` 新增最高優先印章偵測熱區通道；滑鼠 `mousedown` 與手機單指 `touchstart` 按壓印章瞬間零延遲亮起 `#003FBC` 藍色虛線編輯框、鎖定畫布捲動並可直接拖曳移動／四角縮放（且標記 `userMovedStamp = true` 避免後續排版複位）；桌面與手機雙擊印章皆可喚醒 `#mobileStampEditBar` 浮動改期／調深淺工具列。
+  4. **極簡工具列與 `🔄 重新讀取` 原始檔快照池（`index.html`、`static/app.js`、`static/style.css`）**：
+     - 以 `.toolbar-v56-hidden` 視覺隱藏 5 個冗餘頂部工具列項目（保留函式實作），並於原「適合視窗」位置新增 `#btnReloadRawBatch`（`🔄 重新讀取`），搭配 `_lastImportedRawFiles` 分類原始檔案快照池於點擊時原地清空重跑 `handleFiles()`。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、全修改檔 `LF-only=0`（`CRLF`）、`card_templates.js` 與 `app.js` 語法括號檢查（`errors=0`）並推送至 `origin/main`。
+
 ### [2026-11-24 22:12:59] (第 54 版 / v54)
 - **執行項目**：**調整台灣三菱電機保證書 `mitsubishi_tw` 印章放大 `1.4` 倍並鎖定四邊框線（v54）** — 嚴格保留已封版 Panasonic 國際牌、LG 台灣樂金及三菱機型／製造號碼辨識邏輯，僅調大 `mitsubishi_tw` 印章尺寸至約 `1.4x` 並校準左下欄位四邊對位座標。
 - **具體進度**：

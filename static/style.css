@@ -134,6 +134,22 @@ body {
   gap: 8px;
 }
 
+.toolbar-v56-hidden {
+  display: none !important;
+}
+
+#btnReloadRawBatch:not(:disabled) {
+  color: #003FBC;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+#btnReloadRawBatch:not(:disabled):hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
 .canvas-size-badge {
   font-size: 12px;
   font-weight: 700;
@@ -1499,9 +1515,31 @@ body.is-mobile-mode .stamp-date-modal-card {
   padding: 16px;
 }
 
-/* 手機端印章編輯浮動藍色深淺微調列 (v40) */
+/* 印章編輯中浮動藍色深淺微調列 (v40/v56: 雙擊印章進入編輯時於手機與桌面皆可顯示) */
 .mobile-stamp-edit-bar {
   display: none;
+}
+
+.mobile-stamp-edit-bar.hidden {
+  display: none !important;
+}
+
+body:not(.is-mobile-mode) .mobile-stamp-edit-bar:not(.hidden) {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  background: rgba(239, 246, 255, 0.97);
+  backdrop-filter: blur(8px);
+  border: 2px solid #003FBC;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+  z-index: 650;
 }
 
 body.is-mobile-mode .mobile-stamp-edit-bar {

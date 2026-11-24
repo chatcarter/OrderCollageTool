@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 23:06] (第 56 版 / v56)
+- **執行項目**：**互動式印章圖層升級、頂部極簡工具列＋`🔄 重新讀取` ＋ 三菱印章右移 2mm（v56）** — 嚴格凍結 Panasonic 與 LG `lg_tw` 已封版核心，將保卡自動蓋章全面升級為不破壞底圖的互動式 `Multiply` 獨立印章圖層，新增原始檔案快照池與頂部一鍵重新讀取功能。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_230006/` 備份，雙份 HTML 升級為 `v56 (2026.11.24)` 與 `?v=56`。
+  2. **三菱座標微調（`static/card_templates.js`）**：維持 `centerY: 0.765` 與 `widthRatio: 0.285` 不變，僅將 `MITSUBISHI_TW_STAMP_SPEC.centerX` 調至 `0.218`（`detectMitsubishiDealerStampSpec()` 同步 `+0.010`）。
+  3. **互動式印章管線（`static/app.js`、`static/style.css`）**：新增 `attachInteractiveStampToCardLayer()` 與 `hasWarrantyCardStampAttached()`，保留乾淨 `rectifiedCleanCanvas` 並疊加可單壓亮框、零延遲拖曳／捏合縮放與雙擊喚醒 `#mobileStampEditBar`（支援桌面與手機浮動顯示）之獨立 `stamp` 圖層。
+  4. **極簡工具列與快照重讀**：以 `.toolbar-v56-hidden` 隱藏 5 個冗餘項目並於原「適合視窗」位置加入 `#btnReloadRawBatch`（`🔄 重新讀取`），透過 `_lastImportedRawFiles` 保留原始 `File` 物件一鍵原地重新辨識、裁切與蓋章。
+  5. **驗證與推送**：通過 HTML 雙份雜湊一致、全檔 `CRLF`、`JS_BALANCE`（`errors=0`）檢查並推送至 `origin/main`。
+
 ### [2026-11-24 22:12:59] (第 54 版 / v54)
 - **執行項目**：**三菱電機保證書 `mitsubishi_tw` 印章放大 `1.4` 倍並鎖定四邊框線（v54）** — 嚴格凍結 Panasonic、LG 與三菱 OCR 邏輯，僅將三菱印章放大至 `widthRatio: 0.285` 並鎖定左下四邊框線對齊。
 - **具體進度**：

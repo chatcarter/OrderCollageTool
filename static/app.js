@@ -144,8 +144,56 @@ const desktopBatchCompleteCard = document.getElementById('desktopBatchCompleteCa
 const btnUndo = document.getElementById('btnUndo');
 const btnZoomIn = document.getElementById('btnZoomIn');
 const btnZoomOut = document.getElementById('btnZoomOut');
+const btnReloadRawBatch = document.getElementById('btnReloadRawBatch');
 const btnZoomFit = document.getElementById('btnZoomFit');
 const btnZoom100 = document.getElementById('btnZoom100');
+
+// --- v56: 原始匯入檔案快照池（供「🔄 重新讀取」一鍵無重整重跑完整流程） ---
+const _lastImportedRawFiles = {
+  orderPdf: null,
+  cardImage: null,
+  receiptImage: null,
+  extraImages: []
+};
+let _isReloadingRawBatch = false;
+
+function getSavedRawFilesForReload() {
+  const list = [];
+  if (_lastImportedRawFiles.orderPdf) list.push(_lastImportedRawFiles.orderPdf);
+  if (_lastImportedRawFiles.cardImage) list.push(_lastImportedRawFiles.cardImage);
+  if (_lastImportedRawFiles.receiptImage) list.push(_lastImportedRawFiles.receiptImage);
+  if (_lastImportedRawFiles.extraImages && _lastImportedRawFiles.extraImages.length > 0) {
+    _lastImportedRawFiles.extraImages.forEach(f => {
+      if (f) list.push(f);
+    });
+  }
+  return list;
+}
+
+function updateReloadRawBatchButtonState() {
+  if (!btnReloadRawBatch) return;
+  btnReloadRawBatch.disabled = getSavedRawFilesForReload().length === 0 || _isReloadingRawBatch;
+}
+
+function recordImportedRawFileByRole(roleKey, file) {
+  if (!file) return;
+  if (roleKey === 'orderPdf') {
+    _lastImportedRawFiles.orderPdf = file;
+  } else if (roleKey === 'cardImage') {
+    _lastImportedRawFiles.cardImage = file;
+  } else if (roleKey === 'receiptImage') {
+    _lastImportedRawFiles.receiptImage = file;
+  } else {
+    const sig = `${file.name}_${file.size}_${file.lastModified || 0}`;
+    const exists = _lastImportedRawFiles.extraImages.some(
+      f => f && `${f.name}_${f.size}_${f.lastModified || 0}` === sig
+    );
+    if (!exists) {
+      _lastImportedRawFiles.extraImages.push(file);
+    }
+  }
+  updateReloadRawBatchButtonState();
+}
 const zoomPercent = document.getElementById('zoomPercent');
 const canvasSizeLabel = document.getElementById('canvasSizeLabel');
 const btnResetCanvasSize = document.getElementById('btnResetCanvasSize');
@@ -1670,31 +1718,59 @@ function hitTest(x, y) {
     return expHit;
   }
 
-  // 4. 偵測目前選取物件之一般控制把手 (旋轉與 4 角等比例縮放)
-  if (activeLayer && !activeLayer.rectCropMode && !activeLayer.distortMode) {
-    const layer = activeLayer;
+  // 4. 若目前選取物件本身就是專櫃印章，優先偵測其控制把手 (旋轉與 4 角縮放)
+  const hitRadiusForHandles = (document.body.classList.contains('is-mobile-mode') ? 30 : 22) / currentZoom;
+  const hitRotStemLength = 32 / currentZoom;
+  const hitTestLayerControlHandles = targetLayer => {
+    if (!targetLayer || targetLayer.rectCropMode || targetLayer.distortMode) return null;
+    const dx = x - targetLayer.x;
+    const dy = y - targetLayer.y;
+    const localX = dx * Math.cos(-targetLayer.rotation) - dy * Math.sin(-targetLayer.rotation);
+    const localY = dx * Math.sin(-targetLayer.rotation) + dy * Math.cos(-targetLayer.rotation);
+    const hw = targetLayer.width / 2;
+    const hh = targetLayer.height / 2;
+
+    if (Math.hypot(localX - 0, localY - (-hh - hitRotStemLength)) <= hitRadiusForHandles) {
+      return { layer: targetLayer, part: 'rot' };
+    }
+    if (Math.hypot(localX - (-hw), localY - (-hh)) <= hitRadiusForHandles) return { layer: targetLayer, part: 'tl' };
+    if (Math.hypot(localX - hw, localY - (-hh)) <= hitRadiusForHandles) return { layer: targetLayer, part: 'tr' };
+    if (Math.hypot(localX - hw, localY - hh) <= hitRadiusForHandles) return { layer: targetLayer, part: 'br' };
+    if (Math.hypot(localX - (-hw), localY - hh) <= hitRadiusForHandles) return { layer: targetLayer, part: 'bl' };
+    return null;
+  };
+
+  if (activeLayer && activeLayer.type === 'stamp') {
+    const stampHandleHit = hitTestLayerControlHandles(activeLayer);
+    if (stampHandleHit) return stampHandleHit;
+  }
+
+  // 4.5 v56 最高敏感度專屬優先通道：優先偵測「專櫃印章 (stamp)」圖層本體與放大熱區，不被下方保卡／邊框攔截
+  const stampHitPad = (document.body.classList.contains('is-mobile-mode') ? 26 : 16) / currentZoom;
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const layer = layers[i];
+    if (!layer || layer.type !== 'stamp') continue;
     const dx = x - layer.x;
     const dy = y - layer.y;
     const localX = dx * Math.cos(-layer.rotation) - dy * Math.sin(-layer.rotation);
     const localY = dx * Math.sin(-layer.rotation) + dy * Math.cos(-layer.rotation);
-    const hw = layer.width / 2;
-    const hh = layer.height / 2;
-    const handleHitRadius = (document.body.classList.contains('is-mobile-mode') ? 28 : 20) / currentZoom;
-    const rotStemLength = 32 / currentZoom;
-
-    if (Math.hypot(localX - 0, localY - (-hh - rotStemLength)) <= handleHitRadius) {
-      return { layer, part: 'rot' };
+    const hw = layer.width / 2 + stampHitPad;
+    const hh = layer.height / 2 + stampHitPad;
+    if (localX >= -hw && localX <= hw && localY >= -hh && localY <= hh) {
+      return { layer, part: 'body' };
     }
-
-    if (Math.hypot(localX - (-hw), localY - (-hh)) <= handleHitRadius) return { layer, part: 'tl' };
-    if (Math.hypot(localX - hw, localY - (-hh)) <= handleHitRadius) return { layer, part: 'tr' };
-    if (Math.hypot(localX - hw, localY - hh) <= handleHitRadius) return { layer, part: 'br' };
-    if (Math.hypot(localX - (-hw), localY - hh) <= handleHitRadius) return { layer, part: 'bl' };
   }
 
-  // 5. 由頂層往底層偵測物件本體 (body)
+  // 4.8 其餘已選取物件之一般控制把手 (旋轉與 4 角等比例縮放)
+  if (activeLayer && activeLayer.type !== 'stamp') {
+    const generalHandleHit = hitTestLayerControlHandles(activeLayer);
+    if (generalHandleHit) return generalHandleHit;
+  }
+
+  // 5. 由頂層往底層偵測一般物件本體 (body)
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i];
+    if (!layer || layer.type === 'stamp') continue;
     const dx = x - layer.x;
     const dy = y - layer.y;
     const localX = dx * Math.cos(-layer.rotation) - dy * Math.sin(-layer.rotation);
@@ -1787,6 +1863,9 @@ canvas.addEventListener('mousedown', e => {
     }
 
     setActiveLayer(hit.layer);
+    if (hit.layer.type !== 'stamp' && typeof getMobileEditingStampLayer === 'function' && getMobileEditingStampLayer()) {
+      exitMobileEditMode(true);
+    }
 
     objInitialState = {
       x: hit.layer.x,
@@ -1815,6 +1894,9 @@ canvas.addEventListener('mousedown', e => {
     }
   } else {
     setActiveLayer(null);
+    if (typeof exitMobileEditMode === 'function') {
+      exitMobileEditMode(true);
+    }
   }
   render();
 });
@@ -2256,9 +2338,14 @@ function finishPointerDragSession() {
   resizeHandle = null;
   objInitialState = null;
 
-  // v37: 拖曳或縮放印章圖層放開瞬間，自動重採樣落點紙張光影並更新 Multiply 融合色調
-  if (movedStampLayer && typeof refreshSingleStandaloneStampLayer === 'function') {
-    refreshSingleStandaloneStampLayer(movedStampLayer, true);
+  // v37/v56: 拖曳或縮放印章圖層放開瞬間，標記已手動微調避免自動排版重置落點，並重採樣紙張光影更新 Multiply 融合色調
+  if (movedStampLayer) {
+    if (dragPreSnapshot && hasStateChanged(dragPreSnapshot)) {
+      movedStampLayer.userMovedStamp = true;
+    }
+    if (typeof refreshSingleStandaloneStampLayer === 'function') {
+      refreshSingleStandaloneStampLayer(movedStampLayer, true);
+    }
   }
   render();
 }
@@ -2290,17 +2377,18 @@ canvasViewport.addEventListener('touchstart', e => {
     const midX = (t1.clientX + t2.clientX) / 2;
     const midY = (t1.clientY + t2.clientY) / 2;
 
-    const editStamp = isMobileUI && typeof getMobileEditingStampLayer === 'function'
-      ? getMobileEditingStampLayer()
+    const activeStampForPinch = isMobileUI
+      ? ((typeof getMobileEditingStampLayer === 'function' && getMobileEditingStampLayer()) ||
+         (activeLayer && activeLayer.type === 'stamp' ? activeLayer : null))
       : null;
 
-    if (editStamp) {
+    if (activeStampForPinch) {
       mobilePinchState = null;
       mobileStampPinchState = {
-        layer: editStamp,
+        layer: activeStampForPinch,
         startDist: dist,
-        startW: editStamp.width,
-        startH: editStamp.height,
+        startW: activeStampForPinch.width,
+        startH: activeStampForPinch.height,
         preSnapshot: captureSnapshot('雙指縮放專櫃印章')
       };
       return;
@@ -2326,6 +2414,7 @@ canvasViewport.addEventListener('touchstart', e => {
       const editStamp = typeof getMobileEditingStampLayer === 'function'
         ? getMobileEditingStampLayer()
         : null;
+      const hit = hitTest(coords.x, coords.y);
 
       mobileTapCandidate = {
         startX: touch.clientX,
@@ -2336,41 +2425,52 @@ canvasViewport.addEventListener('touchstart', e => {
         tapOutsideToExit: false
       };
 
-      if (editStamp) {
-        const hit = hitTest(coords.x, coords.y);
-        if (hit && hit.layer === editStamp) {
-          e.preventDefault();
-          isTouchDraggingLayer = true;
-          dragPreSnapshot = captureSnapshot('觸控移動/縮放印章');
-          dragStartX = coords.x;
-          dragStartY = coords.y;
-          setActiveLayer(editStamp);
-          objInitialState = {
-            x: editStamp.x,
-            y: editStamp.y,
-            width: editStamp.width,
-            height: editStamp.height,
-            rotation: editStamp.rotation,
-            fontSize: editStamp.fontSize
-          };
-          if (hit.part === 'rot') {
-            isRotating = true;
-          } else if (['tl', 'tr', 'br', 'bl'].includes(hit.part)) {
-            isResizing = true;
-            resizeHandle = hit.part;
-          } else {
-            isDragging = true;
-          }
-          render();
-          return;
+      // v56: 手機單指觸碰印章圖層瞬間，零延遲亮起藍色虛線方框並鎖定畫布捲動，直接原地拖曳移動／控制點縮放
+      const directTouchStamp = (hit && hit.layer && hit.layer.type === 'stamp')
+        ? hit.layer
+        : (editStamp && hit && hit.layer === editStamp ? editStamp : null);
+
+      if (directTouchStamp) {
+        e.preventDefault();
+        isTouchDraggingLayer = true;
+        dragPreSnapshot = captureSnapshot('觸控移動/縮放印章');
+        dragStartX = coords.x;
+        dragStartY = coords.y;
+        setActiveLayer(directTouchStamp);
+        objInitialState = {
+          x: directTouchStamp.x,
+          y: directTouchStamp.y,
+          width: directTouchStamp.width,
+          height: directTouchStamp.height,
+          rotation: directTouchStamp.rotation,
+          fontSize: directTouchStamp.fontSize
+        };
+        if (hit && hit.part === 'rot') {
+          isRotating = true;
+        } else if (hit && ['tl', 'tr', 'br', 'bl'].includes(hit.part)) {
+          isResizing = true;
+          resizeHandle = hit.part;
+        } else {
+          isDragging = true;
         }
-        // 在印章編輯狀態下點到外面：標記單擊結束編輯（允許仍可雙擊其他元件）
-        mobileTapCandidate.tapOutsideToExit = true;
-        isTouchDraggingLayer = false;
+        render();
         return;
       }
 
-      // v40: 手機預覽模式下，單指觸控絕不拖動物件，保留順暢檢視與雙擊喚醒編輯
+      if (editStamp) {
+        // 在印章編輯狀態下點到外面：標記單擊結束編輯（允許仍可雙擊其他元件）
+        mobileTapCandidate.tapOutsideToExit = true;
+        setActiveLayer(null);
+        isTouchDraggingLayer = false;
+        render();
+        return;
+      }
+
+      // v40: 手機預覽模式下，單指觸控非印章物件保留順暢捲動檢視與雙擊喚醒編輯，同時點擊空白區熄滅印章虛線框
+      if (activeLayer && activeLayer.type === 'stamp') {
+        setActiveLayer(null);
+        render();
+      }
       isTouchDraggingLayer = false;
       return;
     }
@@ -2384,6 +2484,9 @@ canvasViewport.addEventListener('touchstart', e => {
       dragStartX = coords.x;
       dragStartY = coords.y;
       setActiveLayer(hit.layer);
+    if (hit.layer.type !== 'stamp' && typeof getMobileEditingStampLayer === 'function' && getMobileEditingStampLayer()) {
+      exitMobileEditMode(true);
+    }
       objInitialState = {
         x: hit.layer.x,
         y: hit.layer.y,
@@ -2468,6 +2571,7 @@ const handleCanvasTouchEnd = e => {
     const preSnap = mobileStampPinchState.preSnapshot;
     mobileStampPinchState = null;
     if (preSnap && hasStateChanged(preSnap)) {
+      if (finishedLayer) finishedLayer.userMovedStamp = true;
       undoStack.push(preSnap);
       if (undoStack.length > MAX_UNDO_STEPS) undoStack.shift();
       updateUndoBtnState();
@@ -2594,14 +2698,27 @@ window.addEventListener('keydown', e => {
   }
 });
 
-// --- 雙擊事件：對著照片點兩下快速開啟/套用「矩形裁切」，對著文字點兩下編輯文字 ---
+// --- 雙擊事件：對著專櫃印章點兩下喚醒浮動調整列；對著照片點兩下快速開啟/套用「矩形裁切」；對著文字點兩下編輯文字 ---
 canvas.addEventListener('dblclick', e => {
   const coords = getCanvasCoords(e);
   const hit = hitTest(coords.x, coords.y);
   if (!hit || !hit.layer) return;
 
+  if (hit.layer.type === 'stamp') {
+    if (typeof enterMobileStampEditMode === 'function') {
+      enterMobileStampEditMode(hit.layer);
+    } else {
+      setActiveLayer(hit.layer);
+    }
+    showToast('已開啟印章編輯工具列（可改日期／調整藍色深淺／拖曳移動）');
+    return;
+  }
+
   if (hit.layer.type === 'image') {
     setActiveLayer(hit.layer);
+    if (hit.layer.type !== 'stamp' && typeof getMobileEditingStampLayer === 'function' && getMobileEditingStampLayer()) {
+      exitMobileEditMode(true);
+    }
     if (hit.layer.rectCropMode) {
       btnApplyRectCrop.click();
     } else {
@@ -2619,6 +2736,9 @@ canvas.addEventListener('dblclick', e => {
     }
   } else if (hit.layer.type === 'text' || hit.layer.type === 'overrideText') {
     setActiveLayer(hit.layer);
+    if (hit.layer.type !== 'stamp' && typeof getMobileEditingStampLayer === 'function' && getMobileEditingStampLayer()) {
+      exitMobileEditMode(true);
+    }
     openInlineTextEditor(hit.layer);
   }
 });
@@ -3733,6 +3853,8 @@ async function importPdfPureFrontend(file) {
       return;
     }
 
+    recordImportedRawFileByRole('orderPdf', file);
+
     const page = await pdf.getPage(1);
     const scale = 6.0;
     const viewport = page.getViewport({ scale });
@@ -3929,6 +4051,11 @@ function importImagePureFrontend(file) {
         const isReceiptImg = docRole === 'receipt';
         const isOrderSheetImg = docRole === 'order_sheet';
         const isWarrantyCandidate = docRole === 'warranty_card';
+
+        recordImportedRawFileByRole(
+          isOrderSheetImg ? 'orderPdf' : (isWarrantyCandidate ? 'cardImage' : (isReceiptImg ? 'receiptImage' : 'extra')),
+          file
+        );
 
         if (isReceiptImg) markDesktopBatchRoleStatus('receipt', 'processing');
         else if (isOrderSheetImg) markDesktopBatchRoleStatus('order', 'processing');
@@ -4316,16 +4443,17 @@ function importImagePureFrontend(file) {
           updateMobileWorkflowBadges();
         }
 
+        const cardHasInteractiveStamp = hasWarrantyCardStampAttached(newLayer);
         if (isReceiptImg) {
           markDesktopBatchRoleStatus('receipt', 'done');
         } else if (isOrderSheetImg) {
           markDesktopBatchRoleStatus('order', 'done');
-        } else if (isWarrantyCandidate && (newLayer.hasBakedStamp || !autoSmartEnabled)) {
+        } else if (isWarrantyCandidate && (cardHasInteractiveStamp || !autoSmartEnabled)) {
           markDesktopBatchRoleStatus('card', 'done');
         }
 
-        if (newLayer.hasBakedStamp) {
-          showToast(`已完成保卡拉正與自動蓋章: ${file.name}`);
+        if (cardHasInteractiveStamp) {
+          showToast(`已完成保卡拉正與互動式自動蓋章: ${file.name}`);
         } else if (trimmedCanvas) {
           showToast(`已完成發票去邊與排版: ${file.name}`);
         } else if (isUnmatchedBrandCard && isMobileUI) {
@@ -5926,10 +6054,43 @@ function clearWorkbenchSession(forceConfirm = true) {
 
 btnClearCanvas.addEventListener('click', () => clearWorkbenchSession(true));
 
+async function reloadImportedRawBatch() {
+  if (_isReloadingRawBatch) return;
+  const rawFiles = getSavedRawFilesForReload();
+  if (rawFiles.length === 0) {
+    showToast('尚未匯入任何原始檔案，無法重新讀取');
+    return;
+  }
+
+  _isReloadingRawBatch = true;
+  updateReloadRawBatchButtonState();
+  try {
+    clearWorkbenchSession(false);
+    undoStack = [];
+    updateUndoBtnState();
+    if (inputNewNote) inputNewNote.value = '';
+    if (inputStampDate) inputStampDate.value = '';
+    if (typeof resetDesktopBatchStatusPanel === 'function') {
+      resetDesktopBatchStatusPanel();
+    }
+    showToast(`🔄 正在使用已匯入的原始檔案 (${rawFiles.length} 份) 重新辨識、裁切與蓋章...`);
+    await handleFiles(rawFiles);
+  } finally {
+    _isReloadingRawBatch = false;
+    updateReloadRawBatchButtonState();
+  }
+}
+
+if (btnReloadRawBatch) {
+  btnReloadRawBatch.addEventListener('click', () => {
+    reloadImportedRawBatch();
+  });
+}
+
 // --- 縮放與工具列事件 ---
 btnZoomIn.addEventListener('click', () => setZoom(currentZoom + 0.08));
 btnZoomOut.addEventListener('click', () => setZoom(currentZoom - 0.08));
-btnZoomFit.addEventListener('click', fitCanvasToViewport);
+if (btnZoomFit) btnZoomFit.addEventListener('click', fitCanvasToViewport);
 btnZoom100.addEventListener('click', () => setZoom(1.0));
 
 if (btnResetCanvasSize) {
@@ -8413,6 +8574,84 @@ function resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas) {
   };
 }
 
+function hasWarrantyCardStampAttached(cardLayer) {
+  if (!cardLayer) return false;
+  if (cardLayer.hasBakedStamp) return true;
+  return layers.some(s => s && s.type === 'stamp' && s.attachedCardId === cardLayer.id);
+}
+
+// v56: 保留未蓋章高清保卡底圖（rectifiedCleanCanvas）並掛載可即時拖曳／雙擊調色的獨立 Multiply 印章圖層，徹底解決重編消失問題
+async function attachInteractiveStampToCardLayer(cardLayer, stampImg, dateStr, fontSize, offsetY, stampSpec, options = {}) {
+  if (!cardLayer || !layers.includes(cardLayer) || !stampImg) return null;
+
+  let cleanCanvas = cardLayer.rectifiedCleanCanvas;
+  if (!cleanCanvas) {
+    const rawSrc = cardLayer.warpedImage || cardLayer.croppedImage || cardLayer.image || cardLayer.rawImage;
+    if (!rawSrc) return null;
+    cleanCanvas = document.createElement('canvas');
+    cleanCanvas.width = rawSrc.width;
+    cleanCanvas.height = rawSrc.height;
+    cleanCanvas.getContext('2d').drawImage(rawSrc, 0, 0);
+    cardLayer.rectifiedCleanCanvas = cleanCanvas;
+  }
+
+  // 永遠保持保卡本體為乾淨未烘烤底圖（hasBakedStamp = false），避免雙擊或重複蓋印互相覆寫
+  cardLayer.image = cleanCanvas;
+  cardLayer.warpedImage = cleanCanvas;
+  cardLayer.hasBakedStamp = false;
+  cardLayer.isRectifiedCard = true;
+  cardLayer.bakedStampMeta = null;
+
+  // 移除此保卡既有附著印章後重建最新定位與日期
+  layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
+
+  const spec = stampSpec || resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas);
+  const stampAspect = stampImg.height / Math.max(1, stampImg.width);
+  const displayW = Math.max(120, Math.round(cardLayer.width * (spec.widthRatio || 0.210)));
+  const displayH = Math.max(80, Math.round(displayW * stampAspect));
+  const localDx = ((spec.centerX ?? 0.845) - 0.5) * cardLayer.width;
+  const localDy = ((spec.centerY ?? 0.395) - 0.5) * cardLayer.height;
+  const cosR = Math.cos(cardLayer.rotation || 0);
+  const sinR = Math.sin(cardLayer.rotation || 0);
+  const posX = Math.round(cardLayer.x + localDx * cosR - localDy * sinR);
+  const posY = Math.round(cardLayer.y + localDx * sinR + localDy * cosR);
+  const tiltRad = typeof options.tiltRad === 'number'
+    ? options.tiltRad
+    : (((spec.tiltRangeDeg || 1.5) * 0.35 * (Math.PI / 180)) * (Math.random() > 0.5 ? 1 : -1));
+
+  const stampLayer = createLayerObject({
+    type: 'stamp',
+    name: `專櫃印章 (${dateStr})`,
+    image: stampImg,
+    rawImage: stampImg,
+    blendMode: 'multiply',
+    width: displayW,
+    height: displayH,
+    x: posX,
+    y: posY,
+    rotation: tiltRad
+  });
+  stampLayer.attachedCardId = cardLayer.id;
+  stampLayer.stampSpec = { ...spec, tiltRad };
+  stampLayer.stampDate = dateStr;
+  stampLayer.stampFontSize = fontSize;
+  stampLayer.stampOffsetY = offsetY;
+  stampLayer.userMovedStamp = false;
+
+  const cardIdx = layers.indexOf(cardLayer);
+  if (cardIdx >= 0) {
+    layers.splice(cardIdx + 1, 0, stampLayer);
+  } else {
+    layers.push(stampLayer);
+  }
+
+  await refreshSingleStandaloneStampLayer(stampLayer, true);
+  if (typeof updateMobileWorkflowBadges === 'function') {
+    updateMobileWorkflowBadges();
+  }
+  return stampLayer;
+}
+
 async function autoStampWarrantyCard(targetLayer = null) {
   const cardLayer = targetLayer || getTargetWarrantyImageLayer();
   if (!cardLayer) {
@@ -8433,7 +8672,7 @@ async function autoStampWarrantyCard(targetLayer = null) {
     return;
   }
 
-  // v25: 取得未蓋章之高清乾淨保卡底圖（避免重複點擊時疊章），直接離屏合成專櫃印章
+  // v25/v56: 保持未蓋章乾淨保卡底圖，並掛載可即時按壓拖曳與雙擊編修的互動式印章圖層
   let cleanCanvas = cardLayer.rectifiedCleanCanvas;
   if (!cleanCanvas) {
     const rawSrc = cardLayer.warpedImage || cardLayer.croppedImage || cardLayer.image || cardLayer.rawImage;
@@ -8446,43 +8685,24 @@ async function autoStampWarrantyCard(targetLayer = null) {
   }
 
   const stampSpec = resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas);
-
-  if (window.CardTemplates && window.CardTemplates.compositeStampOnOffscreenCard) {
-    const baked = window.CardTemplates.compositeStampOnOffscreenCard(
-      cleanCanvas,
-      stampImg,
-      dateStr,
-      fontSize,
-      offsetY,
-      stampSpec,
-      getCurrentStampBlueTone()
-    );
-    if (baked && baked.stampedCanvas) {
-      pushUndoState('保卡避讓自動蓋章');
-      // 清除任何舊版分離式附著印章，統一由高清保卡合成呈現
-      layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
-      cardLayer.warpedImage = baked.stampedCanvas;
-      cardLayer.image = baked.stampedCanvas;
-      cardLayer.hasBakedStamp = true;
-      cardLayer.isRectifiedCard = true;
-      cardLayer.bakedStampMeta = { dateStr, fontSize, offsetY, stampSpec };
-      setActiveLayer(cardLayer);
-
-      if (!switchAutoLayout || switchAutoLayout.checked) {
-        autoArrangeWorkbenchLayout(false);
-      } else {
-        render();
-      }
-      if (typeof markDesktopBatchRoleStatus === 'function') {
-        markDesktopBatchRoleStatus('card', 'done');
-      }
-      if (typeof checkDesktopBatchCompletion === 'function') {
-        checkDesktopBatchCompletion(false);
-      }
-      const lightingNote = baked.lighting && baked.lighting.avgL < 190 ? ` · 暗部油墨融合 L=${baked.lighting.avgL}` : '';
-      showToast(`已於保卡合成專櫃印章 (${dateStr}${lightingNote})`);
-      return;
+  pushUndoState('保卡避讓自動蓋章');
+  const stampLayer = await attachInteractiveStampToCardLayer(cardLayer, stampImg, dateStr, fontSize, offsetY, stampSpec);
+  if (stampLayer) {
+    setActiveLayer(stampLayer);
+    if (!switchAutoLayout || switchAutoLayout.checked) {
+      autoArrangeWorkbenchLayout(false);
+    } else {
+      render();
     }
+    if (typeof markDesktopBatchRoleStatus === 'function') {
+      markDesktopBatchRoleStatus('card', 'done');
+    }
+    if (typeof checkDesktopBatchCompletion === 'function') {
+      checkDesktopBatchCompletion(false);
+    }
+    const avgL = stampLayer.cachedLighting ? stampLayer.cachedLighting.avgL : 245;
+    const lightingNote = avgL < 190 ? ` · 暗部油墨融合 L=${avgL}` : '';
+    showToast(`已於保卡蓋上互動式專櫃印章 (${dateStr}${lightingNote})`);
   }
 }
 
@@ -8580,8 +8800,7 @@ function openStampDatePromptIfNeeded() {
 
 async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
   if (!cardLayer || !layers.includes(cardLayer) || !dateStr) return false;
-  if (cardLayer._isStamping || cardLayer.hasBakedStamp) return false;
-  if (!window.CardTemplates || !window.CardTemplates.compositeStampOnOffscreenCard) return false;
+  if (cardLayer._isStamping || hasWarrantyCardStampAttached(cardLayer)) return false;
 
   cardLayer._isStamping = true;
   try {
@@ -8605,27 +8824,12 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
     }
 
     const stampSpec = resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas);
-
     const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || DEFAULT_STAMP_FONT_SIZE;
     const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) || 0;
 
-    const baked = window.CardTemplates.compositeStampOnOffscreenCard(
-      cleanCanvas,
-      stampImg,
-      dateStr,
-      fontSize,
-      offsetY,
-      stampSpec,
-      getCurrentStampBlueTone()
-    );
-    if (baked && baked.stampedCanvas) {
-      if (!layers.includes(cardLayer)) return false;
-      layers = layers.filter(l => !(l.type === 'stamp' && l.attachedCardId === cardLayer.id));
-      cardLayer.warpedImage = baked.stampedCanvas;
-      cardLayer.image = baked.stampedCanvas;
-      cardLayer.hasBakedStamp = true;
-      cardLayer.isRectifiedCard = true;
-      cardLayer.bakedStampMeta = { dateStr, fontSize, offsetY, stampSpec };
+    if (!layers.includes(cardLayer)) return false;
+    const stampLayer = await attachInteractiveStampToCardLayer(cardLayer, stampImg, dateStr, fontSize, offsetY, stampSpec);
+    if (stampLayer) {
       updateLayersListUI();
       render();
       if (typeof markDesktopBatchRoleStatus === 'function') {
@@ -8644,8 +8848,8 @@ async function applyConfirmedStampToCardLayer(cardLayer, dateStr) {
           }
         });
       }
-      setCanvasOcrPill(`✅ 已依指定日期蓋上專櫃印章 (${dateStr})`, 'success');
-      showToast(`已依指定日期於保卡蓋上專櫃印章 (${dateStr})`);
+      setCanvasOcrPill(`✅ 已依指定日期蓋上可調式專櫃印章 (${dateStr})`, 'success');
+      showToast(`已依指定日期於保卡蓋上專櫃印章 (${dateStr}，可直接按壓拖曳或雙擊改色改期)`);
       return true;
     }
     return false;
@@ -8763,7 +8967,7 @@ async function refreshSingleStandaloneStampLayer(stampLayer, resampleLighting = 
     return;
   }
 
-  const dateStr = (inputStampDate && inputStampDate.value.trim()) || stampLayer.stampDate || '115.11.21';
+  const dateStr = stampLayer.stampDate || (inputStampDate && inputStampDate.value.trim()) || '115.11.21';
   const fontSize = (sliderStampFontSize && parseInt(sliderStampFontSize.value, 10)) || stampLayer.stampFontSize || DEFAULT_STAMP_FONT_SIZE;
   const offsetY = (sliderStampOffsetY && parseInt(sliderStampOffsetY.value, 10)) ?? (stampLayer.stampOffsetY || 0);
   const blueTone = getCurrentStampBlueTone();
@@ -8895,7 +9099,7 @@ async function finalizeWarrantyCardStampAfterLayout(cardLayer) {
   const waitPromise = openStampDatePromptIfNeeded();
   setCanvasOcrPill('⏳ 背景辨識與排版已完成，等待確認保卡印章日期後蓋章...', 'loading');
   waitPromise.then(chosenDate => {
-    if (chosenDate && layers.includes(cardLayer) && !cardLayer.hasBakedStamp) {
+    if (chosenDate && layers.includes(cardLayer) && !hasWarrantyCardStampAttached(cardLayer)) {
       applyConfirmedStampToCardLayer(cardLayer, chosenDate);
     }
   });
@@ -8966,7 +9170,7 @@ function initStampDateModal() {
     // 若畫布上已有未蓋章的保卡圖層，立即補蓋專櫃印章（未建檔品牌於手機端保留由快捷鈕放可拖曳印章）
     const isMobileUI = document.body.classList.contains('is-mobile-mode');
     const targetCard = [...layers].reverse().find(
-      l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard) && !l.hasBakedStamp
+      l => l.type === 'image' && (l.docRole === 'warranty_card' || l.isRectifiedCard) && !hasWarrantyCardStampAttached(l)
     );
     if (targetCard && !(targetCard.isUnmatchedBrandCard && isMobileUI)) {
       applyConfirmedStampToCardLayer(targetCard, check.formatted);
@@ -9614,9 +9818,10 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
     cardLeftX = cardLayer.x - cardLayer.width / 2;
     cardBottomY = cardLayer.y + cardLayer.height / 2;
 
-    // 同步重新定位並縮放附著於此保卡上的專櫃印章（確保始終鎖定 X: 84.5%, Y: 39.5%, W: 21.0%）
+    // 同步重新定位並縮放附著於此保卡上的專櫃印章（v56: 若使用者已手動拖曳或縮放，保留其微調位置）
     layers.forEach(s => {
       if (s.type === 'stamp' && s.attachedCardId === cardLayer.id && s.image) {
+        if (s.userMovedStamp) return;
         const spec = s.stampSpec || { centerX: 0.845, centerY: 0.395, widthRatio: 0.210, tiltRad: 0 };
         const sAspect = s.image.width / Math.max(1, s.image.height);
         s.width = Math.round(cardLayer.width * spec.widthRatio);

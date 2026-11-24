@@ -183,7 +183,7 @@
    * 台灣三菱電機商品保證書獨立命名空間規格 (mitsubishi_tw，嚴格隔離絕不干擾 Panasonic 與 LG 邏輯) (v53/v54 放大1.4倍四邊對齊定版)
    */
   const MITSUBISHI_TW_STAMP_SPEC = Object.freeze({
-    centerX: 0.208,
+    centerX: 0.218,
     centerY: 0.765,
     widthRatio: 0.285,
     tiltRangeDeg: 1.5,
@@ -3689,10 +3689,11 @@
     }
 
     // 右邊界微壓中柱垂直分隔線 1.5px（~0.001），絕不侵入右側「（本欄請蓋店章）」，寬度鎖定於 1.4x (約 0.285，絕不縮回 0.205)
+    // v56: 依實測回饋水平向右微調約 2mm (centerX + 0.010)，垂直高度 Y 與寬高比保持不變
     const rightEdgeTargetNorm = dividerEdgeNorm + (1.5 / Math.max(100, cw));
     let stampWidthRatio = rightEdgeTargetNorm - leftEdgeNorm;
     stampWidthRatio = Math.max(0.268, Math.min(0.302, stampWidthRatio));
-    let stampCenterX = rightEdgeTargetNorm - stampWidthRatio * 0.5;
+    let stampCenterX = rightEdgeTargetNorm - stampWidthRatio * 0.5 + 0.010;
 
     if (centerDividerNorm === null && !(typeof anchors.dealerRightX === 'number' && anchors.dealerRightX <= 0.115)) {
       stampCenterX = fallbackSpec.centerX;
@@ -3724,7 +3725,7 @@
     }
 
     return {
-      centerX: Number(Math.max(0.185, Math.min(0.235, stampCenterX)).toFixed(4)),
+      centerX: Number(Math.max(0.195, Math.min(0.245, stampCenterX)).toFixed(4)),
       centerY: Number(Math.max(0.720, Math.min(0.805, stampCenterY)).toFixed(4)),
       widthRatio: Number(stampWidthRatio.toFixed(4)),
       tiltRangeDeg: 1.5,
