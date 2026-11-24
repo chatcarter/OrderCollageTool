@@ -53,20 +53,21 @@
 
 ## 區塊六：工程修改工作日誌
 
-### [2026-11-24 21:14:57] (第 51 版 / v51)
-- **執行項目**：**鎖定封存 LG 完美印章落點 ＋ 三段式徹底修復 LG 機號辨識（`010PNNAR657 ➔ 610PNNAEQ687`）（v51）** — 嚴格凍結並保留 v50 已定案的 Panasonic 國際牌與 LG 印章座標（`centerX: 0.745, centerY: 0.620, widthRatio: 0.162`）及 `WD-S1818PB` 型號規則，集中徹底修復唯一殘留的 LG 機號誤讀與舊值殘留問題。
+### [2026-11-24 21:20:46] (第 51 版 / v51)
+- **執行項目**：**LG 印章四紅圈幾何鎖定（112% 方框寬、底弧緊貼「經銷商店章」上緣 2~4px）＋ 三段式徹底修復 LG 機號辨識（`010PNNAR657 ➔ 610PNNAEQ687`）（v51）** — 嚴格保留已封版 Panasonic 國際牌與 v50 `WD-S1818PB` 型號規則，依使用者四紅圈特寫圖精準鎖定印章尺寸與座標，並徹底修復機號條碼／OCR 誤讀與舊值殘留。
 - **具體進度**：
   1. **版本徽章與防快取（`v51`）**：
-     - 建立 `_backup/20261124_211102/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v51 (2026.11.24)` 與 `?v=51`。
-  2. **修復純 JS Code 128 Stop (`106`) 7 條空終止符漏洞 ＋ `2x/3x` 黑白二值化多尺度條碼直讀（`static/card_templates.js` / `static/app.js`）**：
+     - 建立 `_backup/20261124_211102/` 及 `_backup/20261124_211937/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v51 (2026.11.24)` 與 `?v=51`。
+  2. **四紅圈特寫幾何基準精準鎖定 LG 印章落點與寬高比（`static/card_templates.js`）**：
+     - 更新 `LG_TW_STAMP_SPEC` 為 `centerX: 0.745, centerY: 0.585, widthRatio: 0.172`。
+     - 升級 `detectLgDealerBoxStampSpec()`：印章總寬鎖定圓角矩形框淨寬之 **`1.12` 倍（`112%`）**（左右梅花與「集／司」下方對稱微跨左右垂直框線），並依實測專櫃章真實寬高比 `1.2806`（`1844x1440`）將底弧最低點精準定錨於 **`經銷商店章` 文字頂緣上方 `2px～4px`**、上拱頂自然微跨上框線且絕不遮蓋印刷四字。
+  3. **修復純 JS Code 128 Stop (`106`) 7 條空終止符漏洞 ＋ `2x/3x` 黑白二值化多尺度條碼直讀（`static/card_templates.js` / `static/app.js`）**：
      - 定位並修復 `decodeCode128FromCanvas()` 過去僅以 6 條空（`11 modules`）解析符號、導致 7 條空（`13 modules`）Stop 終止符 `106 ('2331112')` 無法匹配而永遠回傳空字串的關鍵盲點；新增 T1–T5 邊緣距（`5-6-4-2-2-3`）與 `2331112` 雙重終止符驗證。
      - 於 `tryDecodeLgUpperBarcodeSerial()` 新增 LG 條碼目標區（含 `x: 56%~90%, y: 17%~32%`）之 **`2x` 與 `3x` 硬/自適應黑白二值化銳化畫布**，同步投入原生 `BarcodeDetector({ formats: ['code_128', 'code_39'] })` 與純 JS `decodeCode128FromCanvas()` 雙重解碼重試；一旦解出合法 `[0-9]{3}[A-Z]{6}[0-9]{3}` 12 碼字串（如 `610PNNAEQ687`）立即鎖定為最高權威結果。
-  3. **鎖定 `機號` 右側 `4.0x` 超清形態學去噪與由下而上切除虛點底線 OCR（`createAdaptiveBinarizedOcrCropCanvas` / `runLgCardTargetedOcr`）**：
-     - 升級 `createAdaptiveBinarizedOcrCropCanvas()` 預設為 `4.0x` 放大，加入 **3x3 形態學去噪點與筆畫填孔**，並實作文字主帶偵測以**由下而上完整切除獨立虛點底線（`........`）**；強化 `filterLgSerialResult()` 優先篩選嚴格 12 碼 `[3數][6英][3數]` 候選值。
-     - 於 `runLgCardTargetedOcr()` 加入錨點異常防呆（若 `serialLabelBox.x1 > 0.72` 則改用安全固定座標）、雙組緊湊與標準座標（含 `x: 58%~90%, y: 28%~38%`）`4.0x` 放大，搭配 `psm = '7' / '8'` 與純英數白名單（`'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'`）精準辨識。
-  4. **無條件清除並覆寫舊全域 OCR 機號**：
-     - 於 `runLgCardTargetedOcr()` 入口即清除舊 `cachedReceiptOcrInfo.serialNo`，完成後無條件寫回 `layer.ocrData`、`layer._lgVerifiedSerial`、`inputCardSerial` 與 `cachedReceiptOcrInfo`（`forceOverwrite: true`）並立即呼叫 `syncSummaryTextLayer(true)` 重繪左下角 5 行核對大字。
-  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、`LG_STAMP_LOCK_OK=True`、雙 JS 檔案語法檢查、`CRLF` 驗證與 GitHub 推送。
+  4. **鎖定 `機號` 右側 `4.0x` 超清形態學去噪與由下而上切除虛點底線 OCR ＋ 無條件覆寫舊值**：
+     - 升級 `createAdaptiveBinarizedOcrCropCanvas()` 預設為 `4.0x` 放大、**3x3 形態學去噪點與筆畫填孔**及**由下而上切除獨立虛點底線（`........`）**；於 `runLgCardTargetedOcr()` 加入錨點異常防呆與雙組座標（含 `x: 58%~90%, y: 28%~38%`）`psm = '7' / '8'` 純英數白名單辨識。
+     - 於 `runLgCardTargetedOcr()` 入口清空舊 `cachedReceiptOcrInfo.serialNo`，完成後無條件寫回 `layer.ocrData`、`layer._lgVerifiedSerial`、`inputCardSerial` 與 `cachedReceiptOcrInfo`（`forceOverwrite: true`）並立即呼叫 `syncSummaryTextLayer(true)` 更新左下 5 行核對大字。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、`LG_FOUR_CIRCLE_SPEC_OK=True`、雙 JS 檔案語法檢查、`CRLF` 驗證與 GitHub 推送。
 
 ### [2026-11-24 20:40:05] (第 50 版 / v50)
 - **執行項目**：**LG 印章再左移 0.3cm 對稱置中 ＋ 條碼／局部專項機號寫回優先權鎖定 ＋ 型號尾碼英文校正（v50）** — 在嚴格保留 Panasonic 已封版核心與 v46~v49 既有邏輯下，完成 LG 台灣樂金保證書實測最後一哩路微調。

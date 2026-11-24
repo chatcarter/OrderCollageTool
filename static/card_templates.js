@@ -127,12 +127,12 @@
   CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
 
   /**
-   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v50)
+   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v51 四紅圈定版)
    */
   const LG_TW_STAMP_SPEC = Object.freeze({
     centerX: 0.745,
-    centerY: 0.620,
-    widthRatio: 0.162,
+    centerY: 0.585,
+    widthRatio: 0.172,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
   });
@@ -2568,44 +2568,53 @@
     if (topWallRel >= 0) boxTopNorm = (ry + topWallRel) / ch;
     if (bottomWallRel >= 0) boxBottomNorm = (ry + bottomWallRel) / ch;
 
-    // 3. 依實測微調校准（v49/v50）：Y 軸不動，水平 X 再往左微調 0.3cm (-0.015) 使左右與圓角方框完全對稱置中
+    // 3. 依據 4 個紅圈特寫幾何基準精準鎖定（v51）：
+    //    - 寬度為圓角方框淨寬之 1.12 倍（左右梅花與「集／司」下方對稱微跨左右框線）
+    //    - 印章水平正中對齊方框中心（預設 0.745）
+    //    - 底弧最低點停在「經銷商店章」文字頂緣上方 2px~4px，上拱頂微跨上框線（預設 centerY 0.585）
     let finalCenterX;
     if (boxCenterX !== null) {
-      finalCenterX = ((boxCenterX * 0.72) + (coaxialGuessX * 0.28)) - 0.015;
+      finalCenterX = (boxCenterX * 0.85) + (coaxialGuessX * 0.15);
+    } else if (validLabelAnchor && qrAnchor) {
+      finalCenterX = (validLabelAnchor.centerX + qrAnchor.centerX) * 0.5;
     } else if (validLabelAnchor || qrAnchor) {
-      finalCenterX = coaxialGuessX - 0.040;
+      finalCenterX = coaxialGuessX;
     } else {
       finalCenterX = fallbackSpec.centerX;
     }
 
-    const netBoxWidthRatio = boxWRatio || (qrAnchor ? qrAnchor.widthNorm * 1.12 : 0.170);
-    const stampWidthRatio = Math.max(0.148, Math.min(0.170, netBoxWidthRatio * 0.95));
+    const netBoxWidthRatio = boxWRatio || (qrAnchor ? qrAnchor.widthNorm * 1.06 : 0.154);
+    const stampWidthRatio = Math.max(0.158, Math.min(0.215, netBoxWidthRatio * 1.12));
 
-    const estStampHNorm = (stampWidthRatio * cw / 1.38) / ch;
+    // 實測專櫃圓角橢圓章真實寬高比為 1.2806 (1844x1440)
+    const estStampHNorm = (stampWidthRatio * cw / 1.2806) / ch;
     const estQrHNorm = qrAnchor ? qrAnchor.heightNorm : 0.145;
+    const clearGapNorm = Math.max(2, Math.min(4, Math.round(ch * 0.0025))) / ch;
 
-    const labelTopClearNorm = validLabelAnchor
-      ? Math.max(0.50, validLabelAnchor.topY - 0.008)
+    const labelTopEdgeNorm = validLabelAnchor
+      ? Math.max(0.50, validLabelAnchor.topY)
       : (boxBottomNorm !== null
           ? (boxBottomNorm - Math.max(0.036, estQrHNorm * 0.24))
-          : (qrAnchor ? (qrAnchor.topY - 0.070) : 0.695));
+          : (qrAnchor ? (qrAnchor.topY - 0.068) : 0.683));
 
-    const inferredBoxTopNorm = (boxTopNorm !== null)
-      ? Math.max(0.45, boxTopNorm)
-      : (boxBottomNorm !== null
-          ? (boxBottomNorm - Math.max(estQrHNorm * 1.45, 0.215))
-          : (labelTopClearNorm - Math.max(estStampHNorm * 1.18, estQrHNorm * 1.12)));
+    const bottomArcTargetNorm = labelTopEdgeNorm - clearGapNorm;
+    let finalCenterY = bottomArcTargetNorm - estStampHNorm * 0.5;
 
-    // 垂直重心明確下移至方框上框線之內（頂部圓弧預留 2.2% 間隙且不壓到下方「經銷商店章」）
-    const safeTopTarget = inferredBoxTopNorm + 0.018 + estStampHNorm * 0.5;
-    const safeBottomLimit = labelTopClearNorm - estStampHNorm * 0.5;
-    let finalCenterY = (safeTopTarget + safeBottomLimit) * 0.52;
-    if (finalCenterY > safeBottomLimit) finalCenterY = safeBottomLimit;
-    if (finalCenterY < safeTopTarget && safeTopTarget <= safeBottomLimit) finalCenterY = safeTopTarget;
+    // 若實測上框線與底部文字錨點高度落差過大，安全限縮於上拱微跨範圍內且底弧絕不碰觸「經銷商店章」
+    if (boxTopNorm !== null) {
+      const upperMaxCenterY = bottomArcTargetNorm - estStampHNorm * 0.5;
+      const reasonableMinCenterY = Math.max(0.46, boxTopNorm - estStampHNorm * 0.24 + estStampHNorm * 0.5);
+      if (finalCenterY < reasonableMinCenterY && reasonableMinCenterY <= upperMaxCenterY) {
+        finalCenterY = (finalCenterY + reasonableMinCenterY) * 0.5;
+      }
+      if (finalCenterY > upperMaxCenterY) {
+        finalCenterY = upperMaxCenterY;
+      }
+    }
 
     return {
       centerX: Number(Math.max(0.60, Math.min(0.86, finalCenterX)).toFixed(4)),
-      centerY: Number(Math.max(0.50, Math.min(0.68, finalCenterY)).toFixed(4)),
+      centerY: Number(Math.max(0.48, Math.min(0.66, finalCenterY)).toFixed(4)),
       widthRatio: Number(stampWidthRatio.toFixed(4)),
       tiltRangeDeg: 1.5,
       blendMode: 'multiply'
