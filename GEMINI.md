@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:17:19] (第 48 版 / v48)
+- **執行項目**：**升級 LG 台灣樂金保證書 `lg_tw` 白紙去背透視 ＋ 「經銷商店章＋右側QR碼」垂直雙地標精準蓋章 ＋ 2.5x 自適應二值化局部專項 OCR（v48）** — 完全保留已封版 Panasonic 國際牌與 v47 角色分類路由，針對實測發現之木桌背景未裁除導致印章右偏切框、及 `WD-S1818PB`／`610PNNAEQ687` 字元混淆問題進行三項核心高精度重構。
+- **具體進度**：
+  1. **版本徽章與防快取（`v48`）**：
+     - 建立 `_backup/20261124_201201/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v48 (2026.11.24)` 與 `?v=48`。
+  2. **LG 白底保證書四邊自動裁切與原比例透視拉正（`static/card_templates.js` / `static/app.js`）**：
+     - 重寫 `detectLgCardQuad()`：改以局部亮度／飽和度階躍掃描搭配 RANSAC 四邊直線擬合與貼齊邊緣防呆，精準定位白紙四頂點、徹底裁除周圍深色／木紋桌面背景（僅留 `~1.2%` 約 `3mm~5mm` 呼吸紙邊），並以實測四邊形長寬比 `estimatedAspect` 執行 `rectifyPerspectivePureJS()`，避免強制 `1.72` 拉伸變形。
+  3. **「經銷商店章＋右側 QR Code」垂直雙地標同軸鎖定蓋章（`detectLgDealerBoxStampSpec` / `LG_TW_STAMP_SPEC`）**：
+     - 偵測右下角第二個 QR Code（`LG LINE官方帳號` 上方）之幾何中心與邊長 `qrSize`，結合 `runLgCardTargetedOcr()` 掃描到的 `經銷商店章` 印刷文字幾何位置（`_lgDealerOcrAnchor`）及緊湊視窗圓角矩形牆面偵測，垂直同軸鎖死 `stampCenterX`，以圓角框淨寬（或 `1.12 * qrSize`）的 `98%`（`96%~100%`）貼齊框內，並鎖定於 `labelTopY` 上半部徹底露出 `經銷商店章` 四字（保底比例同步校準為 `centerX: 0.785, centerY: 0.565, widthRatio: 0.168`）。
+  4. **LG 機型／機號 `2.5x` 局部自適應二值化專項 OCR 與規則校準（`createAdaptiveBinarizedOcrCropCanvas` / `runLgCardTargetedOcr`）**：
+     - 新增積分圖局部自適應二值化放大函式 `createAdaptiveBinarizedOcrCropCanvas(..., 2.5)` 抵禦陰影與底線細點干擾；於 `runLgCardTargetedOcr()` 動態鎖定 `機型`／`機號` 標籤右側區域，並加入上方一維條碼下緣密度防護（`findBarcodeBottomGuardNorm`）嚴格避開條碼黑線，強制執行 `psm = 7` ＋ 純英數連字號白名單專項辨識。
+     - 強化 `filterLgModelResult()`（修正數字區間 `B->8`、`O/D->0`、`I/L->1`、`S->5`、`Z->2` 如 `WD-S1B18PB ➔ WD-S1818PB`）與 `normalizeLgSerialTokenByPosition()`（鎖定 LG `[3碼數字]+[6碼大寫英文]+[3碼數字]` 12 碼結構，還原 `010PNNAR65T` 等 `6/0`、`T/7`、`S/A/5`、`B/8` 誤讀）。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號／引號平衡檢查、`CRLF` 驗證與 GitHub 推送。
+
 ### [2026-11-24 20:08:23] (第 47 版 / v47)
 - **執行項目**：**鎖死 6 組 LG 保證書專屬地標作為最前端無條件保卡優先分類規則（v47）** — 在完全保留 v46 `lg_tw` 模板規格與已封版 Panasonic 國際牌核心邏輯的前提下，於最前端圖片角色分類守門員（`classifyDocumentByTextAndColor` 與 `detectLgWarrantyByText`）新增最高優先級「LG 保卡強制命中規則」，徹底杜絕 LG 台灣樂金保證書因右下角含雙 QR Code 或條碼 `MBM65176322`（`BM65176322`）而在匯入最前端被誤判為發票的問題。
 - **具體進度**：

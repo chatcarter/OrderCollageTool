@@ -127,28 +127,29 @@
   CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
 
   /**
-   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46)
+   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v48)
    */
   const LG_TW_STAMP_SPEC = Object.freeze({
-    centerX: 0.815,
-    centerY: 0.575,
-    widthRatio: 0.175,
+    centerX: 0.785,
+    centerY: 0.565,
+    widthRatio: 0.168,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
   });
 
   const LG_TW_WARRANTY_CONFIG = Object.freeze({
     brandId: 'lg',
-    aspectRatio: 1.72,
+    aspectRatio: 1.42,
     borderColorType: 'lg_white_sticker',
     stampSpec: LG_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
-      model: Object.freeze({ label: '機型（LG）', x: 0.365, y: 0.235, w: 0.280, h: 0.125 }),
-      serial: Object.freeze({ label: '機號（LG）', x: 0.630, y: 0.235, w: 0.320, h: 0.125 }),
-      topFormBlock: Object.freeze({ label: 'LG 基本資料列（商品名／機型／機號）', x: 0.045, y: 0.225, w: 0.910, h: 0.150 })
+      model: Object.freeze({ label: '機型（LG）', x: 0.415, y: 0.285, w: 0.220, h: 0.095 }),
+      serial: Object.freeze({ label: '機號（LG）', x: 0.675, y: 0.285, w: 0.265, h: 0.095 }),
+      topFormBlock: Object.freeze({ label: 'LG 基本資料列（商品名／機型／機號）', x: 0.050, y: 0.275, w: 0.900, h: 0.120 }),
+      dealerAndQrBlock: Object.freeze({ label: '經銷商店章與右側QR碼雙地標區', x: 0.540, y: 0.420, w: 0.440, h: 0.560 })
     }),
     dealerBoxSearchRegion: Object.freeze({
-      x: 0.65, y: 0.42, w: 0.31, h: 0.38
+      x: 0.60, y: 0.40, w: 0.36, h: 0.40
     })
   });
 
@@ -440,6 +441,83 @@
     }
     cCtx.putImageData(imgData, 0, 0);
 
+    return cropCanvas;
+  }
+
+  /**
+   * LG 局部專項高對比二值化放大裁切 (v48：2.5x 放大 ＋ 積分圖局部自適應二值化，消除陰影與虛線干擾)
+   */
+  function createAdaptiveBinarizedOcrCropCanvas(srcCanvas, region, upscale = 2.5) {
+    const sw = srcCanvas.width;
+    const sh = srcCanvas.height;
+    const rx = Math.max(0, Math.round(region.x * sw));
+    const ry = Math.max(0, Math.round(region.y * sh));
+    const rw = Math.max(10, Math.min(sw - rx, Math.round(region.w * sw)));
+    const rh = Math.max(10, Math.min(sh - ry, Math.round(region.h * sh)));
+
+    const pad = 18;
+    const contentW = Math.max(24, Math.round(rw * upscale));
+    const contentH = Math.max(24, Math.round(rh * upscale));
+    const outW = contentW + pad * 2;
+    const outH = contentH + pad * 2;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = outW;
+    cropCanvas.height = outH;
+    const cCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    cCtx.fillStyle = '#FFFFFF';
+    cCtx.fillRect(0, 0, outW, outH);
+    cCtx.imageSmoothingEnabled = true;
+    cCtx.imageSmoothingQuality = 'high';
+    cCtx.drawImage(srcCanvas, rx, ry, rw, rh, pad, pad, contentW, contentH);
+
+    const imgData = cCtx.getImageData(0, 0, outW, outH);
+    const d = imgData.data;
+    const total = outW * outH;
+    const grays = new Uint8Array(total);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      grays[i] = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
+    }
+
+    // 積分圖計算局部窗口平均亮度，執行自適應二值化 (抵禦紙張斜向陰影與底線細點干擾)
+    const stride = outW + 1;
+    const integral = new Int32Array(stride * (outH + 1));
+    for (let y = 1; y <= outH; y++) {
+      let rowSum = 0;
+      const gRow = (y - 1) * outW;
+      const iRow = y * stride;
+      const prevRow = (y - 1) * stride;
+      for (let x = 1; x <= outW; x++) {
+        rowSum += grays[gRow + x - 1];
+        integral[iRow + x] = integral[prevRow + x] + rowSum;
+      }
+    }
+
+    const rad = Math.max(12, Math.min(48, Math.round(contentH * 0.28)));
+    for (let y = 0; y < outH; y++) {
+      const y0 = Math.max(0, y - rad);
+      const y1 = Math.min(outH - 1, y + rad);
+      const row0 = y0 * stride;
+      const row1 = (y1 + 1) * stride;
+      for (let x = 0; x < outW; x++) {
+        const x0 = Math.max(0, x - rad);
+        const x1 = Math.min(outW - 1, x + rad);
+        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        const sum = integral[row1 + x1 + 1] - integral[row0 + x1 + 1] - integral[row1 + x0] + integral[row0 + x0];
+        const localMean = sum / area;
+        const g = grays[y * outW + x];
+        // 文字筆畫明顯低於局部平均紙白；保留銳利黑字並抑制極淺灰點線
+        const val = (g < localMean - 18) ? 0 : 255;
+        const p = (y * outW + x) * 4;
+        d[p] = val;
+        d[p + 1] = val;
+        d[p + 2] = val;
+        d[p + 3] = 255;
+      }
+    }
+
+    cCtx.putImageData(imgData, 0, 0);
     return cropCanvas;
   }
 
@@ -1765,7 +1843,7 @@
       { x: Math.round(sw * 0.02), y: Math.round(sh * 0.98) }
     ];
     if (!sw || !sh || sw < 60 || sh < 60) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.42 };
     }
 
     const maxDim = 480;
@@ -1780,142 +1858,358 @@
     wCtx.drawImage(srcImg, 0, 0, w, h);
     const data = wCtx.getImageData(0, 0, w, h).data;
 
-    // 1. 取影像外緣 4% 作為桌面背景樣本，並取中央 36% 亮部作為 LG 白底貼紙樣本
-    const borderSamples = [];
-    const marginX = Math.max(2, Math.floor(w * 0.04));
-    const marginY = Math.max(2, Math.floor(h * 0.04));
-    for (let y = 0; y < h; y += 2) {
-      for (let x = 0; x < w; x += 2) {
-        if (x < marginX || x >= w - marginX || y < marginY || y >= h - marginY) {
-          const i = (y * w + x) * 4;
-          const r = data[i], g = data[i + 1], b = data[i + 2];
-          borderSamples.push({ r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b });
+    const total = w * h;
+    const lum = new Float32Array(total);
+    const sat = new Float32Array(total);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const r = data[p], g = data[p + 1], b = data[p + 2];
+      lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+      sat[i] = Math.max(r, g, b) - Math.min(r, g, b);
+    }
+
+    const pickQuantile = (arr, q) => {
+      if (!arr || arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * q)));
+      return sorted[idx];
+    };
+
+    // 1. 取中央保證書白紙參考（75% 亮度以忽略黑字與條碼）＋ 外緣桌面樣本
+    const centerLums = [];
+    const centerSats = [];
+    for (let y = Math.floor(h * 0.28); y < Math.floor(h * 0.72); y += 2) {
+      for (let x = Math.floor(w * 0.30); x < Math.floor(w * 0.70); x += 2) {
+        const idx = y * w + x;
+        centerLums.push(lum[idx]);
+        centerSats.push(sat[idx]);
+      }
+    }
+    const paperLumRef = pickQuantile(centerLums, 0.75);
+    const paperSatRef = pickQuantile(centerSats, 0.40);
+
+    // 2. 四向邊界階躍掃描（局部對比抗漸層陰影）+ RANSAC 直線擬合，精準找出白紙四條邊
+    const winOut = Math.max(6, Math.round(Math.min(w, h) * 0.024));
+    const winIn = Math.max(8, Math.round(Math.min(w, h) * 0.034));
+
+    const scanBorderCandidates = side => {
+      const pts = [];
+      if (side === 'left' || side === 'right') {
+        const yStart = Math.round(h * 0.14);
+        const yEnd = Math.round(h * 0.86);
+        for (let y = yStart; y <= yEnd; y += 2) {
+          const rowOff = y * w;
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'left') {
+            const xMax = Math.round(w * 0.48);
+            for (let x = winOut + 2; x <= xMax; x++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x - winOut; k <= x - 2; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = x + 2; k <= Math.min(w - 1, x + winIn); k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 65, outL + 10) && (jump >= 11 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[rowOff + Math.min(w - 1, x + 2)] - lum[rowOff + Math.max(0, x - 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = x;
+                }
+              }
+            }
+          } else {
+            const xMin = Math.round(w * 0.52);
+            for (let x = w - winOut - 3; x >= xMin; x--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x + 2; k <= x + winOut; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, x - winIn); k <= x - 2; k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 68, outL + 10) && (jump >= 11 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[rowOff + Math.max(0, x - 2)] - lum[rowOff + Math.min(w - 1, x + 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = x;
+                }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x: bestPos, y });
+        }
+      } else {
+        const xStart = Math.round(w * 0.18);
+        const xEnd = Math.round(w * 0.82);
+        for (let x = xStart; x <= xEnd; x += 2) {
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'top') {
+            const yMax = Math.round(h * 0.45);
+            for (let y = winOut + 2; y <= yMax; y++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y - winOut; k <= y - 2; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = y + 2; k <= Math.min(h - 1, y + winIn); k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 65, outL + 10) && (jump >= 10 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[Math.min(h - 1, y + 2) * w + x] - lum[Math.max(0, y - 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = y;
+                }
+              }
+            }
+          } else {
+            const yMin = Math.round(h * 0.55);
+            for (let y = h - winOut - 3; y >= yMin; y--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y + 2; k <= y + winOut; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, y - winIn); k <= y - 2; k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 68, outL + 10) && (jump >= 10 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[Math.max(0, y - 2) * w + x] - lum[Math.min(h - 1, y + 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = y;
+                }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x, y: bestPos });
         }
       }
-    }
-    const centerSamples = [];
-    for (let y = Math.floor(h * 0.30); y < Math.floor(h * 0.68); y += 2) {
-      for (let x = Math.floor(w * 0.30); x < Math.floor(w * 0.68); x += 2) {
-        const i = (y * w + x) * 4;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        centerSamples.push({ r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b });
-      }
-    }
-    if (borderSamples.length === 0 || centerSamples.length === 0) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
-    }
+      return pts;
+    };
 
-    borderSamples.sort((a, b) => a.lum - b.lum);
-    const bgRef = borderSamples[Math.floor(borderSamples.length * 0.50)];
-
-    centerSamples.sort((a, b) => a.lum - b.lum);
-    const paperRef = centerSamples[Math.floor(centerSamples.length * 0.78)];
-
-    const lumDiff = paperRef.lum - bgRef.lum;
-    const colorDist = Math.hypot(paperRef.r - bgRef.r, paperRef.g - bgRef.g, paperRef.b - bgRef.b);
-    if (lumDiff < 10 && colorDist < 14) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
-    }
-
-    const mask = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        const distBg = Math.hypot(r - bgRef.r, g - bgRef.g, b - bgRef.b);
-        const distPaper = Math.hypot(r - paperRef.r, g - paperRef.g, b - paperRef.b);
-        const isBrighterThanDesk = lum >= bgRef.lum + lumDiff * 0.42;
-        const isCloserToPaper = distPaper + 4 < distBg;
-        if (isBrighterThanDesk || isCloserToPaper) {
-          mask[y * w + x] = 1;
-        }
-      }
-    }
-
-    const densePts = [];
-    for (let y = 2; y < h - 2; y++) {
-      for (let x = 2; x < w - 2; x++) {
-        if (!mask[y * w + x]) continue;
-        let cnt = 0;
-        for (let dy = -2; dy <= 2; dy++) {
-          const rowOff = (y + dy) * w;
-          for (let dx = -2; dx <= 2; dx++) {
-            cnt += mask[rowOff + x + dx];
+    const fitLineRansac = (pts, isVertical, minNeeded) => {
+      if (!pts || pts.length < minNeeded) return null;
+      let bestInliers = [];
+      let bestSlope = 0;
+      let bestIntercept = 0;
+      const step = Math.max(1, Math.floor(pts.length / 24));
+      for (let i = 0; i < pts.length; i += step) {
+        for (let j = i + Math.max(2, step); j < pts.length; j += step) {
+          const p1 = pts[i], p2 = pts[j];
+          const dv = isVertical ? (p2.y - p1.y) : (p2.x - p1.x);
+          if (Math.abs(dv) < 12) continue;
+          const slope = isVertical ? (p2.x - p1.x) / dv : (p2.y - p1.y) / dv;
+          if (Math.abs(slope) > 0.25) continue;
+          const intercept = isVertical ? (p1.x - slope * p1.y) : (p1.y - slope * p1.x);
+          const inliers = [];
+          for (let k = 0; k < pts.length; k++) {
+            const pk = pts[k];
+            const pred = isVertical ? (slope * pk.y + intercept) : (slope * pk.x + intercept);
+            const actual = isVertical ? pk.x : pk.y;
+            if (Math.abs(actual - pred) <= 3.5) inliers.push(pk);
+          }
+          if (inliers.length > bestInliers.length) {
+            bestInliers = inliers;
+            bestSlope = slope;
+            bestIntercept = intercept;
           }
         }
-        if (cnt >= 14) {
-          densePts.push({ x, y });
+      }
+      if (bestInliers.length < minNeeded) return null;
+      // 最小二乘法精修內點
+      let sumU = 0, sumV = 0, sumUU = 0, sumUV = 0;
+      bestInliers.forEach(p => {
+        const u = isVertical ? p.y : p.x;
+        const v = isVertical ? p.x : p.y;
+        sumU += u; sumV += v; sumUU += u * u; sumUV += u * v;
+      });
+      const n = bestInliers.length;
+      const denom = n * sumUU - sumU * sumU;
+      if (Math.abs(denom) > 1e-4) {
+        const refinedSlope = (n * sumUV - sumU * sumV) / denom;
+        if (Math.abs(refinedSlope) <= 0.25) {
+          bestSlope = refinedSlope;
+          bestIntercept = (sumV - refinedSlope * sumU) / n;
+        }
+      }
+      return { slope: bestSlope, intercept: bestIntercept, count: bestInliers.length, isVertical };
+    };
+
+    const leftPts = scanBorderCandidates('left');
+    const rightPts = scanBorderCandidates('right');
+    const topPts = scanBorderCandidates('top');
+    const bottomPts = scanBorderCandidates('bottom');
+
+    const minVNeeded = Math.max(8, Math.round(h * 0.08));
+    const minHNeeded = Math.max(8, Math.round(w * 0.08));
+    let lineL = fitLineRansac(leftPts, true, minVNeeded);
+    let lineR = fitLineRansac(rightPts, true, minVNeeded);
+    let lineT = fitLineRansac(topPts, false, minHNeeded);
+    let lineB = fitLineRansac(bottomPts, false, minHNeeded);
+
+    // 3. 若某邊白紙貼齊照片外緣而無桌邊階躍，檢查該緣 3px 帶是否為白紙色，若符合則貼齊外緣
+    const checkRimIsPaper = side => {
+      const rLums = [], rSats = [];
+      if (side === 'left' || side === 'right') {
+        const rx = side === 'left' ? 3 : w - 4;
+        for (let y = Math.round(h * 0.22); y <= Math.round(h * 0.78); y += 3) {
+          rLums.push(lum[y * w + rx]);
+          rSats.push(sat[y * w + rx]);
+        }
+      } else {
+        const ry = side === 'top' ? 3 : h - 4;
+        for (let x = Math.round(w * 0.25); x <= Math.round(w * 0.75); x += 3) {
+          rLums.push(lum[ry * w + x]);
+          rSats.push(sat[ry * w + x]);
+        }
+      }
+      return pickQuantile(rLums, 0.78) >= paperLumRef - 36 && pickQuantile(rSats, 0.35) <= paperSatRef + 18;
+    };
+
+    if (!lineL && checkRimIsPaper('left')) lineL = { slope: 0, intercept: 2, isVertical: true, isRim: true };
+    if (!lineR && checkRimIsPaper('right')) lineR = { slope: 0, intercept: w - 3, isVertical: true, isRim: true };
+    if (!lineT && checkRimIsPaper('top')) lineT = { slope: 0, intercept: 2, isVertical: false, isRim: true };
+    if (!lineB && checkRimIsPaper('bottom')) lineB = { slope: 0, intercept: h - 3, isVertical: false, isRim: true };
+
+    // 4. 備援：對仍未定位之邊，從中央紙張連通白色區域推估安全邊界
+    if (!lineL || !lineR || !lineT || !lineB) {
+      const borderSamples = [];
+      const mx = Math.max(2, Math.floor(w * 0.03));
+      const my = Math.max(2, Math.floor(h * 0.03));
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          if (x < mx || x >= w - mx || y < my || y >= h - my) {
+            borderSamples.push(lum[y * w + x]);
+          }
+        }
+      }
+      const deskLum = pickQuantile(borderSamples, 0.35);
+      const lumDiff = paperLumRef - deskLum;
+      if (lumDiff >= 10) {
+        const thresh = deskLum + lumDiff * 0.45;
+        const paperPtsX = [], paperPtsY = [];
+        for (let y = 4; y < h - 4; y += 2) {
+          for (let x = 4; x < w - 4; x += 2) {
+            if (lum[y * w + x] >= thresh && sat[y * w + x] <= paperSatRef + 22) {
+              paperPtsX.push(x);
+              paperPtsY.push(y);
+            }
+          }
+        }
+        if (paperPtsX.length >= 80) {
+          if (!lineL) lineL = { slope: 0, intercept: pickQuantile(paperPtsX, 0.02), isVertical: true };
+          if (!lineR) lineR = { slope: 0, intercept: pickQuantile(paperPtsX, 0.98), isVertical: true };
+          if (!lineT) lineT = { slope: 0, intercept: pickQuantile(paperPtsY, 0.02), isVertical: false };
+          if (!lineB) lineB = { slope: 0, intercept: pickQuantile(paperPtsY, 0.98), isVertical: false };
         }
       }
     }
 
-    if (densePts.length < Math.max(80, w * h * 0.08)) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    if (!lineL || !lineR || !lineT || !lineB) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.42 };
     }
 
-    const xs = densePts.map(p => p.x).sort((a, b) => a - b);
-    const ys = densePts.map(p => p.y).sort((a, b) => a - b);
-    const qLow = Math.floor(densePts.length * 0.01);
-    const qHigh = Math.max(qLow, densePts.length - 1 - qLow);
-    const minAllowX = xs[qLow] - 4;
-    const maxAllowX = xs[qHigh] + 4;
-    const minAllowY = ys[qLow] - 4;
-    const maxAllowY = ys[qHigh] + 4;
+    // 解直線交點 (x = av*y + bv, y = ah*x + bh)
+    const intersectVH = (vLine, hLine) => {
+      const denom = 1 - vLine.slope * hLine.slope;
+      if (Math.abs(denom) < 1e-3) return null;
+      const y = (hLine.slope * vLine.intercept + hLine.intercept) / denom;
+      const x = vLine.slope * y + vLine.intercept;
+      return { x, y };
+    };
 
-    const filtered = densePts.filter(
-      p => p.x >= minAllowX && p.x <= maxAllowX && p.y >= minAllowY && p.y <= maxAllowY
-    );
-    if (filtered.length < 40) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    const tlW = intersectVH(lineL, lineT);
+    const trW = intersectVH(lineR, lineT);
+    const brW = intersectVH(lineR, lineB);
+    const blW = intersectVH(lineL, lineB);
+    if (!tlW || !trW || !brW || !blW) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.42 };
     }
 
-    let minSum = Infinity, maxSum = -Infinity;
-    let minDiff = Infinity, maxDiff = -Infinity;
-    let tl = null, br = null, tr = null, bl = null;
-    for (let i = 0; i < filtered.length; i++) {
-      const p = filtered[i];
-      const sum = p.x + p.y;
-      const diff = p.x - p.y;
-      if (sum < minSum) { minSum = sum; tl = p; }
-      if (sum > maxSum) { maxSum = sum; br = p; }
-      if (diff > maxDiff) { maxDiff = diff; tr = p; }
-      if (diff < minDiff) { minDiff = diff; bl = p; }
-    }
-    if (!tl || !tr || !br || !bl) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    const avgSpanW = (Math.hypot(trW.x - tlW.x, trW.y - tlW.y) + Math.hypot(brW.x - blW.x, brW.y - blW.y)) * 0.5;
+    const avgSpanH = (Math.hypot(blW.x - tlW.x, blW.y - tlW.y) + Math.hypot(brW.x - trW.x, brW.y - trW.y)) * 0.5;
+    const estAspect = avgSpanW / Math.max(1, avgSpanH);
+    if (avgSpanW < w * 0.30 || avgSpanH < h * 0.30 || estAspect < 1.05 || estAspect > 1.95) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.42 };
     }
 
-    const spanW = Math.max(tr.x, br.x) - Math.min(tl.x, bl.x);
-    const spanH = Math.max(bl.y, br.y) - Math.min(tl.y, tr.y);
-    if (spanW < w * 0.35 || spanH < h * 0.32 || spanW / Math.max(1, spanH) < 1.15) {
-      return { corners: fallbackCorners, detected: false, confidence: 'low' };
-    }
-
-    // 轉回原圖座標並四邊外擴約 0.5cm 呼吸白邊（完整保留頂部 LG LOGO、底部 MBM 編號與雙 QR Code）
+    // 轉回原圖座標，四邊僅保留約 3mm~5mm（~1.2%）乾淨紙邊，徹底裁除周圍深色/木紋桌面背景
     const invScale = 1 / scale;
-    const rawCorners = [tl, tr, br, bl].map(p => ({
+    const rawCorners = [tlW, trW, brW, blW].map(p => ({
       x: p.x * invScale,
       y: p.y * invScale
     }));
     const cx = (rawCorners[0].x + rawCorners[1].x + rawCorners[2].x + rawCorners[3].x) * 0.25;
     const cy = (rawCorners[0].y + rawCorners[1].y + rawCorners[2].y + rawCorners[3].y) * 0.25;
-    const EXPAND_X_RATIO = 0.035;
-    const EXPAND_Y_RATIO = 0.048;
+    const padRatio = 0.012;
 
     const expandedCorners = rawCorners.map(p => ({
-      x: Math.max(0, Math.min(sw, Math.round(p.x + (p.x - cx) * EXPAND_X_RATIO))),
-      y: Math.max(0, Math.min(sh, Math.round(p.y + (p.y - cy) * EXPAND_Y_RATIO)))
+      x: Math.max(0, Math.min(sw, Math.round(p.x + (p.x - cx) * padRatio))),
+      y: Math.max(0, Math.min(sh, Math.round(p.y + (p.y - cy) * padRatio)))
     }));
 
     return {
       corners: expandedCorners,
       detected: true,
-      confidence: 'high'
+      confidence: 'high',
+      estimatedAspect: Number(Math.max(1.15, Math.min(1.80, estAspect)).toFixed(3))
     };
   }
 
-  function detectLgDealerBoxStampSpec(cleanCardCanvas) {
+  /**
+   * 偵測 LG 保卡「經銷商店章」文字 ＋ 右側「LG LINE官方帳號 QR Code」垂直雙地標與圓角矩形框 (v48)
+   */
+  function detectLgDealerBoxStampSpec(cleanCardCanvas, dealerOcrAnchor = null) {
     const fallbackSpec = { ...LG_TW_STAMP_SPEC };
     if (!cleanCardCanvas || !cleanCardCanvas.width || !cleanCardCanvas.height) {
       return fallbackSpec;
@@ -1923,10 +2217,162 @@
 
     const cw = cleanCardCanvas.width;
     const ch = cleanCardCanvas.height;
-    const rx = Math.round(cw * 0.65);
-    const ry = Math.round(ch * 0.42);
-    const rw = Math.max(40, Math.round(cw * 0.31));
-    const rh = Math.max(40, Math.round(ch * 0.38));
+
+    // 1. 偵測右下角第二個 QR Code（LG LINE官方帳號 上方二維碼方塊）
+    let qrAnchor = null;
+    try {
+      const qx0 = Math.round(cw * 0.54);
+      const qy0 = Math.round(ch * 0.66);
+      const qw = Math.max(40, Math.round(cw * 0.43));
+      const qh = Math.max(40, Math.round(ch * 0.29));
+      const qScale = Math.min(1, 260 / qw);
+      const sw = Math.max(30, Math.round(qw * qScale));
+      const sh = Math.max(30, Math.round(qh * qScale));
+
+      const qCan = document.createElement('canvas');
+      qCan.width = sw;
+      qCan.height = sh;
+      const qCtx = qCan.getContext('2d', { willReadFrequently: true });
+      qCtx.drawImage(cleanCardCanvas, qx0, qy0, qw, qh, 0, 0, sw, sh);
+      const qData = qCtx.getImageData(0, 0, sw, sh).data;
+
+      const qLums = [];
+      for (let i = 0; i < sw * sh; i += 2) {
+        const p = i * 4;
+        qLums.push(0.299 * qData[p] + 0.587 * qData[p + 1] + 0.114 * qData[p + 2]);
+      }
+      qLums.sort((a, b) => a - b);
+      const qBgLum = qLums[Math.floor(qLums.length * 0.80)] || 215;
+      const qDarkThresh = Math.max(55, qBgLum - 30);
+
+      // 統計上半 85% 高度（避開最底部 QR 說明文字列）各垂直行黑點數，定位雙 QR 碼 X 區間
+      const yScanLimit = Math.round(sh * 0.84);
+      const colDark = new Int32Array(sw);
+      for (let y = 2; y < yScanLimit; y++) {
+        for (let x = 2; x < sw - 2; x++) {
+          const p = (y * sw + x) * 4;
+          const l = 0.299 * qData[p] + 0.587 * qData[p + 1] + 0.114 * qData[p + 2];
+          if (l < qDarkThresh) colDark[x]++;
+        }
+      }
+
+      const activeX = new Uint8Array(sw);
+      const minColHits = Math.max(4, Math.round(sh * 0.16));
+      for (let x = 0; x < sw; x++) {
+        if (colDark[x] >= minColHits) activeX[x] = 1;
+      }
+      // 填平 QR 碼內部 <= 3px 白間隙
+      const bridgedX = new Uint8Array(activeX);
+      for (let x = 1; x < sw - 1; x++) {
+        if (!activeX[x]) {
+          let hasL = false, hasR = false;
+          for (let d = 1; d <= 3; d++) {
+            if (x - d >= 0 && activeX[x - d]) hasL = true;
+            if (x + d < sw && activeX[x + d]) hasR = true;
+          }
+          if (hasL && hasR) bridgedX[x] = 1;
+        }
+      }
+
+      const xClusters = [];
+      let cStart = -1;
+      for (let x = 0; x < sw; x++) {
+        if (bridgedX[x] && cStart < 0) cStart = x;
+        else if (!bridgedX[x] && cStart >= 0) {
+          xClusters.push({ x0: cStart, x1: x - 1, w: x - cStart });
+          cStart = -1;
+        }
+      }
+      if (cStart >= 0) xClusters.push({ x0: cStart, x1: sw - 1, w: sw - cStart });
+
+      const validQrClusters = xClusters.filter(c => {
+        const wNorm = (c.w / qScale) / cw;
+        return wNorm >= 0.065 && wNorm <= 0.195;
+      });
+
+      if (validQrClusters.length > 0) {
+        // 選最右側符合寬度的方形 QR（即 LG LINE官方帳號 QR Code）
+        const rightQr = validQrClusters[validQrClusters.length - 1];
+        const rowDark = new Int32Array(sh);
+        for (let y = 0; y < sh; y++) {
+          let cnt = 0;
+          for (let x = rightQr.x0; x <= rightQr.x1; x++) {
+            const p = (y * sw + x) * 4;
+            const l = 0.299 * qData[p] + 0.587 * qData[p + 1] + 0.114 * qData[p + 2];
+            if (l < qDarkThresh) cnt++;
+          }
+          rowDark[y] = cnt;
+        }
+        const minRowHits = Math.max(4, Math.round(rightQr.w * 0.18));
+        const activeY = new Uint8Array(sh);
+        for (let y = 0; y < sh; y++) {
+          if (rowDark[y] >= minRowHits) activeY[y] = 1;
+        }
+        const bridgedY = new Uint8Array(activeY);
+        for (let y = 1; y < sh - 1; y++) {
+          if (!activeY[y]) {
+            let hasU = false, hasD = false;
+            for (let d = 1; d <= 3; d++) {
+              if (y - d >= 0 && activeY[y - d]) hasU = true;
+              if (y + d < sh && activeY[y + d]) hasD = true;
+            }
+            if (hasU && hasD) bridgedY[y] = 1;
+          }
+        }
+        let bestYCluster = null;
+        let ys = -1;
+        for (let y = 0; y < sh; y++) {
+          if (bridgedY[y] && ys < 0) ys = y;
+          else if (!bridgedY[y] && ys >= 0) {
+            const hSpan = y - ys;
+            if (!bestYCluster || hSpan > bestYCluster.h) {
+              bestYCluster = { y0: ys, y1: y - 1, h: hSpan };
+            }
+            ys = -1;
+          }
+        }
+        if (ys >= 0) {
+          const hSpan = sh - ys;
+          if (!bestYCluster || hSpan > bestYCluster.h) bestYCluster = { y0: ys, y1: sh - 1, h: hSpan };
+        }
+        if (bestYCluster) {
+          const qrWOrig = rightQr.w / qScale;
+          const qrHOrig = bestYCluster.h / qScale;
+          const ratioSq = qrWOrig / Math.max(1, qrHOrig);
+          if (ratioSq >= 0.72 && ratioSq <= 1.38) {
+            qrAnchor = {
+              centerX: (qx0 + (rightQr.x0 + rightQr.x1) * 0.5 / qScale) / cw,
+              topY: (qy0 + bestYCluster.y0 / qScale) / ch,
+              bottomY: (qy0 + bestYCluster.y1 / qScale) / ch,
+              widthNorm: qrWOrig / cw,
+              heightNorm: qrHOrig / ch,
+              sizeNormW: ((qrWOrig + qrHOrig) * 0.5) / cw,
+              sizeNormH: ((qrWOrig + qrHOrig) * 0.5) / ch
+            };
+          }
+        }
+      }
+    } catch (qrErr) {
+      console.warn('LG 右側 QR Code 幾何定位忽略:', qrErr);
+    }
+
+    // 2. 結合「經銷商店章 OCR 地標」與「右側 QR Code」取得水平同軸中心，在緊湊視窗內偵測圓角方框邊線
+    const validLabelAnchor = (dealerOcrAnchor && dealerOcrAnchor.centerX > 0.55 && dealerOcrAnchor.centerX < 0.96)
+      ? dealerOcrAnchor
+      : null;
+
+    const coaxialGuessX = (validLabelAnchor && qrAnchor)
+      ? (validLabelAnchor.centerX + qrAnchor.centerX) * 0.5
+      : ((validLabelAnchor && validLabelAnchor.centerX) || (qrAnchor && qrAnchor.centerX) || fallbackSpec.centerX);
+
+    const halfWinW = Math.max(cw * 0.125, qrAnchor ? qrAnchor.widthNorm * cw * 1.05 : cw * 0.125);
+    const rx = Math.max(Math.round(cw * 0.50), Math.min(cw - 50, Math.round(coaxialGuessX * cw - halfWinW)));
+    const rw = Math.max(40, Math.min(cw - rx, Math.round(halfWinW * 2)));
+    const ry = Math.round(ch * 0.36);
+    const bottomCapY = validLabelAnchor
+      ? Math.round((validLabelAnchor.bottomY + 0.045) * ch)
+      : (qrAnchor ? Math.round((qrAnchor.topY - 0.015) * ch) : Math.round(ch * 0.78));
+    const rh = Math.max(40, Math.min(ch - ry, bottomCapY - ry));
 
     const tmp = document.createElement('canvas');
     tmp.width = rw;
@@ -1936,15 +2382,14 @@
     const data = tCtx.getImageData(0, 0, rw, rh).data;
 
     const lums = [];
-    for (let i = 0; i < rw * rh; i += 4) {
+    for (let i = 0; i < rw * rh; i += 3) {
       const p = i * 4;
       lums.push(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
     }
     lums.sort((a, b) => a - b);
-    const bgLum = lums[Math.floor(lums.length * 0.78)] || 225;
-    const darkThresh = Math.max(60, bgLum - 32);
+    const bgLum = lums[Math.floor(lums.length * 0.78)] || 220;
+    const darkThresh = Math.max(55, bgLum - 22);
 
-    // 投影偵測矩形左牆、右牆、上牆、下牆
     const colDarkCounts = new Int32Array(rw);
     const rowDarkCounts = new Int32Array(rh);
     for (let y = 0; y < rh; y++) {
@@ -1975,32 +2420,72 @@
       return bestIdx;
     };
 
-    const leftWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.08), Math.round(rw * 0.45), Math.round(rh * 0.25));
-    const rightWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.55), Math.round(rw * 0.92), Math.round(rh * 0.25));
-    const topWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.05), Math.round(rh * 0.42), Math.round(rw * 0.25));
-    const bottomWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.58), Math.round(rh * 0.95), Math.round(rw * 0.25));
+    const leftWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.04), Math.round(rw * 0.44), Math.round(rh * 0.22));
+    const rightWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.56), Math.round(rw * 0.96), Math.round(rh * 0.22));
+    const topWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.03), Math.round(rh * 0.48), Math.round(rw * 0.24));
+    const bottomWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.62), Math.round(rh * 0.97), Math.round(rw * 0.24));
 
-    if (leftWallRel >= 0 && rightWallRel > leftWallRel && topWallRel >= 0 && bottomWallRel > topWallRel) {
-      const boxW = rightWallRel - leftWallRel;
-      const boxH = bottomWallRel - topWallRel;
-      const boxWRatio = boxW / cw;
-      const boxHRatio = boxH / ch;
-      if (boxWRatio >= 0.11 && boxWRatio <= 0.24 && boxHRatio >= 0.14 && boxHRatio <= 0.32) {
-        const boxCenterX = (rx + leftWallRel + boxW * 0.5) / cw;
-        const boxTopY = ry + topWallRel;
-        const stampCenterY = (boxTopY + boxH * 0.38) / ch;
-        const stampWidthRatio = Math.max(0.160, Math.min(0.195, boxWRatio * 1.04));
-        return {
-          centerX: Number(boxCenterX.toFixed(4)),
-          centerY: Number(stampCenterY.toFixed(4)),
-          widthRatio: Number(stampWidthRatio.toFixed(4)),
-          tiltRangeDeg: 1.5,
-          blendMode: 'multiply'
-        };
+    let boxCenterX = null;
+    let boxWRatio = null;
+    let boxTopNorm = null;
+    let boxBottomNorm = null;
+    if (leftWallRel >= 0 && rightWallRel > leftWallRel) {
+      const candWRatio = (rightWallRel - leftWallRel) / cw;
+      const candCenterX = (rx + (leftWallRel + rightWallRel) * 0.5) / cw;
+      if (candWRatio >= 0.115 && candWRatio <= 0.235 && Math.abs(candCenterX - coaxialGuessX) <= 0.045) {
+        boxCenterX = candCenterX;
+        boxWRatio = candWRatio;
+      }
+    }
+    if (topWallRel >= 0) boxTopNorm = (ry + topWallRel) / ch;
+    if (bottomWallRel >= 0) boxBottomNorm = (ry + bottomWallRel) / ch;
+
+    // 3. 垂直雙地標同軸鎖定印章 X、方框 96%~100% 寬度、及避讓「經銷商店章」四字之上半部 Y
+    let finalCenterX = coaxialGuessX;
+    if (boxCenterX !== null) {
+      if (validLabelAnchor && qrAnchor) {
+        finalCenterX = ((validLabelAnchor.centerX + qrAnchor.centerX) * 0.5 + boxCenterX) * 0.5;
+      } else {
+        finalCenterX = (coaxialGuessX + boxCenterX) * 0.5;
       }
     }
 
-    return fallbackSpec;
+    const netBoxWidthRatio = boxWRatio || (qrAnchor ? qrAnchor.widthNorm * 1.12 : 0.172);
+    const stampWidthRatio = Math.max(0.145, Math.min(0.192, netBoxWidthRatio * 0.98));
+
+    // 預估專櫃圓角長方章高寬比 (實際印章寬/高約 1.38)
+    const estStampHNorm = (stampWidthRatio * cw / 1.38) / ch;
+    const estQrHNorm = qrAnchor ? qrAnchor.heightNorm : 0.145;
+
+    const labelTopClearNorm = validLabelAnchor
+      ? Math.max(0.45, validLabelAnchor.topY - 0.012)
+      : (boxBottomNorm !== null
+          ? (boxBottomNorm - Math.max(0.036, estQrHNorm * 0.25))
+          : (qrAnchor ? (qrAnchor.topY - 0.088) : 0.635));
+
+    const inferredBoxTopNorm = (boxTopNorm !== null)
+      ? boxTopNorm
+      : (boxBottomNorm !== null
+          ? (boxBottomNorm - Math.max(estQrHNorm * 1.45, 0.195))
+          : (labelTopClearNorm - Math.max(estStampHNorm * 1.18, estQrHNorm * 1.10)));
+
+    let finalCenterY = (inferredBoxTopNorm + labelTopClearNorm) * 0.5;
+    const maxSafeCenterY = labelTopClearNorm - estStampHNorm * 0.5;
+    if (finalCenterY > maxSafeCenterY) {
+      finalCenterY = maxSafeCenterY;
+    }
+    const minSafeCenterY = Math.max(0.42, inferredBoxTopNorm + estStampHNorm * 0.44);
+    if (finalCenterY < minSafeCenterY) {
+      finalCenterY = Math.min(maxSafeCenterY, minSafeCenterY);
+    }
+
+    return {
+      centerX: Number(Math.max(0.60, Math.min(0.90, finalCenterX)).toFixed(4)),
+      centerY: Number(Math.max(0.44, Math.min(0.68, finalCenterY)).toFixed(4)),
+      widthRatio: Number(stampWidthRatio.toFixed(4)),
+      tiltRangeDeg: 1.5,
+      blendMode: 'multiply'
+    };
   }
 
   function filterLgModelResult(rawText) {
@@ -2011,11 +2496,35 @@
       .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
       .replace(/\b2162[-\s]?1196\b/g, ' ');
 
+    const normalizeModelToken = rawTok => {
+      let tok = (rawTok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+      if (!tok) return '';
+      // 修正在型號數字區段中的字元混淆（如 WD-S1B18PB -> WD-S1818PB、WD-SB818PB -> WD-S8818PB）
+      const mapDigitChar = ch => ({ B: '8', O: '0', D: '0', I: '1', L: '1', S: '5', Z: '2', G: '6', T: '7' }[ch] || ch);
+      const washMatch = tok.match(/^([A-Z]{1,4}-[A-Z])([A-Z0-9]{3,6})([A-Z]{0,4})$/);
+      if (washMatch) {
+        const head = washMatch[1];
+        const mid = washMatch[2];
+        const tail = washMatch[3];
+        if ((mid.match(/\d/g) || []).length >= 2) {
+          const fixedMid = mid.split('').map(mapDigitChar).join('');
+          tok = `${head}${fixedMid}${tail}`;
+        }
+      }
+      // 通用防呆：數字夾心字母（例如 1B18 -> 1818、25I5 -> 2515）還原為數字
+      let prev;
+      do {
+        prev = tok;
+        tok = tok.replace(/(\d)([BOISZ])(\d)/g, (_, d1, midCh, d2) => `${d1}${mapDigitChar(midCh)}${d2}`);
+      } while (tok !== prev);
+      return tok;
+    };
+
     // 優先匹配 LG 常見含連字號型號（如 WD-S1818PB, WT-SD199HVG, GR-QPL88BS）
     const hyphenMatch = cleaned.match(/\b([A-Z]{1,4}\s*-\s*[A-Z0-9]{2,10}(?:-[A-Z0-9]{1,4})?)\b/g);
     if (hyphenMatch) {
       for (let i = 0; i < hyphenMatch.length; i++) {
-        const tok = hyphenMatch[i].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
+        const tok = normalizeModelToken(hyphenMatch[i].replace(/\s+/g, ''));
         if (tok.length >= 5 && /[A-Z]/.test(tok) && /\d/.test(tok)) {
           return tok;
         }
@@ -2025,7 +2534,7 @@
     // 支援無連字號機型（如 OLED65C4PTA / AS651DSS0）
     const tokens = cleaned.split(/[\s\r\n:：]+/).map(t => t.replace(/[^A-Z0-9-]/g, '')).filter(Boolean);
     for (let i = 0; i < tokens.length; i++) {
-      const tok = tokens[i];
+      const tok = normalizeModelToken(tokens[i]);
       if (tok.length < 5 || tok.length > 18) continue;
       if (/^\d{3}[A-Z]{4,}\d{2,}$/.test(tok)) continue; // 排除 LG 機號格式
       if (/^MBM\d+/.test(tok)) continue;
@@ -2041,25 +2550,32 @@
     if (s.length < 9 || s.length > 15) return '';
     if (/^MBM/.test(s) || /^REV/.test(s) || /^LG/.test(s)) return '';
 
-    const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
-    const toAlpha = ch => ({ '0': 'O', '1': 'I', '8': 'B', '5': 'S' }[ch] || ch);
+    const toHeadDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', T: '7', B: '8' }[ch] || ch);
+    const toTailDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', A: '5', G: '6', T: '7', Y: '7', B: '8' }[ch] || ch);
+    const toMidAlpha = ch => ({ '0': 'O', '1': 'I', '2': 'Z', '5': 'S', '6': 'G', '8': 'B' }[ch] || ch);
 
     const chars = s.split('');
-    // LG 機號結構（如 610PNNAEQ687）：前 3 碼固定為數字（年+月），尾段 3 碼固定為數字，中段工廠碼為英文字母
+    // LG 台灣標準 12 碼機號結構：[3碼數字] + [6碼大寫英文字母] + [3碼數字]（如 610 + PNNAEQ + 687）
     for (let i = 0; i < Math.min(3, chars.length); i++) {
-      chars[i] = toDigit(chars[i]);
+      chars[i] = toHeadDigit(chars[i]);
     }
     for (let i = Math.max(3, chars.length - 3); i < chars.length; i++) {
-      chars[i] = toDigit(chars[i]);
+      chars[i] = toTailDigit(chars[i]);
     }
-    for (let i = 3; i < chars.length - 3; i++) {
-      // 保留合理中段數字（若有 4 位尾數），僅將明顯字元混淆且前後皆英文時糾正
-      if (/[018]/.test(chars[i]) && i < chars.length - 4) {
-        chars[i] = toAlpha(chars[i]);
+    if (chars.length === 12) {
+      for (let i = 3; i < 9; i++) {
+        chars[i] = toMidAlpha(chars[i]);
+      }
+    } else {
+      for (let i = 3; i < chars.length - 3; i++) {
+        if (/[012568]/.test(chars[i]) && i < chars.length - 4) {
+          chars[i] = toMidAlpha(chars[i]);
+        }
       }
     }
 
     const fixed = chars.join('');
+    if (/^\d{3}[A-Z]{6}\d{3}$/.test(fixed)) return fixed;
     if (/^\d{3}[A-Z]{3,8}\d{2,5}$/.test(fixed)) return fixed;
     if (/^\d{3}[A-Z0-9]{6,11}$/.test(fixed) && (fixed.match(/\d/g) || []).length >= 5 && (fixed.match(/[A-Z]/g) || []).length >= 3) {
       return fixed;
@@ -2126,6 +2642,7 @@
     detectLgCardQuad,
     detectLgDealerBoxStampSpec,
     createEnhancedOcrCropCanvas,
+    createAdaptiveBinarizedOcrCropCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
     adaptStampCanvasToLighting,

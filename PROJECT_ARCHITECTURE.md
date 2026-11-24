@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 20:17:19] (第 48 版 / v48)
+- **執行項目**：**升級 LG `lg_tw` 白紙去背透視 ＋ 「經銷商店章＋右側QR碼」垂直雙地標蓋章 ＋ 2.5x 自適應二值化專項 OCR（v48）** — 在嚴格隔離不改動 Panasonic 已封版核心與 v47 分類路由下，修復木桌背景裁切、印章右偏壓字與機型／機號識別錯誤。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_201201/`，同步更新雙份 HTML 為 `v48 (2026.11.24)` 與 `?v=48`。
+  2. **白紙四邊 RANSAC 去背拉正**：重寫 `detectLgCardQuad()` 以四向階躍邊界與 RANSAC 直線擬合精準找出白色貼紙四頂點（僅留 `~1.2%` 呼吸紙邊），依實測 `estimatedAspect` 透視校正去除木桌背景。
+  3. **垂直雙地標同軸蓋章**：升級 `detectLgDealerBoxStampSpec()` 偵測右下第二 QR Code 與 `經銷商店章` 文字錨點、縮放印章至圓角框淨寬 `98%` 並避開下方四字；更新 `LG_TW_STAMP_SPEC` 保底值為 `centerX: 0.785, centerY: 0.565, widthRatio: 0.168`。
+  4. **局部 `2.5x` 二值化與規則校準**：新增 `createAdaptiveBinarizedOcrCropCanvas()`、條碼下緣隔離 `findBarcodeBottomGuardNorm()`、`filterLgModelResult()` 數字區 `B->8` 校正與 12 碼 `[3數]+[6英]+[3數]` `normalizeLgSerialTokenByPosition()`。
+  5. **驗證與推送**：通過 HTML 同步、語法檢核與 `CRLF` 檢查並推送至 `origin/main`。
+
 ### [2026-11-24 20:08:23] (第 47 版 / v47)
 - **執行項目**：**以 6 組專屬關鍵字鎖死 LG 保證書最前端角色分類路由（v47）** — 徹底修復 LG 台灣樂金保證書因雙 QR Code 與 `MBM65176322` 編號導致在匯入分類器被誤判為發票（`receipt`）之問題，保留全部 v46 `lg_tw` 與 Panasonic 封版核心。
 - **具體進度**：

@@ -3975,6 +3975,7 @@ function importImagePureFrontend(file) {
         // 分支 B：保卡專屬管線（嚴格依品牌獨立路由：LG lg_tw / 國際牌 Panasonic / 未建檔品牌）
         let isUnmatchedBrandCard = false;
         let preCalibratedStampSpec = null;
+        let preLgDealerOcrAnchor = null;
         if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
           const preTextUpper = (preScan.text || '').toUpperCase();
           const lgMatch = (!isManualPanasonicInit && window.CardTemplates.detectLgWarrantyByText)
@@ -3998,11 +3999,13 @@ function importImagePureFrontend(file) {
 
           if (looksLikeLg) {
             const tplLg = resolveCardTemplate('lg_tw');
-            const lgAspect = tplLg ? tplLg.aspectRatio : 1.72;
             const offscreenW = Math.max(1800, Math.min(3200, sw || 1800));
             const lgQuad = window.CardTemplates.detectLgCardQuad
               ? window.CardTemplates.detectLgCardQuad(img)
               : { detected: false };
+            const lgAspect = (lgQuad && lgQuad.estimatedAspect)
+              ? lgQuad.estimatedAspect
+              : (tplLg ? tplLg.aspectRatio : 1.42);
 
             if (lgQuad.detected && lgQuad.corners) {
               cardQuadCorners = lgQuad.corners;
@@ -4023,7 +4026,7 @@ function importImagePureFrontend(file) {
               const pbAspect = pb.w / Math.max(1, pb.h);
               const trimCanvas = document.createElement('canvas');
               trimCanvas.width = offscreenW;
-              trimCanvas.height = Math.round(offscreenW / Math.max(1.25, Math.min(1.88, pbAspect)));
+              trimCanvas.height = Math.round(offscreenW / Math.max(1.15, Math.min(1.85, pbAspect)));
               const trCtx = trimCanvas.getContext('2d');
               trCtx.imageSmoothingEnabled = true;
               trCtx.imageSmoothingQuality = 'high';
@@ -4045,9 +4048,6 @@ function importImagePureFrontend(file) {
             }
 
             activeImg = rectifiedCleanCanvas;
-            if (window.CardTemplates.detectLgDealerBoxStampSpec) {
-              preCalibratedStampSpec = window.CardTemplates.detectLgDealerBoxStampSpec(rectifiedCleanCanvas);
-            }
 
             const lgOcrProxy = {
               type: 'image',
@@ -4057,6 +4057,13 @@ function importImagePureFrontend(file) {
               cardTemplateId: 'lg_tw'
             };
             await runLgCardTargetedOcr(lgOcrProxy, preScan.text);
+            preLgDealerOcrAnchor = lgOcrProxy._lgDealerOcrAnchor || null;
+            if (window.CardTemplates.detectLgDealerBoxStampSpec) {
+              preCalibratedStampSpec = window.CardTemplates.detectLgDealerBoxStampSpec(
+                rectifiedCleanCanvas,
+                preLgDealerOcrAnchor
+              );
+            }
             cardTemplateId = 'lg_tw';
           } else {
             const tpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
@@ -4173,6 +4180,7 @@ function importImagePureFrontend(file) {
         newLayer.cardTemplateId = cardTemplateId;
         newLayer.isRectifiedCard = isRectifiedCard;
         newLayer.isUnmatchedBrandCard = isUnmatchedBrandCard;
+        if (preLgDealerOcrAnchor) newLayer._lgDealerOcrAnchor = preLgDealerOcrAnchor;
         if (preCalibratedStampSpec) newLayer._calibratedStampSpec = preCalibratedStampSpec;
 
         pushUndoState('匯入圖片');
@@ -7081,7 +7089,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
 
     layer.cardTemplateId = 'lg_tw';
     if (cardTemplateBadge) cardTemplateBadge.textContent = tpl.shortLabel;
-    setCanvasOcrPill('🔍 正在辨識 LG 台灣樂金保證書之機型與機號...', 'loading');
+    setCanvasOcrPill('🔍 正在執行 LG 保卡 2.5x 局部二值化放大辨識與雙地標定位...', 'loading');
 
     if (!window.Tesseract) {
       const msg = getOcrErrorDisplayMessage(new Error('Tesseract 未載入'));
@@ -7090,7 +7098,7 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
       return;
     }
 
-    setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在辨識機型與機號...`, true);
+    setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在辨識機型／機號與經銷商店章...`, true);
 
     let worker = null;
     try {
@@ -7099,95 +7107,244 @@ async function runLgCardTargetedOcr(layer, preScanText = '') {
       console.warn('Tesseract Eng Worker 初始化受限:', wErr);
     }
 
+    // 偵測「機號」上方一維條碼下緣，避免任何條碼垂直黑線混入機號單行 ROI
+    const findBarcodeBottomGuardNorm = (canvas, regX0, regX1) => {
+      try {
+        const cw = canvas.width;
+        const ch = canvas.height;
+        const rx = Math.max(0, Math.round(cw * regX0));
+        const rw = Math.max(20, Math.round(cw * (regX1 - regX0)));
+        const ry = Math.max(0, Math.round(ch * 0.14));
+        const rh = Math.max(20, Math.round(ch * 0.21));
+        const tCan = document.createElement('canvas');
+        tCan.width = rw;
+        tCan.height = rh;
+        const tCtx = tCan.getContext('2d', { willReadFrequently: true });
+        tCtx.drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+        const d = tCtx.getImageData(0, 0, rw, rh).data;
+        let runStart = -1;
+        let lastBarcodeEnd = -1;
+        const minRunH = Math.max(6, Math.round(ch * 0.028));
+        for (let y = 0; y < rh; y++) {
+          let darkCnt = 0;
+          for (let x = 0; x < rw; x += 2) {
+            const p = (y * rw + x) * 4;
+            const lum = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+            if (lum < 115) darkCnt++;
+          }
+          const frac = (darkCnt * 2) / rw;
+          if (frac >= 0.19) {
+            if (runStart < 0) runStart = y;
+          } else if (runStart >= 0) {
+            if (y - runStart >= minRunH) lastBarcodeEnd = y;
+            runStart = -1;
+          }
+        }
+        if (runStart >= 0 && rh - runStart >= minRunH) lastBarcodeEnd = rh;
+        if (lastBarcodeEnd >= 0) {
+          return Math.min(0.32, (ry + lastBarcodeEnd) / ch + 0.008);
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    const mapOcrItemsNorm = (ocrData, region, cropCanvas, padPx = 0) => {
+      if (!ocrData || !cropCanvas) return [];
+      const contentW = Math.max(1, cropCanvas.width - padPx * 2);
+      const contentH = Math.max(1, cropCanvas.height - padPx * 2);
+      const rawItems = [];
+      if (Array.isArray(ocrData.words) && ocrData.words.length > 0) {
+        rawItems.push(...ocrData.words);
+      } else if (Array.isArray(ocrData.lines)) {
+        rawItems.push(...ocrData.lines);
+      }
+      if (rawItems.length === 0 && Array.isArray(ocrData.blocks)) {
+        ocrData.blocks.forEach(blk => {
+          (blk.paragraphs || []).forEach(para => {
+            (para.lines || []).forEach(ln => {
+              if (Array.isArray(ln.words) && ln.words.length > 0) rawItems.push(...ln.words);
+              else rawItems.push(ln);
+            });
+          });
+        });
+      }
+      return rawItems
+        .filter(it => it && it.bbox && (it.text || '').trim())
+        .map(it => ({
+          text: String(it.text || '').trim(),
+          x0: region.x + ((it.bbox.x0 - padPx) / contentW) * region.w,
+          y0: region.y + ((it.bbox.y0 - padPx) / contentH) * region.h,
+          x1: region.x + ((it.bbox.x1 - padPx) / contentW) * region.w,
+          y1: region.y + ((it.bbox.y1 - padPx) / contentH) * region.h
+        }));
+    };
+
     try {
       let modelClean = '';
       let serialClean = '';
+      let fallbackRowModel = '';
+      let fallbackRowSerial = '';
       let crossVerifiedNote = '';
+      let modelLabelBox = null;
+      let serialLabelBox = null;
 
-      if (tpl.ocrRegions && tpl.ocrRegions.topFormBlock && window.CardTemplates.createEnhancedOcrCropCanvas) {
-        const topRowCrop = window.CardTemplates.createEnhancedOcrCropCanvas(
-          srcCanvas,
-          tpl.ocrRegions.topFormBlock,
-          3.0
-        );
-        let topRowText = '';
+      let chiEngWorker = null;
+      try {
+        chiEngWorker = await getSharedChiEngWorker();
+      } catch (wErr2) {
+        console.warn('共用中英 Worker 初始化受限:', wErr2);
+      }
+
+      // 1. 掃描上方基本資料列取得「機型」「機號」標籤座標與備援文字
+      const topRegion = (tpl.ocrRegions && tpl.ocrRegions.topFormBlock)
+        ? tpl.ocrRegions.topFormBlock
+        : { x: 0.05, y: 0.25, w: 0.90, h: 0.14 };
+
+      if (window.CardTemplates.createEnhancedOcrCropCanvas) {
+        const topRowCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, topRegion, 2.2);
+        let topRowRes = null;
         try {
-          const chiEngWorker = await getSharedChiEngWorker();
           if (chiEngWorker) {
             await chiEngWorker.setParameters({ tessedit_pageseg_mode: '6' });
             try {
-              const rowRes = await chiEngWorker.recognize(topRowCrop);
-              topRowText = (rowRes && rowRes.data && rowRes.data.text) || '';
+              topRowRes = await chiEngWorker.recognize(topRowCrop);
             } finally {
               await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
             }
           } else {
-            const rowRes = await window.Tesseract.recognize(topRowCrop, 'eng+chi_tra');
-            topRowText = (rowRes && rowRes.data && rowRes.data.text) || '';
+            topRowRes = await window.Tesseract.recognize(topRowCrop, 'eng+chi_tra');
           }
         } catch (blkErr) {
-          console.warn('LG 上方資料列雙語 OCR 降級為純英數:', blkErr);
-          if (worker) {
-            await worker.setParameters({ tessedit_pageseg_mode: '6' });
-            try {
-              const engRes = await worker.recognize(topRowCrop);
-              topRowText = (engRes && engRes.data && engRes.data.text) || '';
-            } finally {
-              await worker.setParameters({ tessedit_pageseg_mode: '7' }).catch(() => {});
-            }
-          }
+          console.warn('LG 上方資料列雙語 OCR 失敗:', blkErr);
         }
 
+        const topRowText = (topRowRes && topRowRes.data && topRowRes.data.text) || '';
         if (topRowText && window.CardTemplates.parseLgTopFormRow) {
           const parsedRow = window.CardTemplates.parseLgTopFormRow(topRowText);
-          if (parsedRow.model) modelClean = parsedRow.model;
-          if (parsedRow.serialNo) serialClean = parsedRow.serialNo;
+          fallbackRowModel = parsedRow.model || '';
+          fallbackRowSerial = parsedRow.serialNo || '';
+        }
+
+        const topItems = mapOcrItemsNorm(topRowRes && topRowRes.data, topRegion, topRowCrop, 0);
+        for (let i = 0; i < topItems.length; i++) {
+          const item = topItems[i];
+          const compact = item.text.replace(/\s+/g, '');
+          if (!modelLabelBox && item.x0 >= 0.28 && item.x1 <= 0.56 && (/機型|MODEL/i.test(compact) || compact === '型')) {
+            modelLabelBox = item;
+          }
+          if (!serialLabelBox && item.x0 >= 0.50 && item.x1 <= 0.80 && (/機號|SERIAL/i.test(compact) || compact === '號')) {
+            serialLabelBox = item;
+          }
         }
       }
 
-      if (!modelClean || !serialClean) {
-        const modelCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.model, 3.0);
-        const serialCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, tpl.ocrRegions.serial, 3.0);
+      // 2. 局部 2.5x 放大 ＋ 自適應二值化 ＋ 純英數單行白名單專項 OCR（精準修復 6/0、8/B、EQ/AR、87/5T）
+      const cropFn = window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas || window.CardTemplates.createEnhancedOcrCropCanvas;
+      if (cropFn) {
+        const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model) || { x: 0.415, y: 0.285, w: 0.220, h: 0.095 };
+        const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial) || { x: 0.675, y: 0.285, w: 0.265, h: 0.095 };
+
+        const modelRoi = modelLabelBox
+          ? (() => {
+              const rx = Math.max(0.35, modelLabelBox.x1 - 0.004);
+              const rxEnd = serialLabelBox
+                ? Math.max(rx + 0.14, serialLabelBox.x0 - 0.008)
+                : Math.min(0.68, rx + 0.23);
+              const ry = Math.max(0.22, modelLabelBox.y0 - 0.025);
+              const rh = Math.min(0.105, Math.max(0.062, (modelLabelBox.y1 - modelLabelBox.y0) + 0.040));
+              return { x: rx, y: ry, w: Math.max(0.14, rxEnd - rx), h: rh };
+            })()
+          : defaultModelReg;
+
+        const barcodeGuardTop = findBarcodeBottomGuardNorm(srcCanvas, 0.62, 0.95);
+        const serialRoi = serialLabelBox
+          ? (() => {
+              const rx = Math.max(0.62, serialLabelBox.x1 - 0.004);
+              const rw = Math.max(0.16, Math.min(0.975 - rx, 0.295));
+              const rawY = Math.max(0.22, serialLabelBox.y0 - 0.025);
+              const ry = barcodeGuardTop ? Math.max(rawY, barcodeGuardTop) : rawY;
+              const rh = Math.min(0.105, Math.max(0.060, serialLabelBox.y1 + 0.015 - ry));
+              return { x: rx, y: ry, w: rw, h: rh };
+            })()
+          : (() => {
+              const ry = barcodeGuardTop ? Math.max(defaultSerialReg.y, barcodeGuardTop) : defaultSerialReg.y;
+              const rh = Math.max(0.062, defaultSerialReg.y + defaultSerialReg.h - ry);
+              return { x: defaultSerialReg.x, y: ry, w: defaultSerialReg.w, h: rh };
+            })();
+
+        const modelCrop = cropFn(srcCanvas, modelRoi, 2.5);
+        const serialCrop = cropFn(srcCanvas, serialRoi, 2.5);
 
         let rawModel = '';
         let rawSerial = '';
         if (worker) {
-          await worker.setParameters({ tessedit_pageseg_mode: '6' });
-          try {
-            if (!modelClean) {
-              const mRes = await worker.recognize(modelCrop);
-              rawModel = (mRes && mRes.data && mRes.data.text) || '';
-            }
-            if (!serialClean) {
-              const sRes = await worker.recognize(serialCrop);
-              rawSerial = (sRes && sRes.data && sRes.data.text) || '';
-            }
-          } finally {
-            await worker.setParameters({ tessedit_pageseg_mode: '7' }).catch(() => {});
-          }
+          await worker.setParameters({
+            tessedit_pageseg_mode: '7',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+          });
+          const mRes = await worker.recognize(modelCrop);
+          rawModel = (mRes && mRes.data && mRes.data.text) || '';
+          const sRes = await worker.recognize(serialCrop);
+          rawSerial = (sRes && sRes.data && sRes.data.text) || '';
         } else {
-          if (!modelClean) {
-            const mRes = await window.Tesseract.recognize(modelCrop, 'eng');
-            rawModel = (mRes && mRes.data && mRes.data.text) || '';
-          }
-          if (!serialClean) {
-            const sRes = await window.Tesseract.recognize(serialCrop, 'eng');
-            rawSerial = (sRes && sRes.data && sRes.data.text) || '';
-          }
+          const mRes = await window.Tesseract.recognize(modelCrop, 'eng');
+          rawModel = (mRes && mRes.data && mRes.data.text) || '';
+          const sRes = await window.Tesseract.recognize(serialCrop, 'eng');
+          rawSerial = (sRes && sRes.data && sRes.data.text) || '';
         }
 
-        if (!modelClean && rawModel && window.CardTemplates.filterLgModelResult) {
+        if (rawModel && window.CardTemplates.filterLgModelResult) {
           modelClean = window.CardTemplates.filterLgModelResult(rawModel);
         }
-        if (!serialClean && rawSerial && window.CardTemplates.filterLgSerialResult) {
+        if (rawSerial && window.CardTemplates.filterLgSerialResult) {
           serialClean = window.CardTemplates.filterLgSerialResult(rawSerial);
         }
       }
+
+      if (!modelClean && fallbackRowModel) modelClean = fallbackRowModel;
+      if (!serialClean && fallbackRowSerial) serialClean = fallbackRowSerial;
 
       if ((!modelClean || !serialClean) && preScanText && window.CardTemplates.parseLgTopFormRow) {
         const fallbackParsed = window.CardTemplates.parseLgTopFormRow(preScanText);
         if (!modelClean && fallbackParsed.model) modelClean = fallbackParsed.model;
         if (!serialClean && fallbackParsed.serialNo) serialClean = fallbackParsed.serialNo;
+      }
+
+      // 3. 偵測右側「經銷商店章」印刷文字幾何位置作為雙地標同軸錨點
+      if (tpl.ocrRegions && tpl.ocrRegions.dealerAndQrBlock && window.CardTemplates.createEnhancedOcrCropCanvas && chiEngWorker) {
+        try {
+          const dRegion = tpl.ocrRegions.dealerAndQrBlock;
+          const dCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, dRegion, 2.0);
+          await chiEngWorker.setParameters({ tessedit_pageseg_mode: '6' });
+          let dRes = null;
+          try {
+            dRes = await chiEngWorker.recognize(dCrop);
+          } finally {
+            await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
+          }
+          if (dRes && dRes.data) {
+            const dLines = Array.isArray(dRes.data.lines) ? dRes.data.lines : [];
+            const dWords = Array.isArray(dRes.data.words) ? dRes.data.words : [];
+            const dItems = [
+              ...mapOcrItemsNorm({ lines: dLines }, dRegion, dCrop, 0),
+              ...mapOcrItemsNorm({ words: dWords }, dRegion, dCrop, 0)
+            ];
+            const dealerBox = dItems.find(it => {
+              const t = it.text.replace(/\s+/g, '');
+              return /經銷商店章|經銷商|店章/.test(t) && it.y0 >= 0.48 && it.y1 <= 0.78 && it.x0 >= 0.58;
+            });
+            if (dealerBox) {
+              layer._lgDealerOcrAnchor = {
+                centerX: (dealerBox.x0 + dealerBox.x1) * 0.5,
+                topY: dealerBox.y0,
+                bottomY: dealerBox.y1,
+                width: dealerBox.x1 - dealerBox.x0
+              };
+            }
+          }
+        } catch (anchorErr) {
+          console.warn('LG 經銷商店章文字錨點偵測略過:', anchorErr);
+        }
       }
 
       if (
@@ -7485,8 +7642,15 @@ async function applyCardRectifyAndOcr(targetLayer = null, autoStampAfter = false
   }
 
   layer._calibratedStampSpec = null;
+  layer._lgDealerOcrAnchor = null;
   const tpl = resolveCardTemplate(effectiveMode);
-  const aspectRatio = tpl ? tpl.aspectRatio : 1.48;
+  let aspectRatio = tpl ? tpl.aspectRatio : 1.48;
+  if (effectiveMode === 'lg_tw' && Array.isArray(layer.cardQuadCorners) && layer.cardQuadCorners.length === 4) {
+    const q = layer.cardQuadCorners;
+    const qW = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) * 0.5;
+    const qH = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) * 0.5;
+    if (qH > 10) aspectRatio = Math.max(1.15, Math.min(1.80, qW / qH));
+  }
 
   setCardSmartStatus('⏳ 正在執行四角梯形透視自動拉正...', true);
 
@@ -7561,7 +7725,10 @@ function resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas) {
   if (cardLayer && cardLayer.cardTemplateId === 'lg_tw') {
     if (cardLayer._calibratedStampSpec) return cardLayer._calibratedStampSpec;
     if (cleanCanvas && window.CardTemplates && typeof window.CardTemplates.detectLgDealerBoxStampSpec === 'function') {
-      const calibrated = window.CardTemplates.detectLgDealerBoxStampSpec(cleanCanvas);
+      const calibrated = window.CardTemplates.detectLgDealerBoxStampSpec(
+        cleanCanvas,
+        cardLayer._lgDealerOcrAnchor || null
+      );
       cardLayer._calibratedStampSpec = calibrated;
       return calibrated;
     }
