@@ -53,6 +53,21 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 22:05:54] (第 53 版 / v53)
+- **執行項目**：**新增「台灣三菱電機商品保證書 `mitsubishi_tw`」獨立命名空間模板（v53）** — 嚴格遵守品牌隔離原則、絕不修改已封版 Panasonic 國際牌與 LG `lg_tw` 邏輯，透過模板註冊制擴充三菱電機專屬地標優先分類、對角雙紅標四點透視拉正、左下 6 紅框十字精準蓋章、`3.0x` 機型／製造號碼局部 OCR 與中文 `三菱` 5 行核對輸出。
+- **具體進度**：
+  1. **版本徽章與選單啟用（`v53`）**：
+     - 建立 `_backup/20261124_220106/` 備份，同步更新 `index.html` 與 `static/index.html` 為 `v53 (2026.11.24)` 與 `?v=53`，並於 `#selectCardTemplateMode` 啟用 `手動指定：台灣三菱電機商品保證書 (mitsubishi_tw)`。
+  2. **註冊 `mitsubishi_tw` 獨立規則與最前端角色優先分類（`static/card_templates.js`）**：
+     - 於 `CARD_BRAND_REGISTRY` 啟用 `mitsubishi`，建立 `MITSUBISHI_TW_STAMP_SPEC`（`centerX: 0.232, centerY: 0.745, widthRatio: 0.205`）、`MITSUBISHI_TW_WARRANTY_CONFIG` 與 `CARD_TEMPLATES.mitsubishi_tw`（`aspectRatio: 1.58`）。
+     - 新增 `detectMitsubishiWarrantyByText()`：同步比對原始與去空白大寫字串，命中任一專屬地標（`三菱電機公司商品保證書 / 三菱電機商品保證書 / 三菱電機經銷商`、`台灣三菱電機股份有限公司 / 台灣三菱電機`、`MitsubishiElectric.com.tw`、`本欄請蓋店章`）或任兩項組合地標（`三菱電機 / MITSUBISHI`、`保證書`、`製造號碼`、`線上報修 / 保證書登錄`），即於 `classifyDocumentByTextAndColor()` 最優先級鎖定為保卡 `mitsubishi_tw`（且排除國際牌品牌字串與 LG，避免受右下雙 QR Code 誤判成發票）。
+  3. **實作對角雙紅標四點校正 ＋ 6 紅框十字精準蓋章（`detectMitsubishiCardQuad` / `detectMitsubishiDealerStampSpec`）**：
+     - `detectMitsubishiCardQuad()` 以左上紅鑽 `MITSUBISHI ELECTRIC` 與右下紅色公司章作為對角雙紅標護欄進行 RANSAC 白紙四點原比例拉正（保留 `3mm～5mm` 紙邊）。
+     - `detectMitsubishiDealerStampSpec()` 偵測「三菱電機經銷商」與「（本欄請蓋店章）」之間的中柱垂直分隔線、`購買日期：年` 下方橫線與最底表格框線，搭配 OCR 錨點鎖定印章：左貼「機」字右側、上貼「購買日期：年」下方橫線、右微壓中柱線 `1~2px`、中央日期框對齊左側「電話：」一列並套用光影 `Multiply` 融入。
+  4. **實作 `mitsubishi_tw` 局部 `3.0x` 辨識、訂購單交叉比對與 5 行文字帶入 `三菱`（`static/app.js`）**：
+     - 新增獨立 `runMitsubishiCardTargetedOcr()` 搭配 `filterMitsubishiModelResult()`（支援 `MR-JX61N-W-C` 多連字號規格與 `extractOrderSheetModels()` 完整擷取）及 `filterMitsubishiSerialResult()`（支援純數字製造號碼 `600067` 防呆，排除 `MHS-26-122837`），完成後強制寫回 `layer.ocrData`、`cachedReceiptOcrInfo` 與 `buildAutoFiveLineNoteText()`（第 3 行固定輸出 `三菱 <型號>`）。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、`BRAND_ISOLATION_SPEC_OK=True`、雙 JS 檔案語法檢查、`CRLF` 驗證與 GitHub 推送。
+
 ### [2026-11-24 21:26:33] (第 52 版 / v52)
 - **執行項目**：**LG 印章水平位置再向左微調約 `0.3` 公分（`centerX - 0.015`）（v52）** — 完整保留 v51 已驗證通過之 LG 機號／型號辨識邏輯、印章垂直高度 `Y`（`0.585`）與寬高比（`widthRatio: 0.172`），以及已封版 Panasonic 國際牌所有核心，僅針對 LG 印章水平中心進行單點向左微調。
 - **具體進度**：

@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 22:05:54] (第 53 版 / v53)
+- **執行項目**：**新增台灣三菱電機商品保證書獨立模板 `mitsubishi_tw`（v53）** — 嚴格隔離不修改 Panasonic 與 LG 已封版核心，新增三菱電機 8 組地標分類、對角雙紅標四點校正、左下 6 紅框十字蓋章、`3.0x` 機型／製造號碼辨識與中文 `三菱` 5 行核對大字。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_220106/` 備份，更新雙份 HTML 至 `v53 (2026.11.24)`、`?v=53` 與 `#selectCardTemplateMode` `mitsubishi_tw` 選項。
+  2. **`mitsubishi_tw` 獨立規則（`static/card_templates.js`）**：註冊 `mitsubishi`、定義 `MITSUBISHI_TW_STAMP_SPEC`（`centerX: 0.232, centerY: 0.745, widthRatio: 0.205`）、新增 `detectMitsubishiWarrantyByText()` 最前端優先分類、對角雙紅標 `detectMitsubishiCardQuad()` 與 6 紅框對位 `detectMitsubishiDealerStampSpec()`（左貼「機」、上貼「購買日期：年」橫線、右微壓中柱線、中線對齊「電話：」）。
+  3. **專項 OCR 與 5 行大字路由（`static/app.js`）**：新增 `runMitsubishiCardTargetedOcr()`（`MR-JX61N-W-C` 與純數字製造號碼 `600067` ＋ 訂購單多連字號型號擷取比對）、強制寫回 `layer.ocrData`，並於 `buildAutoFiveLineNoteText()` 第 3 行自動帶入中文 `三菱`；順手清理先前誤入 `runCardTargetedOcr()` 頂端之 LG 快取清除片段以確保 Panasonic 零干擾。
+  4. **驗證與推送**：通過 HTML 同步、品牌規格隔離驗證、語法平衡與 `CRLF` 檢查並推送至 `origin/main`。
+
 ### [2026-11-24 21:26:33] (第 52 版 / v52)
 - **執行項目**：**LG 印章水平座標單點左移約 `0.3cm`（`centerX - 0.015`）（v52）** — 嚴格凍結 v51 已過關之 LG 機號／型號辨識、`Y` 軸高度（`0.585`）、`112%` 寬度比例（`0.172`）及 Panasonic 國際牌已封版核心，僅微調水平座標對稱落點。
 - **具體進度**：

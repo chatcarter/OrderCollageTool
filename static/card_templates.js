@@ -25,6 +25,13 @@
       description: 'LG 台灣樂金電器股份有限公司商品保證書 (lg_tw)'
     },
     {
+      brandId: 'mitsubishi',
+      brandName: 'Mitsubishi',
+      brandZh: '三菱',
+      enabled: true,
+      description: '台灣三菱電機股份有限公司商品保證書 (mitsubishi_tw)'
+    },
+    {
       brandId: 'samsung',
       brandName: 'Samsung',
       brandZh: '三星',
@@ -170,6 +177,52 @@
       topFormBlock: { ...LG_TW_WARRANTY_CONFIG.ocrRegions.topFormBlock }
     },
     stampSpec: { ...LG_TW_STAMP_SPEC }
+  };
+
+  /**
+   * 台灣三菱電機商品保證書獨立命名空間規格 (mitsubishi_tw，嚴格隔離絕不干擾 Panasonic 與 LG 邏輯) (v53)
+   */
+  const MITSUBISHI_TW_STAMP_SPEC = Object.freeze({
+    centerX: 0.232,
+    centerY: 0.745,
+    widthRatio: 0.205,
+    tiltRangeDeg: 1.5,
+    blendMode: 'multiply'
+  });
+
+  const MITSUBISHI_TW_WARRANTY_CONFIG = Object.freeze({
+    brandId: 'mitsubishi',
+    aspectRatio: 1.58,
+    borderColorType: 'mitsubishi_white_dual_red',
+    stampSpec: MITSUBISHI_TW_STAMP_SPEC,
+    ocrRegions: Object.freeze({
+      model: Object.freeze({ label: '機型（三菱）', x: 0.090, y: 0.140, w: 0.185, h: 0.095 }),
+      serial: Object.freeze({ label: '製造號碼（三菱）', x: 0.340, y: 0.140, w: 0.195, h: 0.095 }),
+      topFormBlock: Object.freeze({ label: '三菱機型與製造號碼區', x: 0.025, y: 0.125, w: 0.620, h: 0.130 }),
+      dealerStampZone: Object.freeze({ label: '三菱左下經銷商與電話錨點區', x: 0.015, y: 0.500, w: 0.480, h: 0.430 })
+    }),
+    dealerBoxSearchRegion: Object.freeze({
+      x: 0.015, y: 0.500, w: 0.480, h: 0.430
+    })
+  });
+
+  CARD_TEMPLATES.mitsubishi_tw = {
+    id: 'mitsubishi_tw',
+    brandId: MITSUBISHI_TW_WARRANTY_CONFIG.brandId,
+    brand: 'Mitsubishi',
+    brandZh: '三菱',
+    label: '台灣三菱電機商品保證書 (mitsubishi_tw)',
+    shortLabel: '台灣三菱電機保證書',
+    formCode: 'MITSUBISHI_TW',
+    aspectRatio: MITSUBISHI_TW_WARRANTY_CONFIG.aspectRatio,
+    borderColorType: MITSUBISHI_TW_WARRANTY_CONFIG.borderColorType,
+    ocrRegions: {
+      model: { ...MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.model },
+      serial: { ...MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.serial },
+      topFormBlock: { ...MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.topFormBlock },
+      dealerStampZone: { ...MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.dealerStampZone }
+    },
+    stampSpec: { ...MITSUBISHI_TW_STAMP_SPEC }
   };
 
   /**
@@ -1608,7 +1661,8 @@
   ];
   const WARRANTY_KEYWORDS = [
     'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017',
-    '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE', '0800-898-899', 'WWW.LG.COM'
+    '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE', '0800-898-899', 'WWW.LG.COM',
+    '三菱電機', '台灣三菱電機', 'MITSUBISHI', '本欄請蓋店章', '製造號碼'
   ];
   const TAIWAN_INVOICE_STRUCT_REGEX = /[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/;
 
@@ -1628,6 +1682,19 @@
           role: 'warranty_card',
           forcedTemplateId: 'lg_tw',
           reason: `強制命中 LG 保卡地標 (${lgForceMatch.matchedLandmarks.slice(0, 3).join('、')})`
+        };
+      }
+    }
+
+    // 0b. v53 最高優先級：台灣三菱電機保證書專屬 8 組地標強制判定（注意：三菱抬頭含「商品保證書」，僅排除國際牌品牌字樣）
+    const hasPanasonicBrandOnly = /PANASONIC|台灣松下|國際牌/.test(upper.replace(/\s+/g, ''));
+    if (!hasPanasonicBrandOnly) {
+      const mitsuForceMatch = detectMitsubishiWarrantyByText(ocrText);
+      if (mitsuForceMatch && mitsuForceMatch.isMitsubishi) {
+        return {
+          role: 'warranty_card',
+          forcedTemplateId: 'mitsubishi_tw',
+          reason: `強制命中三菱電機保卡地標 (${mitsuForceMatch.matchedLandmarks.slice(0, 3).join('、')})`
         };
       }
     }
@@ -3035,10 +3102,751 @@
     return { model, serialNo };
   }
 
+  // ===========================================================================
+  // 台灣三菱電機商品保證書獨立引擎 (mitsubishi_tw，v53：8組地標偵測 / 對角雙紅標四點校正 / 6紅框十字蓋章 / 機型與製造號碼)
+  // ===========================================================================
+  function detectMitsubishiWarrantyByText(ocrText) {
+    const rawUpper = String(ocrText || '').toUpperCase();
+    if (!rawUpper.trim()) {
+      return { isMitsubishi: false, hitCount: 0, matchedLandmarks: [], uniqueHits: [], comboHits: [] };
+    }
+    const compactUpper = rawUpper.replace(/[\s\-—–‐‑‒―~～_]+/g, '');
+
+    // 專屬唯一地標（命中任 1 項即無條件鎖定 mitsubishi_tw）
+    const hasTitleOrDealer =
+      rawUpper.includes('三菱電機公司商品保證書') ||
+      compactUpper.includes('三菱電機公司商品保證書') ||
+      rawUpper.includes('三菱電機商品保證書') ||
+      compactUpper.includes('三菱電機商品保證書') ||
+      rawUpper.includes('三菱電機經銷商') ||
+      compactUpper.includes('三菱電機經銷商');
+
+    const hasCompany =
+      rawUpper.includes('台灣三菱電機股份有限公司') ||
+      compactUpper.includes('台灣三菱電機股份有限公司') ||
+      rawUpper.includes('臺灣三菱電機股份有限公司') ||
+      compactUpper.includes('臺灣三菱電機股份有限公司') ||
+      rawUpper.includes('台灣三菱電機') ||
+      compactUpper.includes('台灣三菱電機') ||
+      rawUpper.includes('臺灣三菱電機') ||
+      compactUpper.includes('臺灣三菱電機');
+
+    const hasWebsite =
+      rawUpper.includes('MITSUBISHIELECTRIC.COM.TW') ||
+      compactUpper.includes('MITSUBISHIELECTRIC.COM.TW') ||
+      rawUpper.includes('MITSUBISHIELECTRIC') ||
+      compactUpper.includes('MITSUBISHIELECTRIC');
+
+    const hasStampPrompt =
+      rawUpper.includes('本欄請蓋店章') ||
+      compactUpper.includes('本欄請蓋店章') ||
+      rawUpper.includes('本欄請藍店章') ||
+      compactUpper.includes('本欄請藍店章');
+
+    const uniqueLandmarks = [];
+    if (hasTitleOrDealer) uniqueLandmarks.push('三菱電機公司商品保證書');
+    if (hasCompany) uniqueLandmarks.push('台灣三菱電機股份有限公司');
+    if (hasWebsite) uniqueLandmarks.push('MitsubishiElectric.com.tw');
+    if (hasStampPrompt) uniqueLandmarks.push('本欄請蓋店章');
+
+    // 組合地標（命中任 2 項即鎖定 mitsubishi_tw）
+    const hasBrandWord =
+      rawUpper.includes('三菱電機') ||
+      compactUpper.includes('三菱電機') ||
+      rawUpper.includes('MITSUBISHI ELECTRIC') ||
+      compactUpper.includes('MITSUBISHIELECTRIC') ||
+      /(?:^|[^A-Z0-9])MITSUBISHI(?:[^A-Z0-9]|$)/.test(rawUpper);
+
+    const hasWarrantyWord =
+      rawUpper.includes('保證書') ||
+      compactUpper.includes('保證書');
+
+    const hasSerialWord =
+      rawUpper.includes('製造號碼') ||
+      compactUpper.includes('製造號碼');
+
+    const hasQrServiceWord =
+      rawUpper.includes('線上報修') ||
+      compactUpper.includes('線上報修') ||
+      rawUpper.includes('保證書登錄') ||
+      compactUpper.includes('保證書登錄');
+
+    const comboLandmarks = [];
+    if (hasBrandWord) comboLandmarks.push('三菱電機');
+    if (hasWarrantyWord) comboLandmarks.push('保證書');
+    if (hasSerialWord) comboLandmarks.push('製造號碼');
+    if (hasQrServiceWord) comboLandmarks.push('線上報修/保證書登錄');
+
+    const matchedLandmarks = [...uniqueLandmarks, ...comboLandmarks];
+    const isMitsubishi = uniqueLandmarks.length >= 1 || comboLandmarks.length >= 2;
+    return {
+      isMitsubishi,
+      hitCount: matchedLandmarks.length,
+      matchedLandmarks,
+      uniqueHits: uniqueLandmarks,
+      comboHits: comboLandmarks
+    };
+  }
+
+  function detectMitsubishiCardQuad(srcImg) {
+    const sw = srcImg && srcImg.width ? srcImg.width : 0;
+    const sh = srcImg && srcImg.height ? srcImg.height : 0;
+    const fallbackCorners = [
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.98) },
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.98) }
+    ];
+    if (!sw || !sh || sw < 60 || sh < 60) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.58 };
+    }
+
+    const maxDim = 480;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(60, Math.round(sw * scale));
+    const h = Math.max(60, Math.round(sh * scale));
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = w;
+    workCanvas.height = h;
+    const wCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    wCtx.drawImage(srcImg, 0, 0, w, h);
+    const data = wCtx.getImageData(0, 0, w, h).data;
+
+    const total = w * h;
+    const lum = new Float32Array(total);
+    const sat = new Float32Array(total);
+
+    // 1. 偵測對角雙紅標視覺錨點（左上 MITSUBISHI 紅鑽 ＋ 右下「台灣三菱電機股份有限公司」紅方印）
+    let tlRedMinX = w, tlRedMinY = h, tlRedMaxX = -1, tlRedMaxY = -1, tlRedCount = 0;
+    let brRedMinX = w, brRedMinY = h, brRedMaxX = -1, brRedMaxY = -1, brRedCount = 0;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        const p = idx * 4;
+        const r = data[p], g = data[p + 1], b = data[p + 2];
+        lum[idx] = 0.299 * r + 0.587 * g + 0.114 * b;
+        sat[idx] = Math.max(r, g, b) - Math.min(r, g, b);
+        const redness = r - Math.max(g, b);
+        if (redness >= 28 && r >= 108) {
+          if (x <= w * 0.42 && y <= h * 0.36) {
+            tlRedCount++;
+            if (x < tlRedMinX) tlRedMinX = x;
+            if (y < tlRedMinY) tlRedMinY = y;
+            if (x > tlRedMaxX) tlRedMaxX = x;
+            if (y > tlRedMaxY) tlRedMaxY = y;
+          } else if (x >= w * 0.54 && y >= h * 0.54) {
+            brRedCount++;
+            if (x < brRedMinX) brRedMinX = x;
+            if (y < brRedMinY) brRedMinY = y;
+            if (x > brRedMaxX) brRedMaxX = x;
+            if (y > brRedMaxY) brRedMaxY = y;
+          }
+        }
+      }
+    }
+
+    const pickQuantile = (arr, q) => {
+      if (!arr || arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * q)));
+      return sorted[idx];
+    };
+
+    const centerLums = [];
+    const centerSats = [];
+    for (let y = Math.floor(h * 0.28); y < Math.floor(h * 0.72); y += 2) {
+      for (let x = Math.floor(w * 0.30); x < Math.floor(w * 0.70); x += 2) {
+        const idx = y * w + x;
+        centerLums.push(lum[idx]);
+        centerSats.push(sat[idx]);
+      }
+    }
+    const paperLumRef = pickQuantile(centerLums, 0.75);
+    const paperSatRef = pickQuantile(centerSats, 0.40);
+
+    const winOut = Math.max(6, Math.round(Math.min(w, h) * 0.024));
+    const winIn = Math.max(8, Math.round(Math.min(w, h) * 0.034));
+
+    const scanBorderCandidates = side => {
+      const pts = [];
+      if (side === 'left' || side === 'right') {
+        const yStart = Math.round(h * 0.14);
+        const yEnd = Math.round(h * 0.86);
+        for (let y = yStart; y <= yEnd; y += 2) {
+          const rowOff = y * w;
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'left') {
+            const xMax = Math.round(w * 0.48);
+            for (let x = winOut + 2; x <= xMax; x++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x - winOut; k <= x - 2; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = x + 2; k <= Math.min(w - 1, x + winIn); k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[rowOff + Math.min(w - 1, x + 2)] - lum[rowOff + Math.max(0, x - 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) { bestScore = score; bestPos = x; }
+              }
+            }
+          } else {
+            const xMin = Math.round(w * 0.52);
+            for (let x = w - winOut - 3; x >= xMin; x--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x + 2; k <= x + winOut; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, x - winIn); k <= x - 2; k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[rowOff + Math.max(0, x - 2)] - lum[rowOff + Math.min(w - 1, x + 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) { bestScore = score; bestPos = x; }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x: bestPos, y });
+        }
+      } else {
+        const xStart = Math.round(w * 0.16);
+        const xEnd = Math.round(w * 0.84);
+        for (let x = xStart; x <= xEnd; x += 2) {
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'top') {
+            const yMax = Math.round(h * 0.44);
+            for (let y = winOut + 2; y <= yMax; y++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y - winOut; k <= y - 2; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = y + 2; k <= Math.min(h - 1, y + winIn); k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[Math.min(h - 1, y + 2) * w + x] - lum[Math.max(0, y - 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) { bestScore = score; bestPos = y; }
+              }
+            }
+          } else {
+            const yMin = Math.round(h * 0.56);
+            for (let y = h - winOut - 3; y >= yMin; y--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y + 2; k <= y + winOut; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, y - winIn); k <= y - 2; k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[Math.max(0, y - 2) * w + x] - lum[Math.min(h - 1, y + 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) { bestScore = score; bestPos = y; }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x, y: bestPos });
+        }
+      }
+      return pts;
+    };
+
+    const fitLineRansac = (pts, isVertical, minNeeded) => {
+      if (!pts || pts.length < minNeeded) return null;
+      let bestInliers = [];
+      let bestSlope = 0;
+      let bestIntercept = 0;
+      const step = Math.max(1, Math.floor(pts.length / 24));
+      for (let i = 0; i < pts.length; i += step) {
+        for (let j = i + Math.max(2, step); j < pts.length; j += step) {
+          const p1 = pts[i], p2 = pts[j];
+          const dv = isVertical ? (p2.y - p1.y) : (p2.x - p1.x);
+          if (Math.abs(dv) < 12) continue;
+          const slope = isVertical ? (p2.x - p1.x) / dv : (p2.y - p1.y) / dv;
+          if (Math.abs(slope) > 0.25) continue;
+          const intercept = isVertical ? (p1.x - slope * p1.y) : (p1.y - slope * p1.x);
+          const inliers = [];
+          for (let k = 0; k < pts.length; k++) {
+            const pk = pts[k];
+            const pred = isVertical ? (slope * pk.y + intercept) : (slope * pk.x + intercept);
+            const actual = isVertical ? pk.x : pk.y;
+            if (Math.abs(actual - pred) <= 3.5) inliers.push(pk);
+          }
+          if (inliers.length > bestInliers.length) {
+            bestInliers = inliers;
+            bestSlope = slope;
+            bestIntercept = intercept;
+          }
+        }
+      }
+      if (bestInliers.length < minNeeded) return null;
+      let sumU = 0, sumV = 0, sumUU = 0, sumUV = 0;
+      bestInliers.forEach(p => {
+        const u = isVertical ? p.y : p.x;
+        const v = isVertical ? p.x : p.y;
+        sumU += u; sumV += v; sumUU += u * u; sumUV += u * v;
+      });
+      const n = bestInliers.length;
+      const denom = n * sumUU - sumU * sumU;
+      if (Math.abs(denom) > 1e-4) {
+        const refinedSlope = (n * sumUV - sumU * sumV) / denom;
+        if (Math.abs(refinedSlope) <= 0.25) {
+          bestSlope = refinedSlope;
+          bestIntercept = (sumV - refinedSlope * sumU) / n;
+        }
+      }
+      return { slope: bestSlope, intercept: bestIntercept, count: bestInliers.length, isVertical };
+    };
+
+    const minVNeeded = Math.max(8, Math.round(h * 0.08));
+    const minHNeeded = Math.max(8, Math.round(w * 0.08));
+    let lineL = fitLineRansac(scanBorderCandidates('left'), true, minVNeeded);
+    let lineR = fitLineRansac(scanBorderCandidates('right'), true, minVNeeded);
+    let lineT = fitLineRansac(scanBorderCandidates('top'), false, minHNeeded);
+    let lineB = fitLineRansac(scanBorderCandidates('bottom'), false, minHNeeded);
+
+    const checkRimIsPaper = side => {
+      const rLums = [], rSats = [];
+      if (side === 'left' || side === 'right') {
+        const rx = side === 'left' ? 3 : w - 4;
+        for (let y = Math.round(h * 0.22); y <= Math.round(h * 0.78); y += 3) {
+          rLums.push(lum[y * w + rx]);
+          rSats.push(sat[y * w + rx]);
+        }
+      } else {
+        const ry = side === 'top' ? 3 : h - 4;
+        for (let x = Math.round(w * 0.25); x <= Math.round(w * 0.75); x += 3) {
+          rLums.push(lum[ry * w + x]);
+          rSats.push(sat[ry * w + x]);
+        }
+      }
+      return pickQuantile(rLums, 0.78) >= paperLumRef - 38 && pickQuantile(rSats, 0.35) <= paperSatRef + 18;
+    };
+
+    if (!lineL && checkRimIsPaper('left')) lineL = { slope: 0, intercept: 2, isVertical: true, isRim: true };
+    if (!lineR && checkRimIsPaper('right')) lineR = { slope: 0, intercept: w - 3, isVertical: true, isRim: true };
+    if (!lineT && checkRimIsPaper('top')) lineT = { slope: 0, intercept: 2, isVertical: false, isRim: true };
+    if (!lineB && checkRimIsPaper('bottom')) lineB = { slope: 0, intercept: h - 3, isVertical: false, isRim: true };
+
+    if (!lineL || !lineR || !lineT || !lineB) {
+      const borderSamples = [];
+      const mx = Math.max(2, Math.floor(w * 0.03));
+      const my = Math.max(2, Math.floor(h * 0.03));
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          if (x < mx || x >= w - mx || y < my || y >= h - my) borderSamples.push(lum[y * w + x]);
+        }
+      }
+      const deskLum = pickQuantile(borderSamples, 0.35);
+      const lumDiff = paperLumRef - deskLum;
+      if (lumDiff >= 10) {
+        const thresh = deskLum + lumDiff * 0.45;
+        const paperPtsX = [], paperPtsY = [];
+        for (let y = 4; y < h - 4; y += 2) {
+          for (let x = 4; x < w - 4; x += 2) {
+            if (lum[y * w + x] >= thresh && sat[y * w + x] <= paperSatRef + 22) {
+              paperPtsX.push(x);
+              paperPtsY.push(y);
+            }
+          }
+        }
+        if (paperPtsX.length >= 80) {
+          if (!lineL) lineL = { slope: 0, intercept: pickQuantile(paperPtsX, 0.02), isVertical: true };
+          if (!lineR) lineR = { slope: 0, intercept: pickQuantile(paperPtsX, 0.98), isVertical: true };
+          if (!lineT) lineT = { slope: 0, intercept: pickQuantile(paperPtsY, 0.02), isVertical: false };
+          if (!lineB) lineB = { slope: 0, intercept: pickQuantile(paperPtsY, 0.98), isVertical: false };
+        }
+      }
+    }
+
+    if (!lineL || !lineR || !lineT || !lineB) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.58 };
+    }
+
+    const intersectVH = (vLine, hLine) => {
+      const denom = 1 - vLine.slope * hLine.slope;
+      if (Math.abs(denom) < 1e-3) return null;
+      const y = (hLine.slope * vLine.intercept + hLine.intercept) / denom;
+      const x = vLine.slope * y + vLine.intercept;
+      return { x, y };
+    };
+
+    let tlW = intersectVH(lineL, lineT);
+    let trW = intersectVH(lineR, lineT);
+    let brW = intersectVH(lineR, lineB);
+    let blW = intersectVH(lineL, lineB);
+    if (!tlW || !trW || !brW || !blW) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.58 };
+    }
+
+    // 對角雙紅標保底護欄：確保四邊形絕不內縮切掉左上紅鑽 LOGO 與右下台灣三菱電機紅色公司章
+    if (tlRedCount >= 18) {
+      const safeMinX = Math.max(0, tlRedMinX - w * 0.025);
+      const safeMinY = Math.max(0, tlRedMinY - h * 0.028);
+      if (tlW.x > safeMinX) { tlW.x = safeMinX; blW.x = Math.min(blW.x, safeMinX); }
+      if (tlW.y > safeMinY) { tlW.y = safeMinY; trW.y = Math.min(trW.y, safeMinY); }
+    }
+    if (brRedCount >= 18) {
+      const safeMaxX = Math.min(w, brRedMaxX + w * 0.028);
+      const safeMaxY = Math.min(h, brRedMaxY + h * 0.028);
+      if (brW.x < safeMaxX) { brW.x = safeMaxX; trW.x = Math.max(trW.x, safeMaxX); }
+      if (brW.y < safeMaxY) { brW.y = safeMaxY; blW.y = Math.max(blW.y, safeMaxY); }
+    }
+
+    const avgSpanW = (Math.hypot(trW.x - tlW.x, trW.y - tlW.y) + Math.hypot(brW.x - blW.x, brW.y - blW.y)) * 0.5;
+    const avgSpanH = (Math.hypot(blW.x - tlW.x, blW.y - tlW.y) + Math.hypot(brW.x - trW.x, brW.y - trW.y)) * 0.5;
+    const estAspect = avgSpanW / Math.max(1, avgSpanH);
+    if (avgSpanW < w * 0.30 || avgSpanH < h * 0.30 || estAspect < 1.15 || estAspect > 2.05) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.58 };
+    }
+
+    // 四邊保留約 3mm~5mm（~0.8%）均勻呼吸白邊，維持橫式原比例透視校正
+    const invScale = 1 / scale;
+    const rawCorners = [tlW, trW, brW, blW].map(p => ({
+      x: p.x * invScale,
+      y: p.y * invScale
+    }));
+    const cx = (rawCorners[0].x + rawCorners[1].x + rawCorners[2].x + rawCorners[3].x) * 0.25;
+    const cy = (rawCorners[0].y + rawCorners[1].y + rawCorners[2].y + rawCorners[3].y) * 0.25;
+    const padRatio = 0.008;
+
+    const expandedCorners = rawCorners.map(p => ({
+      x: Math.max(0, Math.min(sw, Math.round(p.x + (p.x - cx) * padRatio))),
+      y: Math.max(0, Math.min(sh, Math.round(p.y + (p.y - cy) * padRatio)))
+    }));
+
+    return {
+      corners: expandedCorners,
+      detected: true,
+      confidence: (tlRedCount >= 18 || brRedCount >= 18) ? 'high' : 'medium',
+      estimatedAspect: Number(Math.max(1.30, Math.min(1.85, estAspect)).toFixed(3))
+    };
+  }
+
+  /**
+   * 依據使用者 6 紅框十字基準鎖定台灣三菱電機保證書左下「三菱電機經銷商」印章落點 (v53)
+   * 1. 左邊界：緊貼「三菱電機經銷商：」之「機」字右側（避開左側 店名/電話/地址）
+   * 2. 上邊界：頂端拱頂緊貼「購買日期： 年」下方水平分隔線
+   * 3. 右邊界：右外弧微壓「三菱電機經銷商」與「（本欄請蓋店章）」間之中柱垂直分隔線 1~2px
+   * 4. 水平中線對齊左側「電話：」一列，底弧貼齊表格最底緣外框線
+   */
+  function detectMitsubishiDealerStampSpec(cleanCardCanvas, mitsuOcrAnchors = null) {
+    const fallbackSpec = { ...MITSUBISHI_TW_STAMP_SPEC };
+    if (!cleanCardCanvas || !cleanCardCanvas.width || !cleanCardCanvas.height) {
+      return fallbackSpec;
+    }
+
+    const cw = cleanCardCanvas.width;
+    const ch = cleanCardCanvas.height;
+    const rx = Math.round(cw * 0.015);
+    const ry = Math.round(ch * 0.50);
+    const rw = Math.max(60, Math.round(cw * 0.48));
+    const rh = Math.max(60, Math.round(ch * 0.43));
+
+    const tmp = document.createElement('canvas');
+    tmp.width = rw;
+    tmp.height = rh;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(cleanCardCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+    const data = tCtx.getImageData(0, 0, rw, rh).data;
+
+    const lums = [];
+    for (let i = 0; i < rw * rh; i += 3) {
+      const p = i * 4;
+      lums.push(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+    }
+    lums.sort((a, b) => a - b);
+    const bgLum = lums[Math.floor(lums.length * 0.78)] || 222;
+    const darkThresh = Math.max(58, bgLum - 24);
+
+    // 偵測「中柱垂直分隔線」（位於保卡 x: 0.27 ~ 0.42 之間，分隔「三菱電機經銷商」與「本欄請蓋店章」）
+    const colDark = new Int32Array(rw);
+    const yProj0 = Math.round(rh * 0.18);
+    const yProj1 = Math.round(rh * 0.88);
+    const vProjSpan = Math.max(10, yProj1 - yProj0 + 1);
+    for (let y = yProj0; y <= yProj1; y++) {
+      for (let x = 0; x < rw; x++) {
+        const p = (y * rw + x) * 4;
+        const l = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+        if (l < darkThresh) colDark[x]++;
+      }
+    }
+
+    const pickPeakInRange = (arr, startIdx, endIdx, minReq) => {
+      let bestIdx = -1;
+      let bestVal = 0;
+      const s = Math.max(0, startIdx);
+      const e = Math.min(arr.length - 1, endIdx);
+      for (let i = s; i <= e; i++) {
+        const val = arr[i] + (i > 0 ? arr[i - 1] * 0.5 : 0) + (i + 1 < arr.length ? arr[i + 1] * 0.5 : 0);
+        if (arr[i] >= minReq && val > bestVal) {
+          bestVal = val;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    };
+
+    const divStartX = Math.max(0, Math.round(cw * 0.27) - rx);
+    const divEndX = Math.min(rw - 1, Math.round(cw * 0.42) - rx);
+    const centerDividerRel = pickPeakInRange(colDark, divStartX, divEndX, Math.round(vProjSpan * 0.42));
+    const centerDividerNorm = centerDividerRel >= 0 ? (rx + centerDividerRel) / cw : null;
+
+    // 僅在左側格（三菱電機經銷商欄位內側）投影水平表格線：找出「購買日期」下方線與最底外框線
+    const rowDark = new Int32Array(rh);
+    const hProjX0 = Math.round(cw * 0.05) - rx;
+    const hProjX1 = Math.min(rw - 1, (centerDividerRel >= 0 ? centerDividerRel - 6 : Math.round(cw * 0.32) - rx));
+    const hProjSpan = Math.max(10, hProjX1 - hProjX0 + 1);
+    for (let y = 0; y < rh; y++) {
+      let cnt = 0;
+      for (let x = Math.max(0, hProjX0); x <= hProjX1; x++) {
+        const p = (y * rw + x) * 4;
+        const l = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+        if (l < darkThresh) cnt++;
+      }
+      rowDark[y] = cnt;
+    }
+
+    const purchaseLineRel = pickPeakInRange(
+      rowDark,
+      Math.max(0, Math.round(ch * 0.57) - ry),
+      Math.min(rh - 1, Math.round(ch * 0.69) - ry),
+      Math.round(hProjSpan * 0.42)
+    );
+    const bottomTableLineRel = pickPeakInRange(
+      rowDark,
+      Math.max(0, Math.round(ch * 0.79) - ry),
+      Math.min(rh - 1, Math.round(ch * 0.91) - ry),
+      Math.round(hProjSpan * 0.42)
+    );
+
+    const purchaseBottomNorm = purchaseLineRel >= 0 ? (ry + purchaseLineRel) / ch : null;
+    const tableBottomNorm = bottomTableLineRel >= 0 ? (ry + bottomTableLineRel) / ch : null;
+
+    // 結合 OCR 文字錨點（三菱電機經銷商右側、購買日期、電話一列、右側請蓋店章起點）
+    const anchors = mitsuOcrAnchors || {};
+    let leftEdgeNorm = (typeof anchors.dealerRightX === 'number' && anchors.dealerRightX >= 0.10 && anchors.dealerRightX <= 0.175)
+      ? anchors.dealerRightX + 0.002
+      : 0.1295;
+
+    let dividerEdgeNorm = (centerDividerNorm !== null && centerDividerNorm >= 0.28 && centerDividerNorm <= 0.40)
+      ? centerDividerNorm
+      : 0.3335;
+
+    if (typeof anchors.rightStampPromptLeftX === 'number' && anchors.rightStampPromptLeftX > 0.31) {
+      dividerEdgeNorm = Math.min(dividerEdgeNorm, anchors.rightStampPromptLeftX - 0.005);
+    }
+
+    // 右邊界微壓中柱垂直分隔線 1.5px（~0.001），絕不侵入右側「（本欄請蓋店章）」
+    const rightEdgeTargetNorm = dividerEdgeNorm + (1.5 / Math.max(100, cw));
+    let stampWidthRatio = rightEdgeTargetNorm - leftEdgeNorm;
+    stampWidthRatio = Math.max(0.180, Math.min(0.228, stampWidthRatio));
+    let stampCenterX = rightEdgeTargetNorm - stampWidthRatio * 0.5;
+
+    // 若無有效幾何牆與文字錨點，採用實測定版保底比例 centerX: 0.232, widthRatio: 0.205
+    if (centerDividerNorm === null && typeof anchors.dealerRightX !== 'number') {
+      stampCenterX = fallbackSpec.centerX;
+      stampWidthRatio = fallbackSpec.widthRatio;
+    }
+
+    // 垂直落點：頂端貼齊「購買日期：年」下方橫線、底弧貼齊最底緣外框線、日期框對齊左側「電話：」一列
+    const estStampHNorm = (stampWidthRatio * cw / 1.2806) / ch;
+    const topLineNorm = (purchaseBottomNorm !== null)
+      ? purchaseBottomNorm
+      : (typeof anchors.purchaseBottomY === 'number' ? anchors.purchaseBottomY + 0.006 : 0.648);
+    const bottomLineNorm = (tableBottomNorm !== null) ? tableBottomNorm : 0.850;
+    const cellMidY = (topLineNorm + bottomLineNorm) * 0.5;
+    const phoneY = (typeof anchors.phoneCenterY === 'number' && anchors.phoneCenterY >= 0.68 && anchors.phoneCenterY <= 0.80)
+      ? anchors.phoneCenterY
+      : null;
+
+    let stampCenterY = phoneY !== null ? (phoneY * 0.58 + cellMidY * 0.42) : cellMidY;
+    const minSafeCenterY = topLineNorm + estStampHNorm * 0.5 - 0.002;
+    const maxSafeCenterY = bottomLineNorm - estStampHNorm * 0.5 + 0.003;
+    if (minSafeCenterY <= maxSafeCenterY) {
+      stampCenterY = Math.max(minSafeCenterY, Math.min(maxSafeCenterY, stampCenterY));
+    } else {
+      stampCenterY = (minSafeCenterY + maxSafeCenterY) * 0.5;
+    }
+
+    if (purchaseBottomNorm === null && tableBottomNorm === null && phoneY === null) {
+      stampCenterY = fallbackSpec.centerY;
+    }
+
+    return {
+      centerX: Number(Math.max(0.16, Math.min(0.32, stampCenterX)).toFixed(4)),
+      centerY: Number(Math.max(0.66, Math.min(0.83, stampCenterY)).toFixed(4)),
+      widthRatio: Number(stampWidthRatio.toFixed(4)),
+      tiltRangeDeg: 1.5,
+      blendMode: 'multiply'
+    };
+  }
+
+  function filterMitsubishiModelResult(rawText) {
+    if (!rawText) return '';
+    const cleaned = String(rawText).toUpperCase()
+      .replace(/MHS[-\s]?\d{2}[-\s]?\d{5,8}/g, ' ')
+      .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+      .replace(/\(02\)\s*\d{4}[-\s]?\d{4}/g, ' ')
+      .replace(/2728[-\s]?2288/g, ' ');
+
+    const normalizeMitsuModelToken = rawTok => {
+      let tok = (rawTok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+      if (!tok || /^MHS-?\d/.test(tok)) return '';
+      const mapDigit = ch => ({ O: '0', D: '0', Q: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
+      // 修正三菱型號數字區段中的字元混淆（如 MR-JXG1N-W-C -> MR-JX61N-W-C、MSZ-HT5ONF -> MSZ-HT50NF）
+      const mitsuMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{1,4})([A-Z0-9]{2,4})([A-Z]?(?:-[A-Z0-9]{1,3}){0,3})$/);
+      if (mitsuMatch) {
+        const fixedNum = mitsuMatch[2].split('').map(mapDigit).join('');
+        if (/^\d{2,4}$/.test(fixedNum)) {
+          tok = `${mitsuMatch[1]}${fixedNum}${mitsuMatch[3]}`;
+        }
+      }
+      // 數字夾心字母還原（如 6IN -> 61N 中的 IN，或 6I8 -> 618）
+      tok = tok.replace(/(\d)([OIQDGLZB])(\d)/g, (_, a, b, c) => `${a}${mapDigit(b)}${c}`);
+      return tok;
+    };
+
+    // 優先匹配含多段連字號之三菱型號（如 MR-JX61N-W-C, MR-WX71C-F-C, MSZ-FH50NA）
+    const multiHyphen = cleaned.match(/\b([A-Z]{2,4}\s*-\s*[A-Z0-9]{2,8}(?:\s*-\s*[A-Z0-9]{1,4}){0,3})\b/g);
+    if (multiHyphen) {
+      for (let i = 0; i < multiHyphen.length; i++) {
+        const tok = normalizeMitsuModelToken(multiHyphen[i].replace(/\s+/g, ''));
+        if (tok.length >= 5 && /[A-Z]{2}/.test(tok) && /\d/.test(tok) && !/^MHS/.test(tok)) {
+          return tok;
+        }
+      }
+    }
+
+    const tokens = cleaned.split(/[\s\r\n:：]+/).map(t => t.replace(/[^A-Z0-9-]/g, '')).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = normalizeMitsuModelToken(tokens[i]);
+      if (tok.length < 5 || tok.length > 22) continue;
+      if (/^MHS/.test(tok) || /^\d+$/.test(tok)) continue;
+      if (/[A-Z]{2,}/.test(tok) && /\d{2,}/.test(tok)) return tok;
+    }
+    return '';
+  }
+
+  function filterMitsubishiSerialResult(rawText) {
+    if (!rawText) return '';
+    const cleaned = String(rawText).toUpperCase()
+      .replace(/MHS[-\s]?\d{2}[-\s]?\d{5,8}/g, ' ')
+      .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+      .replace(/2728[-\s]?2288/g, ' ');
+
+    const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', T: '7', B: '8' }[ch] || ch);
+    const tokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+    const candidates = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const rawTok = tokens[i].replace(/[^A-Z0-9]/g, '');
+      if (rawTok.length < 5 || rawTok.length > 10) continue;
+      const fixed = rawTok.split('').map(toDigit).join('');
+      if (/^\d{5,10}$/.test(fixed) && fixed !== '24721268' && fixed !== '27282288') {
+        candidates.push(fixed);
+      }
+    }
+
+    if (candidates.length === 0) {
+      const compact = cleaned.replace(/[^A-Z0-9]/g, '');
+      const m = compact.match(/[0-9OQDILZSTBG]{5,10}/g);
+      if (m) {
+        m.forEach(chunk => {
+          const fixed = chunk.split('').map(toDigit).join('');
+          if (/^\d{5,10}$/.test(fixed) && fixed !== '24721268' && fixed !== '27282288') {
+            candidates.push(fixed);
+          }
+        });
+      }
+    }
+
+    // 優先回傳 6~8 碼純數字製造號碼（如 600067）
+    const preferred = candidates.find(c => c.length >= 6 && c.length <= 8);
+    return preferred || candidates[0] || '';
+  }
+
+  function parseMitsubishiTopFormRow(rawText) {
+    if (!rawText) return { model: '', serialNo: '' };
+    const flat = String(rawText).replace(/\r/g, '\n');
+    let model = '';
+    let serialNo = '';
+
+    const modelAnchor = flat.match(/(?:機型|機\s*型|MODEL|TYPE)\s*[:：.]*\s*([^\n]+)/i);
+    if (modelAnchor) {
+      const beforeSerial = modelAnchor[1].split(/製造號碼|製\s*造\s*號\s*碼|SERIAL/i)[0];
+      model = filterMitsubishiModelResult(beforeSerial);
+    }
+    if (!model) {
+      model = filterMitsubishiModelResult(flat);
+    }
+
+    const serialAnchor = flat.match(/(?:製造號碼|製\s*造\s*號\s*碼|號碼|SERIAL|S\/?N)\s*[:：.]*\s*([^\n]+)/i);
+    if (serialAnchor) {
+      serialNo = filterMitsubishiSerialResult(serialAnchor[1]);
+    }
+    if (!serialNo) {
+      serialNo = filterMitsubishiSerialResult(flat);
+    }
+    return { model, serialNo };
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     PANASONIC_WARRANTY_CONFIG,
     LG_TW_WARRANTY_CONFIG,
+    MITSUBISHI_TW_WARRANTY_CONFIG,
     RECEIPT_LANDMARK_CROP_CONFIG,
     TEMPLATES: CARD_TEMPLATES,
     INVOICE_TEMPLATES,
@@ -3047,6 +3855,9 @@
     detectLgWarrantyByText,
     detectLgCardQuad,
     detectLgDealerBoxStampSpec,
+    detectMitsubishiWarrantyByText,
+    detectMitsubishiCardQuad,
+    detectMitsubishiDealerStampSpec,
     createEnhancedOcrCropCanvas,
     createAdaptiveBinarizedOcrCropCanvas,
     decodeCode128FromCanvas,
@@ -3064,6 +3875,9 @@
     filterLgModelResult,
     filterLgSerialResult,
     parseLgTopFormRow,
+    filterMitsubishiModelResult,
+    filterMitsubishiSerialResult,
+    parseMitsubishiTopFormRow,
     parsePanasonicLeftInfoBlock,
     crossVerifyModelWithOrderSheet
   };
