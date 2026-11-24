@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 21:14:57] (第 51 版 / v51)
+- **執行項目**：**鎖定封存 LG 完美印章落點 ＋ 三段式徹底修復 LG 機號辨識（v51）** — 嚴格凍結 v50 已定案 LG 印章座標與 Panasonic 封版核心，修復 Code 128 Stop `106` 7 條空解析與 `4.0x` 去虛點單行機號辨識。
+- **具體進度**：
+  1. **備份與版本**：建立 `_backup/20261124_211102/` 備份，更新雙份 HTML 至 `v51 (2026.11.24)` 與 `?v=51`；驗證 `LG_TW_STAMP_SPEC` 維持 `centerX: 0.745, centerY: 0.620, widthRatio: 0.162` 零變動。
+  2. **第一段多尺度條碼直讀修復**：修復 `decodeCode128FromCanvas()` 之 Stop 符號 `106 ('2331112')` 7 條空（13 modules）判定漏洞，並於 `tryDecodeLgUpperBarcodeSerial()` 加入 `2x/3x` 黑白二值化銳化裁切重試 `BarcodeDetector` 與純 JS 解碼。
+  3. **第二段 `4.0x` 超清機號單行 OCR**：升級 `createAdaptiveBinarizedOcrCropCanvas(..., 4.0)` 新增 3x3 形態學去噪與由下而上切除虛點底線列，搭配 `filterLgSerialResult()` 優先挑選 `[3數][6英][3數]` 12 碼候選及雙組純英數白名單 ROI 重試。
+  4. **第三段強制覆寫防殘留**：於 `runLgCardTargetedOcr()` 開頭清除舊 `serialNo` 並強制將合法結果寫回 `layer.ocrData`、`inputCardSerial`、`cachedReceiptOcrInfo` 與左下角 5 行大字。
+  5. **驗證與推送**：通過 HTML 同步、印章鎖定、語法平衡與 `CRLF` 檢查並推送至 `origin/main`。
+
 ### [2026-11-24 20:40:05] (第 50 版 / v50)
 - **執行項目**：**LG 印章再左移 0.3cm 對稱置中 ＋ 機號寫回優先權鎖定 ＋ 型號尾碼校正（v50）** — 完整保留 Panasonic 已封版核心，完成 LG `lg_tw` 最後微調。
 - **具體進度**：

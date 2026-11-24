@@ -446,9 +446,9 @@
   }
 
   /**
-   * LG 局部專項高對比二值化放大裁切 (v48/v49：3.5x 放大 ＋ 積分圖局部自適應二值化 ＋ 抹除文字腳底虛點底線)
+   * LG 局部專項高對比二值化放大裁切 (v48/v49/v51：4.0x 超清放大 ＋ 自適應二值化 ＋ 形態學去噪 ＋ 由下而上切除虛點底線)
    */
-  function createAdaptiveBinarizedOcrCropCanvas(srcCanvas, region, upscale = 3.5, options = {}) {
+  function createAdaptiveBinarizedOcrCropCanvas(srcCanvas, region, upscale = 4.0, options = {}) {
     const sw = srcCanvas.width;
     const sh = srcCanvas.height;
     const rx = Math.max(0, Math.round(region.x * sw));
@@ -512,13 +512,34 @@
       }
     }
 
+    // 形態學 3x3 去孤立雜訊點 ＋ 填補筆畫內 1px 微孔
+    if (options.despeckle !== false) {
+      const cleanedBin = new Uint8Array(bin);
+      for (let y = 1; y < outH - 1; y++) {
+        for (let x = 1; x < outW - 1; x++) {
+          const idx = y * outW + x;
+          let nb = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            const row = (y + dy) * outW;
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              if (bin[row + x + dx]) nb++;
+            }
+          }
+          if (bin[idx] && nb <= 1) cleanedBin[idx] = 0;
+          else if (!bin[idx] && nb >= 7) cleanedBin[idx] = 1;
+        }
+      }
+      bin.set(cleanedBin);
+    }
+
     // 偵測並抹除文字腳底水平小虛點底線（........），保留中間連字號 '-'（位於 y 0.36..0.54）與主文字筆畫
     if (options.stripDottedUnderline !== false) {
       const visited = new Uint8Array(total);
       const queue = new Int32Array(total);
-      const maxDotW = Math.max(8, Math.round(contentH * 0.12));
-      const maxDotH = Math.max(8, Math.round(contentH * 0.11));
-      const dotMinY = pad + Math.round(contentH * 0.56);
+      const maxDotW = Math.max(10, Math.round(contentH * 0.13));
+      const maxDotH = Math.max(9, Math.round(contentH * 0.12));
+      const dotMinY = pad + Math.round(contentH * 0.54);
 
       for (let y = 0; y < outH; y++) {
         for (let x = 0; x < outW; x++) {
@@ -557,6 +578,46 @@
             for (let k = 0; k < tail; k++) {
               bin[queue[k]] = 0;
             }
+          }
+        }
+      }
+
+      // 由文字下緣往上檢查：若有獨立於主字元帶下方之低密度虛點底線列，整段抹除
+      if (options.stripBottomDotBand !== false) {
+        const rowInk = new Int32Array(outH);
+        const minActiveInk = Math.max(4, Math.round(contentW * 0.012));
+        for (let y = pad; y < outH - pad; y++) {
+          let cnt = 0;
+          const off = y * outW;
+          for (let x = pad; x < outW - pad; x++) {
+            if (bin[off + x]) cnt++;
+          }
+          rowInk[y] = cnt;
+        }
+        let bestBand = null;
+        let runS = -1;
+        const coreTopMax = pad + Math.round(contentH * 0.65);
+        for (let y = pad; y < outH - pad; y++) {
+          if (rowInk[y] >= minActiveInk) {
+            if (runS < 0) runS = y;
+          } else if (runS >= 0) {
+            const hSpan = y - runS;
+            if (runS <= coreTopMax && (!bestBand || hSpan > bestBand.h)) {
+              bestBand = { y0: runS, y1: y - 1, h: hSpan };
+            }
+            runS = -1;
+          }
+        }
+        if (runS >= 0) {
+          const hSpan = (outH - pad) - runS;
+          if (runS <= coreTopMax && (!bestBand || hSpan > bestBand.h)) {
+            bestBand = { y0: runS, y1: outH - pad - 1, h: hSpan };
+          }
+        }
+        if (bestBand && bestBand.h >= Math.max(10, Math.round(contentH * 0.16))) {
+          for (let y = bestBand.y1 + 2; y < outH; y++) {
+            const off = y * outW;
+            for (let x = 0; x < outW; x++) bin[off + x] = 0;
           }
         }
       }
@@ -2645,17 +2706,35 @@
         let pos = sIdx + 6;
         let foundStop = false;
 
-        while (pos + 6 < runs.length) {
+        while (pos + 6 <= runs.length) {
+          // 優先偵測 7 條空（13 modules）Stop 終止符 106 ('2331112')，避免被 6 條空截斷永遠無法結束
+          if (pos + 7 <= runs.length) {
+            const s7 = runs[pos].len + runs[pos + 1].len + runs[pos + 2].len +
+                       runs[pos + 3].len + runs[pos + 4].len + runs[pos + 5].len + runs[pos + 6].len;
+            if (s7 > 0) {
+              const m13 = s7 / 13;
+              const t0 = Math.round((runs[pos].len + runs[pos + 1].len) / m13);
+              const t1 = Math.round((runs[pos + 1].len + runs[pos + 2].len) / m13);
+              const t2 = Math.round((runs[pos + 2].len + runs[pos + 3].len) / m13);
+              const t3 = Math.round((runs[pos + 3].len + runs[pos + 4].len) / m13);
+              const t4 = Math.round((runs[pos + 4].len + runs[pos + 5].len) / m13);
+              const t5 = Math.round((runs[pos + 5].len + runs[pos + 6].len) / m13);
+              let pat7 = '';
+              for (let k = 0; k < 7; k++) {
+                pat7 += String(Math.max(1, Math.min(4, Math.round(runs[pos + k].len / m13))));
+              }
+              if ((t0 === 5 && t1 === 6 && t2 === 4 && t3 === 2 && t4 === 2 && t5 === 3) || pat7 === '2331112') {
+                foundStop = true;
+                break;
+              }
+            }
+          }
           const symW6 = [
             runs[pos].len, runs[pos + 1].len, runs[pos + 2].len,
             runs[pos + 3].len, runs[pos + 4].len, runs[pos + 5].len
           ];
           const val = matchPattern(symW6);
           if (val < 0) break;
-          if (val === 106) {
-            foundStop = true;
-            break;
-          }
           codes.push(val);
           pos += 6;
         }
@@ -2891,19 +2970,35 @@
       .replace(/MBM\d{5,}/g, ' ')
       .replace(/REV[.\d_]*/g, ' ');
     const tokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+    const candidates = [];
 
     for (let i = 0; i < tokens.length; i++) {
       const normalized = normalizeLgSerialTokenByPosition(tokens[i]);
-      if (normalized) return normalized;
+      if (normalized) candidates.push(normalized);
     }
 
     const compact = cleaned.replace(/[^A-Z0-9]/g, '');
-    const m = compact.match(/\d{3}[A-Z0-9]{6,11}/);
-    if (m) {
-      const normalized = normalizeLgSerialTokenByPosition(m[0]);
-      if (normalized) return normalized;
+    // 優先從密集字串中擷取精確 12 碼 [3碼數字][6碼英文][3碼數字]
+    const strict12 = compact.match(/\d{3}[A-Z]{6}\d{3}/);
+    if (strict12) return strict12[0];
+
+    const loose12 = compact.match(/[0-9OQDILZSGTB]{3}[A-Z012568]{6}[0-9OQDILZSGTBYA]{3}/g);
+    if (loose12) {
+      loose12.forEach(chunk => {
+        const normalized = normalizeLgSerialTokenByPosition(chunk);
+        if (normalized) candidates.push(normalized);
+      });
     }
-    return '';
+
+    const fallbackMatch = compact.match(/\d{3}[A-Z0-9]{6,11}/);
+    if (fallbackMatch) {
+      const normalized = normalizeLgSerialTokenByPosition(fallbackMatch[0]);
+      if (normalized) candidates.push(normalized);
+    }
+
+    const best12 = candidates.find(c => /^\d{3}[A-Z]{6}\d{3}$/.test(c));
+    if (best12) return best12;
+    return candidates[0] || '';
   }
 
   function parseLgTopFormRow(rawText) {
