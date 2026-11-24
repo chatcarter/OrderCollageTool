@@ -3740,22 +3740,22 @@
         if (!tok || /^MHS-?\d/.test(tok)) return '';
 
         // 校準三菱標準前綴與漏連字號（MR-/MJ-/MSZ-/MUZ-）
-        tok = tok.replace(/^(MR|MJ|MSZ|MUZ)([A-Z][A-Z0-9]{2,})$/, '$1-$2');
-        tok = tok.replace(/^(?:NR|MP|MH|MN|MB|MK)-?([A-Z][A-Z0-9]{2,})$/, 'MR-$1');
-        tok = tok.replace(/^(?:NJ|MI|HJ)-?([EF][A-Z0-9]{2,})$/, 'MJ-$1');
-        tok = tok.replace(/^(?:NSZ|M5Z|MS2|HSZ)-?([A-Z][A-Z0-9]{2,})$/, 'MSZ-$1');
-        tok = tok.replace(/^(?:NUZ|MU2|HVZ)-?([A-Z][A-Z0-9]{2,})$/, 'MUZ-$1');
+        tok = tok.replace(/^(MR|MJ|MSZ|MUZ)([A-Z][A-Z0-9-]{2,})$/, '$1-$2');
+        tok = tok.replace(/^(?:NR|MP|MH|MN|MB|MK)-?([A-Z][A-Z0-9-]{2,})$/, 'MR-$1');
+        tok = tok.replace(/^(?:NJ|MI|HJ)-?([EF][A-Z0-9-]{2,})$/, 'MJ-$1');
+        tok = tok.replace(/^(?:NSZ|M5Z|MS2|HSZ)-?([A-Z][A-Z0-9-]{2,})$/, 'MSZ-$1');
+        tok = tok.replace(/^(?:NUZ|MU2|HVZ)-?([A-Z][A-Z0-9-]{2,})$/, 'MUZ-$1');
 
         const rawCaseCompact = String(rawCaseTok || '').replace(/[^A-Za-z0-9-]/g, '');
-        const mitsuMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{1,4})([A-Z0-9]{2,4})([A-Z]?(?:-[A-Z0-9]{1,3}){0,3})$/);
+        const mitsuMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{1,3})([0-9OIQDGLZSB]{2,3})([A-Z]{0,3}(?:-[A-Z0-9]{1,3}){0,3})$/);
         if (mitsuMatch) {
           let numPart = mitsuMatch[2];
-          const caseMatch = rawCaseCompact.match(/^[A-Za-z]{2,4}-?[A-Za-z]{1,4}([A-Za-z0-9]{2,4})/);
+          const caseMatch = rawCaseCompact.match(/^[A-Za-z]{2,4}-?[A-Za-z]{1,3}([0-9OIQDGLZSBoiqdglzsb]{2,3})/);
           if (caseMatch && caseMatch[1].length === numPart.length) {
             numPart = caseMatch[1];
           }
           const fixedNum = numPart.split('').map(mapNumChar).join('');
-          if (/^\d{2,4}$/.test(fixedNum)) {
+          if (/^\d{2,3}$/.test(fixedNum)) {
             tok = `${mitsuMatch[1]}${fixedNum}${mitsuMatch[3]}`;
           }
         }
@@ -3773,7 +3773,7 @@
       };
 
       const candidates = [];
-      const multiHyphen = cleanedRaw.match(/\b([A-Za-z]{2,4}\s*-\s*[A-Za-z0-9]{2,8}(?:\s*-\s*[A-Za-z0-9]{1,4}){0,3})\b/g);
+      const multiHyphen = cleanedRaw.match(/\b([A-Za-z]{2,4}(?:\s*-\s*)?[A-Za-z0-9]{2,8}(?:\s*-\s*[A-Za-z0-9]{1,4}){0,3})\b/g);
       if (multiHyphen) {
         for (let i = 0; i < multiHyphen.length; i++) {
           const compactCase = multiHyphen[i].replace(/\s+/g, '');
