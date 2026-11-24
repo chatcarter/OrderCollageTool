@@ -127,10 +127,10 @@
   CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
 
   /**
-   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v51 四紅圈定版)
+   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46/v52)
    */
   const LG_TW_STAMP_SPEC = Object.freeze({
-    centerX: 0.745,
+    centerX: 0.730,
     centerY: 0.585,
     widthRatio: 0.172,
     tiltRangeDeg: 1.5,
@@ -2568,17 +2568,17 @@
     if (topWallRel >= 0) boxTopNorm = (ry + topWallRel) / ch;
     if (bottomWallRel >= 0) boxBottomNorm = (ry + bottomWallRel) / ch;
 
-    // 3. 依據 4 個紅圈特寫幾何基準精準鎖定（v51）：
+    // 3. 依據 4 個紅圈特寫幾何基準精準鎖定（v51/v52：Y 與寬度比例完全鎖定，僅將水平中心再向左微調 0.3cm 即 centerX - 0.015）：
     //    - 寬度為圓角方框淨寬之 1.12 倍（左右梅花與「集／司」下方對稱微跨左右框線）
-    //    - 印章水平正中對齊方框中心（預設 0.745）
+    //    - 印章水平中心再向左偏移 0.015（預設 centerX 0.730）
     //    - 底弧最低點停在「經銷商店章」文字頂緣上方 2px~4px，上拱頂微跨上框線（預設 centerY 0.585）
     let finalCenterX;
     if (boxCenterX !== null) {
-      finalCenterX = (boxCenterX * 0.85) + (coaxialGuessX * 0.15);
+      finalCenterX = ((boxCenterX * 0.85) + (coaxialGuessX * 0.15)) - 0.015;
     } else if (validLabelAnchor && qrAnchor) {
-      finalCenterX = (validLabelAnchor.centerX + qrAnchor.centerX) * 0.5;
+      finalCenterX = ((validLabelAnchor.centerX + qrAnchor.centerX) * 0.5) - 0.015;
     } else if (validLabelAnchor || qrAnchor) {
-      finalCenterX = coaxialGuessX;
+      finalCenterX = coaxialGuessX - 0.015;
     } else {
       finalCenterX = fallbackSpec.centerX;
     }
