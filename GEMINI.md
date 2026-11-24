@@ -53,6 +53,22 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 19:58:39] (第 46 版 / v46)
+- **執行項目**：**新增 LG 台灣樂金保證書獨立模板 `lg_tw`（v46）** — 開工前先行 `git pull origin main` 同步雲端最新第 45 版，在嚴格隔離絕不修改 Panasonic 國際牌已封版核心的前提下，於品牌模板註冊制新增 LG 台灣樂金電器股份有限公司保證書完整規則（自動偵測與白底貼紙 `0.5cm` 外擴透視拉正、右側「經銷商店章」方框邊界校準與上半部避讓蓋章、機型／機號防呆 OCR ＋ 訂購單交叉比對，以及左下 5 行大字自動填入 `LG`）。
+- **具體進度**：
+  1. **雲端同步、版本徽章與靜態資源防快取（`v46`）**：
+     - 確認工作區乾淨並執行 `git pull origin main` 對齊 `3375bb0`（v45）後建立 `_backup/20261124_191126/` 備份。
+     - 同步更新 `index.html` 與 `static/index.html` 之 `#headerVersionBadge`、`#panelVersionBanner`、`.mobile-ver-badge` 為 `v46 (2026.11.24)`，啟用 `#selectCardTemplateMode` 之 `lg_tw` 選項，並更新資源參數為 `?v=46`。
+  2. **於 `static/card_templates.js` 建立獨立命名空間規則 `lg_tw`**：
+     - 啟用 `CARD_BRAND_REGISTRY` 之 `lg` 品牌並定義 `LG_TW_WARRANTY_CONFIG`、`LG_TW_STAMP_SPEC`（基準 `x: 81.5%, y: 57.5%, w: 17.5%`）與 `CARD_TEMPLATES.lg_tw`（`aspectRatio: 1.72`）。
+     - 新增 `detectLgWarrantyByText()`（命中 `台灣樂金 / 樂金電器 / LG`、`經銷商店章`、`產品註冊登錄 / LG LINE官方帳號` 等雙重以上地標即自動路由 `lg_tw`）與 `detectLgCardQuad()`（依影像外緣與中央白紙亮度/色差自動抓取貼紙四邊並四邊外擴約 `0.5cm` 呼吸白邊，完整保留頂部 `LG` LOGO、`台灣樂金電器股份有限公司`、底部 `MBM` 編號與雙 QR Code）。
+  3. **實作 `lg_tw` 專屬「經銷商店章」方框校準與上半部避讓蓋章**：
+     - 新增 `detectLgDealerBoxStampSpec()` 自動掃描保卡右側 `經銷商店章` 圓角矩形邊框，將印章寬度縮放至貼齊微壓方框左右邊線（約方框寬度 `104%` / 整張保卡 `17.5%`），垂直對齊方框上半部（避開並清晰露出下方 `經銷商店章` 四字），搭配既有光影採樣、`Multiply` 混色與非阻斷民國日期流程完成蓋章。
+  4. **實作 `lg_tw` 型號／機號 OCR、訂購單交叉校正與左下 5 行 `LG` 輸出**：
+     - 新增 `parseLgTopFormRow()`、`filterLgModelResult()`、`normalizeLgSerialTokenByPosition()` / `filterLgSerialResult()`（針對 `610PNNAEQ687` 採首位與末段數字、中段工廠英文碼規則校正 `0/O`、`1/I`、`8/B`，並剔除 `MBM...` 等條碼幹擾）。
+     - 於 `static/app.js` 實作獨立 `runLgCardTargetedOcr()`、`resolveCalibratedStampSpecForCardLayer()` 與 `buildAutoFiveLineNoteText()` 分支，型號與訂購單 `LG` 答案庫交叉比對校正後，左下 5 行大字第 3 行自動填入 `LG`（如 `LG WD-S1818PB`）。
+  5. 通過 `HTML_SYNC_OK=True`、JS 語法平衡 `syntaxErrors=0` 與 `CRLF` 檢核 `LF-only=0`。
+
 ### [2026-11-24 02:47:03] (第 45 版 / v45)
 - **執行項目**：**電腦版三件組即時進度狀態列 ＋ 合併製作完成大字提示（v45）** — 在不影響電腦版與手機端既有核心效能的前提下，以純 CSS 類別切換（零 `setInterval`、零動畫迴圈、零 `backdrop-filter`）實作電腦版三件組即時進度面板，並於訂單、發票、保卡全數處理並排版蓋章完成時呈現穿透式 `🎉 合併製作完成` 大字提示。
 - **具體進度**：

@@ -81,6 +81,15 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-24 19:58:39] (第 46 版 / v46)
+- **執行項目**：**新增 LG 台灣樂金保證書獨立模板 `lg_tw`（v46）** — 先行 `git pull origin main` 對齊雲端第 45 版後，在完全不改動 Panasonic 國際牌邏輯前提下，透過品牌註冊制新增 `lg_tw` 獨立規則（地標偵測、白底貼紙 `0.5cm` 外擴拉正、`經銷商店章` 上半部光影蓋章、型號/機號防呆 OCR ＋ 訂購單交叉校正與左下 5 行 `LG` 品牌填入）。
+- **具體進度**：
+  1. **同步與版本防快取**：完成 `git pull` 與 `_backup/20261124_191126/` 備份，更新雙份 HTML 至 `v46 (2026.11.24)`、開啟 `lg_tw` 手動選項並加上 `?v=46`。
+  2. **`lg_tw` 獨立偵測與透視外擴（`static/card_templates.js`）**：新增 `LG_TW_WARRANTY_CONFIG`、`CARD_TEMPLATES.lg_tw`、`detectLgWarrantyByText()` 與 `detectLgCardQuad()`（四邊保留 `0.5cm` 白邊以完整顯示 `LG` LOGO、`MBM...` 編號與雙 QR Code）。
+  3. **`經銷商店章` 框線校準與上半部蓋章**：新增 `detectLgDealerBoxStampSpec()` 偵測矩形邊界，以 `104%` 框寬（約整卡 `17.5%`）對位於上半部避開底部 `經銷商店章` 四字，套用光影與 `Multiply` 合成。
+  4. **LG 型號／機號 OCR 與 5 行大字品牌路由（`static/app.js`）**：新增獨立 `runLgCardTargetedOcr()` 搭配 `parseLgTopFormRow()`、`filterLgSerialResult()`（依位置防呆修正 `0/O`、`1/I`、`8/B`）與訂購單 `LG` 答案庫比對，並於 `buildAutoFiveLineNoteText()` 自動帶入 `LG`。
+  5. 通過 HTML 同步、語法平衡與 `CRLF` 檢核並推送至 GitHub。
+
 ### [2026-11-24 02:47:03] (第 45 版 / v45)
 - **執行項目**：**電腦版三件組即時進度狀態列 ＋ 合併製作完成大字提示（v45）** — 新增極低資源佔用（純 CSS class 切換、零 `setInterval`／`backdrop-filter`）之電腦版 `#desktopBatchStatusPanel` 三條即時進度狀態列，並於三件組全數處理與蓋章排版完成後顯示穿透式 `🎉 合併製作完成` 提示。
 - **具體進度**：

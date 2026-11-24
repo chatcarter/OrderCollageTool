@@ -21,9 +21,8 @@
       brandId: 'lg',
       brandName: 'LG',
       brandZh: '樂金',
-      enabled: false,
-      comingSoon: true,
-      description: 'LG 保證書（預留擴充）'
+      enabled: true,
+      description: 'LG 台灣樂金電器股份有限公司商品保證書 (lg_tw)'
     },
     {
       brandId: 'samsung',
@@ -126,6 +125,50 @@
 
   // 別名映射：供外部查詢 panasonic_warranty 封版設定（預設對應第二聯顧客聯座標與共用封版比例）
   CARD_TEMPLATES.panasonic_warranty = CARD_TEMPLATES.panasonic_slip2;
+
+  /**
+   * LG 台灣樂金電器保證書獨立命名空間規格 (lg_tw，嚴格隔離絕不干擾 Panasonic 邏輯) (v46)
+   */
+  const LG_TW_STAMP_SPEC = Object.freeze({
+    centerX: 0.815,
+    centerY: 0.575,
+    widthRatio: 0.175,
+    tiltRangeDeg: 1.5,
+    blendMode: 'multiply'
+  });
+
+  const LG_TW_WARRANTY_CONFIG = Object.freeze({
+    brandId: 'lg',
+    aspectRatio: 1.72,
+    borderColorType: 'lg_white_sticker',
+    stampSpec: LG_TW_STAMP_SPEC,
+    ocrRegions: Object.freeze({
+      model: Object.freeze({ label: '機型（LG）', x: 0.365, y: 0.235, w: 0.280, h: 0.125 }),
+      serial: Object.freeze({ label: '機號（LG）', x: 0.630, y: 0.235, w: 0.320, h: 0.125 }),
+      topFormBlock: Object.freeze({ label: 'LG 基本資料列（商品名／機型／機號）', x: 0.045, y: 0.225, w: 0.910, h: 0.150 })
+    }),
+    dealerBoxSearchRegion: Object.freeze({
+      x: 0.65, y: 0.42, w: 0.31, h: 0.38
+    })
+  });
+
+  CARD_TEMPLATES.lg_tw = {
+    id: 'lg_tw',
+    brandId: LG_TW_WARRANTY_CONFIG.brandId,
+    brand: 'LG',
+    brandZh: 'LG',
+    label: 'LG 台灣樂金電器保證書 (lg_tw)',
+    shortLabel: 'LG 台灣樂金保證書',
+    formCode: 'LG_TW',
+    aspectRatio: LG_TW_WARRANTY_CONFIG.aspectRatio,
+    borderColorType: LG_TW_WARRANTY_CONFIG.borderColorType,
+    ocrRegions: {
+      model: { ...LG_TW_WARRANTY_CONFIG.ocrRegions.model },
+      serial: { ...LG_TW_WARRANTY_CONFIG.ocrRegions.serial },
+      topFormBlock: { ...LG_TW_WARRANTY_CONFIG.ocrRegions.topFormBlock }
+    },
+    stampSpec: { ...LG_TW_STAMP_SPEC }
+  };
 
   /**
    * 偵測國際牌保卡最外圍紅褐色花邊外框的四個頂點 [TL, TR, BR, BL]
@@ -1371,7 +1414,8 @@
     '銷貨明細', '明細表', '載具號碼', '載具', '營業人統編', '統編', '發票號碼', '退貨用條碼', '退換貨', '宏匯廣場', '營業人'
   ];
   const WARRANTY_KEYWORDS = [
-    'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017'
+    'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017',
+    '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE'
   ];
   const TAIWAN_INVOICE_STRUCT_REGEX = /[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/;
 
@@ -1622,14 +1666,399 @@
     };
   }
 
+  // ===========================================================================
+  // LG 台灣樂金電器保證書獨立引擎 (lg_tw，v46：地標偵測 / 四點擴邊拉正 / 經銷商店章方框校準 / 型號機號防呆)
+  // ===========================================================================
+  function detectLgWarrantyByText(ocrText) {
+    const raw = (ocrText || '').toUpperCase();
+    if (!raw) return { isLg: false, hitCount: 0, matchedLandmarks: [] };
+
+    const groups = [
+      { key: 'brand', hit: /台灣樂金|樂金電器|\bLG\b|WWW\.LG\.COM/.test(raw) },
+      { key: 'dealer_box', hit: /經銷商店章|經銷商/.test(raw) && /台灣樂金|樂金電器|\bLG\b|產品註冊/.test(raw) },
+      { key: 'footer_qr', hit: /產品註冊登錄|LG\s*LINE|官方帳號|官方網站|為確保您的權益|MBM\d{6,}/.test(raw) }
+    ];
+    const matched = groups.filter(g => g.hit).map(g => g.key);
+    const hasExplicitDealerBox = /經銷商店章/.test(raw);
+    const hasLgBrand = /台灣樂金|樂金電器|\bLG\b|WWW\.LG\.COM/.test(raw);
+    const isLg = matched.length >= 2 || (hasLgBrand && /保證書/.test(raw)) || (hasExplicitDealerBox && /保證書/.test(raw));
+    return {
+      isLg,
+      hitCount: matched.length,
+      matchedLandmarks: matched
+    };
+  }
+
+  function detectLgCardQuad(srcImg) {
+    const sw = srcImg && srcImg.width ? srcImg.width : 0;
+    const sh = srcImg && srcImg.height ? srcImg.height : 0;
+    const fallbackCorners = [
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.98) },
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.98) }
+    ];
+    if (!sw || !sh || sw < 60 || sh < 60) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    const maxDim = 480;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(60, Math.round(sw * scale));
+    const h = Math.max(60, Math.round(sh * scale));
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = w;
+    workCanvas.height = h;
+    const wCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    wCtx.drawImage(srcImg, 0, 0, w, h);
+    const data = wCtx.getImageData(0, 0, w, h).data;
+
+    // 1. 取影像外緣 4% 作為桌面背景樣本，並取中央 36% 亮部作為 LG 白底貼紙樣本
+    const borderSamples = [];
+    const marginX = Math.max(2, Math.floor(w * 0.04));
+    const marginY = Math.max(2, Math.floor(h * 0.04));
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        if (x < marginX || x >= w - marginX || y < marginY || y >= h - marginY) {
+          const i = (y * w + x) * 4;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          borderSamples.push({ r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b });
+        }
+      }
+    }
+    const centerSamples = [];
+    for (let y = Math.floor(h * 0.30); y < Math.floor(h * 0.68); y += 2) {
+      for (let x = Math.floor(w * 0.30); x < Math.floor(w * 0.68); x += 2) {
+        const i = (y * w + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        centerSamples.push({ r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b });
+      }
+    }
+    if (borderSamples.length === 0 || centerSamples.length === 0) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    borderSamples.sort((a, b) => a.lum - b.lum);
+    const bgRef = borderSamples[Math.floor(borderSamples.length * 0.50)];
+
+    centerSamples.sort((a, b) => a.lum - b.lum);
+    const paperRef = centerSamples[Math.floor(centerSamples.length * 0.78)];
+
+    const lumDiff = paperRef.lum - bgRef.lum;
+    const colorDist = Math.hypot(paperRef.r - bgRef.r, paperRef.g - bgRef.g, paperRef.b - bgRef.b);
+    if (lumDiff < 10 && colorDist < 14) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    const mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const distBg = Math.hypot(r - bgRef.r, g - bgRef.g, b - bgRef.b);
+        const distPaper = Math.hypot(r - paperRef.r, g - paperRef.g, b - paperRef.b);
+        const isBrighterThanDesk = lum >= bgRef.lum + lumDiff * 0.42;
+        const isCloserToPaper = distPaper + 4 < distBg;
+        if (isBrighterThanDesk || isCloserToPaper) {
+          mask[y * w + x] = 1;
+        }
+      }
+    }
+
+    const densePts = [];
+    for (let y = 2; y < h - 2; y++) {
+      for (let x = 2; x < w - 2; x++) {
+        if (!mask[y * w + x]) continue;
+        let cnt = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          const rowOff = (y + dy) * w;
+          for (let dx = -2; dx <= 2; dx++) {
+            cnt += mask[rowOff + x + dx];
+          }
+        }
+        if (cnt >= 14) {
+          densePts.push({ x, y });
+        }
+      }
+    }
+
+    if (densePts.length < Math.max(80, w * h * 0.08)) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    const xs = densePts.map(p => p.x).sort((a, b) => a - b);
+    const ys = densePts.map(p => p.y).sort((a, b) => a - b);
+    const qLow = Math.floor(densePts.length * 0.01);
+    const qHigh = Math.max(qLow, densePts.length - 1 - qLow);
+    const minAllowX = xs[qLow] - 4;
+    const maxAllowX = xs[qHigh] + 4;
+    const minAllowY = ys[qLow] - 4;
+    const maxAllowY = ys[qHigh] + 4;
+
+    const filtered = densePts.filter(
+      p => p.x >= minAllowX && p.x <= maxAllowX && p.y >= minAllowY && p.y <= maxAllowY
+    );
+    if (filtered.length < 40) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    let minSum = Infinity, maxSum = -Infinity;
+    let minDiff = Infinity, maxDiff = -Infinity;
+    let tl = null, br = null, tr = null, bl = null;
+    for (let i = 0; i < filtered.length; i++) {
+      const p = filtered[i];
+      const sum = p.x + p.y;
+      const diff = p.x - p.y;
+      if (sum < minSum) { minSum = sum; tl = p; }
+      if (sum > maxSum) { maxSum = sum; br = p; }
+      if (diff > maxDiff) { maxDiff = diff; tr = p; }
+      if (diff < minDiff) { minDiff = diff; bl = p; }
+    }
+    if (!tl || !tr || !br || !bl) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    const spanW = Math.max(tr.x, br.x) - Math.min(tl.x, bl.x);
+    const spanH = Math.max(bl.y, br.y) - Math.min(tl.y, tr.y);
+    if (spanW < w * 0.35 || spanH < h * 0.32 || spanW / Math.max(1, spanH) < 1.15) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low' };
+    }
+
+    // 轉回原圖座標並四邊外擴約 0.5cm 呼吸白邊（完整保留頂部 LG LOGO、底部 MBM 編號與雙 QR Code）
+    const invScale = 1 / scale;
+    const rawCorners = [tl, tr, br, bl].map(p => ({
+      x: p.x * invScale,
+      y: p.y * invScale
+    }));
+    const cx = (rawCorners[0].x + rawCorners[1].x + rawCorners[2].x + rawCorners[3].x) * 0.25;
+    const cy = (rawCorners[0].y + rawCorners[1].y + rawCorners[2].y + rawCorners[3].y) * 0.25;
+    const EXPAND_X_RATIO = 0.035;
+    const EXPAND_Y_RATIO = 0.048;
+
+    const expandedCorners = rawCorners.map(p => ({
+      x: Math.max(0, Math.min(sw, Math.round(p.x + (p.x - cx) * EXPAND_X_RATIO))),
+      y: Math.max(0, Math.min(sh, Math.round(p.y + (p.y - cy) * EXPAND_Y_RATIO)))
+    }));
+
+    return {
+      corners: expandedCorners,
+      detected: true,
+      confidence: 'high'
+    };
+  }
+
+  function detectLgDealerBoxStampSpec(cleanCardCanvas) {
+    const fallbackSpec = { ...LG_TW_STAMP_SPEC };
+    if (!cleanCardCanvas || !cleanCardCanvas.width || !cleanCardCanvas.height) {
+      return fallbackSpec;
+    }
+
+    const cw = cleanCardCanvas.width;
+    const ch = cleanCardCanvas.height;
+    const rx = Math.round(cw * 0.65);
+    const ry = Math.round(ch * 0.42);
+    const rw = Math.max(40, Math.round(cw * 0.31));
+    const rh = Math.max(40, Math.round(ch * 0.38));
+
+    const tmp = document.createElement('canvas');
+    tmp.width = rw;
+    tmp.height = rh;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(cleanCardCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+    const data = tCtx.getImageData(0, 0, rw, rh).data;
+
+    const lums = [];
+    for (let i = 0; i < rw * rh; i += 4) {
+      const p = i * 4;
+      lums.push(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+    }
+    lums.sort((a, b) => a - b);
+    const bgLum = lums[Math.floor(lums.length * 0.78)] || 225;
+    const darkThresh = Math.max(60, bgLum - 32);
+
+    // 投影偵測矩形左牆、右牆、上牆、下牆
+    const colDarkCounts = new Int32Array(rw);
+    const rowDarkCounts = new Int32Array(rh);
+    for (let y = 0; y < rh; y++) {
+      let rowDark = 0;
+      for (let x = 0; x < rw; x++) {
+        const p = (y * rw + x) * 4;
+        const lum = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+        if (lum < darkThresh) {
+          colDarkCounts[x]++;
+          rowDark++;
+        }
+      }
+      rowDarkCounts[y] = rowDark;
+    }
+
+    const pickPeakInRange = (arr, startIdx, endIdx, minRequired) => {
+      let bestIdx = -1;
+      let bestVal = 0;
+      const s = Math.max(0, startIdx);
+      const e = Math.min(arr.length - 1, endIdx);
+      for (let i = s; i <= e; i++) {
+        const val = arr[i] + (i > 0 ? arr[i - 1] * 0.5 : 0) + (i + 1 < arr.length ? arr[i + 1] * 0.5 : 0);
+        if (arr[i] >= minRequired && val > bestVal) {
+          bestVal = val;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    };
+
+    const leftWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.08), Math.round(rw * 0.45), Math.round(rh * 0.25));
+    const rightWallRel = pickPeakInRange(colDarkCounts, Math.round(rw * 0.55), Math.round(rw * 0.92), Math.round(rh * 0.25));
+    const topWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.05), Math.round(rh * 0.42), Math.round(rw * 0.25));
+    const bottomWallRel = pickPeakInRange(rowDarkCounts, Math.round(rh * 0.58), Math.round(rh * 0.95), Math.round(rw * 0.25));
+
+    if (leftWallRel >= 0 && rightWallRel > leftWallRel && topWallRel >= 0 && bottomWallRel > topWallRel) {
+      const boxW = rightWallRel - leftWallRel;
+      const boxH = bottomWallRel - topWallRel;
+      const boxWRatio = boxW / cw;
+      const boxHRatio = boxH / ch;
+      if (boxWRatio >= 0.11 && boxWRatio <= 0.24 && boxHRatio >= 0.14 && boxHRatio <= 0.32) {
+        const boxCenterX = (rx + leftWallRel + boxW * 0.5) / cw;
+        const boxTopY = ry + topWallRel;
+        const stampCenterY = (boxTopY + boxH * 0.38) / ch;
+        const stampWidthRatio = Math.max(0.160, Math.min(0.195, boxWRatio * 1.04));
+        return {
+          centerX: Number(boxCenterX.toFixed(4)),
+          centerY: Number(stampCenterY.toFixed(4)),
+          widthRatio: Number(stampWidthRatio.toFixed(4)),
+          tiltRangeDeg: 1.5,
+          blendMode: 'multiply'
+        };
+      }
+    }
+
+    return fallbackSpec;
+  }
+
+  function filterLgModelResult(rawText) {
+    if (!rawText) return '';
+    const cleaned = rawText.toUpperCase()
+      .replace(/MBM\d{5,}/g, ' ')
+      .replace(/REV[.\d_]*/g, ' ')
+      .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+      .replace(/\b2162[-\s]?1196\b/g, ' ');
+
+    // 優先匹配 LG 常見含連字號型號（如 WD-S1818PB, WT-SD199HVG, GR-QPL88BS）
+    const hyphenMatch = cleaned.match(/\b([A-Z]{1,4}\s*-\s*[A-Z0-9]{2,10}(?:-[A-Z0-9]{1,4})?)\b/g);
+    if (hyphenMatch) {
+      for (let i = 0; i < hyphenMatch.length; i++) {
+        const tok = hyphenMatch[i].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
+        if (tok.length >= 5 && /[A-Z]/.test(tok) && /\d/.test(tok)) {
+          return tok;
+        }
+      }
+    }
+
+    // 支援無連字號機型（如 OLED65C4PTA / AS651DSS0）
+    const tokens = cleaned.split(/[\s\r\n:：]+/).map(t => t.replace(/[^A-Z0-9-]/g, '')).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok.length < 5 || tok.length > 18) continue;
+      if (/^\d{3}[A-Z]{4,}\d{2,}$/.test(tok)) continue; // 排除 LG 機號格式
+      if (/^MBM\d+/.test(tok)) continue;
+      if (/[A-Z]{2,}/.test(tok) && /\d{2,}/.test(tok)) {
+        return tok;
+      }
+    }
+    return '';
+  }
+
+  function normalizeLgSerialTokenByPosition(rawTok) {
+    const s = (rawTok || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (s.length < 9 || s.length > 15) return '';
+    if (/^MBM/.test(s) || /^REV/.test(s) || /^LG/.test(s)) return '';
+
+    const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
+    const toAlpha = ch => ({ '0': 'O', '1': 'I', '8': 'B', '5': 'S' }[ch] || ch);
+
+    const chars = s.split('');
+    // LG 機號結構（如 610PNNAEQ687）：前 3 碼固定為數字（年+月），尾段 3 碼固定為數字，中段工廠碼為英文字母
+    for (let i = 0; i < Math.min(3, chars.length); i++) {
+      chars[i] = toDigit(chars[i]);
+    }
+    for (let i = Math.max(3, chars.length - 3); i < chars.length; i++) {
+      chars[i] = toDigit(chars[i]);
+    }
+    for (let i = 3; i < chars.length - 3; i++) {
+      // 保留合理中段數字（若有 4 位尾數），僅將明顯字元混淆且前後皆英文時糾正
+      if (/[018]/.test(chars[i]) && i < chars.length - 4) {
+        chars[i] = toAlpha(chars[i]);
+      }
+    }
+
+    const fixed = chars.join('');
+    if (/^\d{3}[A-Z]{3,8}\d{2,5}$/.test(fixed)) return fixed;
+    if (/^\d{3}[A-Z0-9]{6,11}$/.test(fixed) && (fixed.match(/\d/g) || []).length >= 5 && (fixed.match(/[A-Z]/g) || []).length >= 3) {
+      return fixed;
+    }
+    return '';
+  }
+
+  function filterLgSerialResult(rawText) {
+    if (!rawText) return '';
+    const cleaned = rawText.toUpperCase()
+      .replace(/MBM\d{5,}/g, ' ')
+      .replace(/REV[.\d_]*/g, ' ');
+    const tokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+
+    for (let i = 0; i < tokens.length; i++) {
+      const normalized = normalizeLgSerialTokenByPosition(tokens[i]);
+      if (normalized) return normalized;
+    }
+
+    const compact = cleaned.replace(/[^A-Z0-9]/g, '');
+    const m = compact.match(/\d{3}[A-Z0-9]{6,11}/);
+    if (m) {
+      const normalized = normalizeLgSerialTokenByPosition(m[0]);
+      if (normalized) return normalized;
+    }
+    return '';
+  }
+
+  function parseLgTopFormRow(rawText) {
+    if (!rawText) return { model: '', serialNo: '' };
+    const flat = rawText.replace(/\r/g, '\n');
+    let model = '';
+    let serialNo = '';
+
+    const modelAnchor = flat.match(/(?:機型|機\s*型|MODEL|TYPE)\s*[:：.]*\s*([^\n]+)/i);
+    if (modelAnchor) {
+      const beforeSerial = modelAnchor[1].split(/機號|機\s*號|SERIAL/i)[0];
+      model = filterLgModelResult(beforeSerial);
+    }
+    if (!model) {
+      model = filterLgModelResult(flat);
+    }
+
+    const serialAnchor = flat.match(/(?:機號|機\s*號|SERIAL|S\/?N)\s*[:：.]*\s*([^\n]+)/i);
+    if (serialAnchor) {
+      serialNo = filterLgSerialResult(serialAnchor[1]);
+    }
+    if (!serialNo) {
+      serialNo = filterLgSerialResult(flat);
+    }
+    return { model, serialNo };
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     PANASONIC_WARRANTY_CONFIG,
+    LG_TW_WARRANTY_CONFIG,
     RECEIPT_LANDMARK_CROP_CONFIG,
     TEMPLATES: CARD_TEMPLATES,
     INVOICE_TEMPLATES,
     detectPanasonicCardQuad,
     detectPanasonicSlipType,
+    detectLgWarrantyByText,
+    detectLgCardQuad,
+    detectLgDealerBoxStampSpec,
     createEnhancedOcrCropCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
@@ -1642,6 +2071,9 @@
     parseInvoiceHeaderFields,
     filterWarrantyModelResult,
     filterWarrantySerialResult,
+    filterLgModelResult,
+    filterLgSerialResult,
+    parseLgTopFormRow,
     parsePanasonicLeftInfoBlock,
     crossVerifyModelWithOrderSheet
   };
