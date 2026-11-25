@@ -233,12 +233,12 @@
   };
 
   /**
-   * 台灣日立阿奇立克家電製品保證書獨立命名空間規格 (hitachi_tw，嚴格隔離絕不干擾 Panasonic、LG 與三菱邏輯) (v60)
+   * 台灣日立阿奇立克家電製品保證書獨立命名空間規格 (hitachi_tw，嚴格隔離絕不干擾 Panasonic、LG 與三菱邏輯) (v60/v61 印章原地放大1.1倍)
    */
   const HITACHI_TW_STAMP_SPEC = Object.freeze({
     centerX: 0.858,
     centerY: 0.455,
-    widthRatio: 0.215,
+    widthRatio: 0.237,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
   });
@@ -249,8 +249,8 @@
     borderColorType: 'hitachi_white_dual_black',
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
-      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.345, y: 0.465, w: 0.230, h: 0.090 }),
-      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.175, y: 0.555, w: 0.170, h: 0.090 }),
+      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.340, y: 0.465, w: 0.275, h: 0.090 }),
+      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.190, y: 0.558, w: 0.165, h: 0.084 }),
       formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
@@ -601,6 +601,7 @@
     }
 
     const rad = Math.max(14, Math.min(54, Math.round(contentH * 0.26)));
+    const threshDelta = (options && typeof options.thresholdOffset === 'number') ? options.thresholdOffset : 19;
     const bin = new Uint8Array(total);
     for (let y = 0; y < outH; y++) {
       const y0 = Math.max(0, y - rad);
@@ -614,7 +615,7 @@
         const sum = integral[row1 + x1 + 1] - integral[row0 + x1 + 1] - integral[row1 + x0] + integral[row0 + x0];
         const localMean = sum / area;
         const g = grays[y * outW + x];
-        bin[y * outW + x] = (g < localMean - 19) ? 1 : 0;
+        bin[y * outW + x] = (g < localMean - threshDelta) ? 1 : 0;
       }
     }
 
@@ -4491,13 +4492,12 @@
     // 右外弧線緊貼右側表格內框線（不超出雙線外框）
     const rightBoundNorm = Math.max(0.945, Math.min(0.985, innerRightNorm - 0.003));
 
-    let stampWidthRatio = rightBoundNorm - leftBoundNorm;
-    stampWidthRatio = Math.max(0.195, Math.min(0.236, stampWidthRatio));
+    const baseWidthRatio = Math.max(0.195, Math.min(0.236, rightBoundNorm - leftBoundNorm));
     let stampCenterX = (leftBoundNorm + rightBoundNorm) * 0.5;
     stampCenterX = Math.max(0.838, Math.min(0.880, stampCenterX));
 
-    // 垂直落點：印章底緣外弧貼齊「購買日期」列下方水平線，並確保上弧位於 HITACHI 下方
-    const estStampHNorm = (stampWidthRatio * cw / 1.2806) / ch;
+    // v61: 保持 centerX / centerY 中心座標計算完全不變，僅將 widthRatio 原地放大 1.1 倍（夾限 [0.225, 0.250]）
+    const estStampHNorm = (baseWidthRatio * cw / 1.2806) / ch;
     let bottomLineNorm = 0.608;
     if (typeof anchors.purchaseRowBottomY === 'number' && anchors.purchaseRowBottomY >= 0.550 && anchors.purchaseRowBottomY <= 0.660) {
       bottomLineNorm = anchors.purchaseRowBottomY;
@@ -4514,10 +4514,12 @@
       stampCenterY = Math.max(stampCenterY, anchors.hitachiBottomY + estStampHNorm * 0.50);
     }
 
+    const enlargedWidthRatio = Math.max(0.225, Math.min(0.250, baseWidthRatio * 1.10));
+
     return {
       centerX: Number(stampCenterX.toFixed(4)),
       centerY: Number(Math.max(0.425, Math.min(0.485, stampCenterY)).toFixed(4)),
-      widthRatio: Number(stampWidthRatio.toFixed(4)),
+      widthRatio: Number(enlargedWidthRatio.toFixed(4)),
       tiltRangeDeg: 1.5,
       blendMode: 'multiply'
     };
@@ -4615,24 +4617,41 @@
         .replace(/[A-Z]{2,4}-[A-Z0-9-]{3,}/g, ' ');
 
       const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
-      const tokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+      const rawTokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+      const tokenPool = [...rawTokens];
+      // 若開頭英文字母與後方數字間被空白拆開（例如 "T 633868"），額外合併相鄰組
+      for (let i = 0; i < rawTokens.length - 1; i++) {
+        if (/^[A-Z]{1,2}$/.test(rawTokens[i]) && /^\d{5,7}$/.test(rawTokens[i + 1])) {
+          tokenPool.push(rawTokens[i] + rawTokens[i + 1]);
+        }
+      }
       const candidates = [];
 
-      for (let i = 0; i < tokens.length; i++) {
-        const rawTok = tokens[i].replace(/[^A-Z0-9]/g, '');
+      for (let i = 0; i < tokenPool.length; i++) {
+        const rawTok = tokenPool[i].replace(/[^A-Z0-9]/g, '');
         if (rawTok.length < 5 || rawTok.length > 14) continue;
         if (rawTok === '24721268' || rawTok === '25160500' || rawTok === 'HITACHI') continue;
-        // 日立機號常見為 1~2 位大寫英文開頭 + 5~8 位數字（如 T633868）
-        const alphaNumMatch = rawTok.match(/^([A-Z]{1,2})([0-9OQDILZSBG]{5,9})$/);
+
+        // 1. 最高權重：1~2 碼大寫英文 + 5~7 碼數字（如 T633868）
+        const alphaNumMatch = rawTok.match(/^([A-Z]{1,2})([0-9OQDILZSBG]{5,7})$/);
         if (alphaNumMatch) {
           const fixedDigits = alphaNumMatch[2].split('').map(toDigit).join('');
-          if (/^\d{5,9}$/.test(fixedDigits)) {
-            candidates.push({ val: `${alphaNumMatch[1]}${fixedDigits}`, score: 100 + fixedDigits.length });
+          if (/^\d{5,7}$/.test(fixedDigits)) {
+            candidates.push({ val: `${alphaNumMatch[1]}${fixedDigits}`, score: 140 + fixedDigits.length });
             continue;
           }
         }
+
+        // 2. 次高權重：純 6~7 碼數字（開頭細字英文字母遺失時仍保留輸出，絕不丟棄為空）
+        const pureDigits = rawTok.split('').map(toDigit).join('');
+        if (/^\d{6,7}$/.test(pureDigits) && pureDigits !== '24721268' && pureDigits !== '25160500') {
+          candidates.push({ val: pureDigits, score: 90 + pureDigits.length });
+          continue;
+        }
+
+        // 3. 一般 6~12 碼英數字混排備援
         if (/^[A-Z0-9]{6,12}$/.test(rawTok) && /\d{4,}/.test(rawTok)) {
-          candidates.push({ val: rawTok, score: 50 + rawTok.length });
+          candidates.push({ val: rawTok, score: 60 + rawTok.length });
         }
       }
 

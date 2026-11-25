@@ -81,6 +81,18 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 00:28] (第 61 版 / v61)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章原地放大 1.1 倍 ＋ 機號／型號尾碼精準辨識修復（v61）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v61`）**：
+     - 建立 `_backup/20261126_002452/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v61 (2026.11.26)` 與 `?v=61`。
+  2. **`hitachi_tw` 印章原地放大 `1.1` 倍（`static/card_templates.js`）**：
+     - 保持 `HITACHI_TW_STAMP_SPEC` 與 `detectHitachiDealerStampSpec()` 的印章中心座標（`centerX: 0.858`, `centerY: 0.455`）完全不變，僅將寬度比例 `widthRatio` 由 `0.215` 原地放大 `1.1` 倍調整為 **`0.237`**（動態校準夾限同步調升至 `[0.225, 0.250]`）。
+  3. **修復 `hitachi_tw` 機號（`T633868`）雙閾值辨識與放寬型號（`BD-SX150JJ`）右邊界（`static/card_templates.js`、`static/app.js`）**：
+     - **機號 Y 軸動態定位 ＋ `4.0x` 雙閾值增強**：於 `createAdaptiveBinarizedOcrCropCanvas()` 加入選用 `options.thresholdOffset`（預設維持 `19` 不影響他牌），於 `runHitachiCardTargetedOcr()` 結合左側「機號」`anchorY` 動態對齊避開框線之純白底機號區（保底 `x: 19.0%~35.5%, y: 55.8%~64.2%`），以 `4.0x` 執行標準（`19`）與深墨水低閾值（`9`）雙次 `psm = 7` 純英數辨識，救回細筆畫開頭英文字母（如 `T`、`H`、`K`、`A`）；`filterHitachiSerialResult()` 同時支援合併拆字空白及保留純 `6～7` 碼數字備援並可依訂購單補全前導字母。
+     - **型號右邊界放寬至 `61.5%`**：調整 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.model` 與 `runHitachiCardTargetedOcr()` 為 `x: 34.0% ~ 61.5%, y: 46.5% ~ 55.5%`，完整包覆末碼字母（如 `BD-SX150JJ`）並優先與訂購單比對寫回左下 5 行大字（第 3 行維持 `日立 <型號>`、第 4 行 `機號 <機號>`）。
+  4. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與語法檢查、`CRLF` 換行檢核並推送至 `origin/main`。
+
 ### [2026-11-26 00:15] (第 60 版 / v60)
 - **執行項目**：**新增「台灣日立阿奇立克家電製品保證書 `hitachi_tw`」獨立命名空間模板（v60）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
 - **具體進度**：

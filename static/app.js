@@ -8472,36 +8472,39 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
         }
       }
 
-      // 2. 局部高解析單行專項辨識（3.5x 自適應二值化，跳過中文品名直讀右側型號與機號）
+      // 2. 局部高解析單行專項辨識（v61：型號右邊界放寬至 61.5% 完整保留尾碼；機號採 4.0x 雙閾值增強救回細筆畫開頭字母）
       const cropFn = window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas || window.CardTemplates.createEnhancedOcrCropCanvas;
       if (cropFn) {
         try {
           const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model)
             ? tpl.ocrRegions.model
-            : { x: 0.345, y: 0.465, w: 0.230, h: 0.090 };
+            : { x: 0.340, y: 0.465, w: 0.275, h: 0.090 };
           const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial)
             ? tpl.ocrRegions.serial
-            : { x: 0.175, y: 0.555, w: 0.170, h: 0.090 };
+            : { x: 0.190, y: 0.558, w: 0.165, h: 0.084 };
 
           const anchorModelRoi = (productLabelBox && productLabelBox.y0 >= 0.40 && productLabelBox.y1 <= 0.58)
             ? {
                 x: 0.335,
                 y: Math.max(0.440, productLabelBox.y0 - 0.014),
-                w: 0.250,
+                w: 0.280,
                 h: Math.max(0.068, Math.min(0.105, (productLabelBox.y1 - productLabelBox.y0) + 0.032))
               }
             : null;
 
+          // 結合左側「機號」字樣 Y 軸垂直中心線 anchorY 動態對齊純白底機號區，避開四邊表格框線
           const anchorSerialRoi = (serialLabelBox && serialLabelBox.y0 >= 0.50 && serialLabelBox.y1 <= 0.68)
-            ? {
-                x: Math.max(0.155, Math.min(0.210, serialLabelBox.x1 + 0.010)),
-                y: Math.max(0.525, serialLabelBox.y0 - 0.014),
-                w: 0.185,
-                h: Math.max(0.068, Math.min(0.105, (serialLabelBox.y1 - serialLabelBox.y0) + 0.032))
-              }
+            ? (() => {
+                const anchorY = (serialLabelBox.y0 + serialLabelBox.y1) * 0.5;
+                const boxH = 0.084;
+                const rx = Math.max(0.185, Math.min(0.215, serialLabelBox.x1 + 0.012));
+                const rw = Math.max(0.145, 0.358 - rx);
+                const ry = Math.max(0.530, Math.min(0.655 - boxH, anchorY - boxH * 0.5));
+                return { x: rx, y: ry, w: rw, h: boxH };
+              })()
             : null;
 
-          const modelRois = anchorModelRoi ? [defaultModelReg, anchorModelRoi] : [defaultModelReg];
+          const modelRois = anchorModelRoi ? [anchorModelRoi, defaultModelReg] : [defaultModelReg];
           let bestModelScore = 0;
           for (let i = 0; i < modelRois.length; i++) {
             try {
@@ -8525,12 +8528,11 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
               if (rawM && window.CardTemplates.filterHitachiModelResult) {
                 const parsedM = window.CardTemplates.filterHitachiModelResult(rawM);
                 if (parsedM) {
-                  const sc = /^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z0-9]+/.test(parsedM) ? 100 : parsedM.length;
+                  const sc = (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z0-9]+/.test(parsedM) ? 100 : 0) + parsedM.length;
                   if (sc > bestModelScore) {
                     bestModelScore = sc;
                     modelClean = parsedM;
                   }
-                  if (sc >= 100) break;
                 }
               }
             } catch (mErr) {
@@ -8538,13 +8540,31 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             }
           }
 
-          const serialRois = anchorSerialRoi ? [defaultSerialReg, anchorSerialRoi] : [defaultSerialReg];
-          for (let i = 0; i < serialRois.length; i++) {
+          // 機號雙閾值對比增強（4.0x 放大：標準自適應二值化 thresholdOffset=19 ＋ 深墨水低閾值 thresholdOffset=9 救回細字開頭英文字母）
+          const primarySerialRoi = anchorSerialRoi || defaultSerialReg;
+          const serialPassConfigs = [
+            { roi: primarySerialRoi, thresholdOffset: 19 },
+            { roi: primarySerialRoi, thresholdOffset: 9 }
+          ];
+          if (anchorSerialRoi) {
+            serialPassConfigs.push({ roi: defaultSerialReg, thresholdOffset: 9 });
+          }
+
+          const scoreSerialCandidate = s => {
+            if (!s) return -1;
+            const hasLeadAlpha = /^[A-Z]{1,2}\d{5,7}$/.test(s);
+            return (hasLeadAlpha ? 200 : 0) + s.length;
+          };
+
+          let bestSerialScore = -1;
+          for (let i = 0; i < serialPassConfigs.length; i++) {
             try {
-              const sCrop = cropFn(srcCanvas, serialRois[i], 3.5, {
+              const cfg = serialPassConfigs[i];
+              const sCrop = cropFn(srcCanvas, cfg.roi, 4.0, {
                 despeckle: true,
                 stripDottedUnderline: true,
-                stripBottomDotBand: false
+                stripBottomDotBand: false,
+                thresholdOffset: cfg.thresholdOffset
               });
               let rawS = '';
               if (worker) {
@@ -8560,13 +8580,14 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
               }
               if (rawS && window.CardTemplates.filterHitachiSerialResult) {
                 const parsedS = window.CardTemplates.filterHitachiSerialResult(rawS);
-                if (parsedS) {
+                const sc = scoreSerialCandidate(parsedS);
+                if (parsedS && sc > bestSerialScore) {
+                  bestSerialScore = sc;
                   serialClean = parsedS;
-                  break;
                 }
               }
             } catch (sErr) {
-              console.warn('日立機號局部 OCR 單次重試略過:', sErr);
+              console.warn('日立機號局部雙閾值 OCR 單次重試略過:', sErr);
             }
           }
 
@@ -8669,6 +8690,18 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
                   : `（已優先採用訂購單日立型號：${stdM}）`;
                 modelClean = stdM;
               }
+            }
+          }
+        }
+        // 若機號開頭細字英文字母遺失（目前僅為純 5~7 碼數字），嘗試自訂購單 PDF 原生純文字比對補全前導英文字母（如 633868 -> T633868）
+        if (serialClean && /^\d{5,7}$/.test(serialClean) && Array.isArray(layers)) {
+          const orderLayers = layers.filter(l => l && l.rawPdfText);
+          const serialRe = new RegExp(`\\b([A-Z]{1,2}${serialClean})\\b`, 'i');
+          for (let i = 0; i < orderLayers.length; i++) {
+            const sm = String(orderLayers[i].rawPdfText || '').toUpperCase().match(serialRe);
+            if (sm && sm[1]) {
+              serialClean = sm[1].toUpperCase();
+              break;
             }
           }
         }
