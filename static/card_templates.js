@@ -250,8 +250,8 @@
     borderColorType: 'hitachi_white_dual_black',
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
-      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.320, y: 0.455, w: 0.380, h: 0.105 }),
-      serial: Object.freeze({ label: '機號（日立整格含「機號」二字）', x: 0.085, y: 0.550, w: 0.275, h: 0.095 }),
+      model: Object.freeze({ label: '型號（日立純白底去框線安全區）', x: 0.340, y: 0.472, w: 0.245, h: 0.068 }),
+      serial: Object.freeze({ label: '機號（日立純白底去框線安全區）', x: 0.185, y: 0.568, w: 0.160, h: 0.066 }),
       formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
@@ -4558,12 +4558,13 @@
         tok = tok.replace(/^(?:RA5|8AS)-?(\d{2,3}[A-Z0-9]*)$/, 'RAS-$1');
         tok = tok.replace(/^(?:R0)-?(\d{2,3}[A-Z0-9]*)$/, 'RD-$1');
 
-        // 校準容量數字夾心錯字（如 BD-SX15OJJ -> BD-SX150JJ），保留尾碼字母
+        // 校準容量數字夾心錯字（如 BD-SX15OJJ -> BD-SX150JJ），並剔除尾碼字母間夾雜垂直框線誤讀的 44 / 11（如 BD-SX150J44J -> BD-SX150JJ）
         const hitMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{0,3})([0-9OIQDGLZSB]{2,4})([A-Z0-9-]*)$/);
         if (hitMatch) {
           const fixedNum = hitMatch[2].split('').map(mapNumChar).join('');
           if (/^\d{2,4}$/.test(fixedNum)) {
-            tok = `${hitMatch[1]}${fixedNum}${hitMatch[3]}`;
+            const cleanSuffix = hitMatch[3].replace(/^([A-Z]{1,2})(?:44|11)([A-Z]{1,3})$/, '$1$2');
+            tok = `${hitMatch[1]}${fixedNum}${cleanSuffix}`;
           }
         }
         tok = tok.replace(/(\d)([OIQDGLZB])(\d)/g, (_, a, b, c) => `${a}${mapNumChar(b)}${c}`);
@@ -4574,7 +4575,9 @@
         if (!tok) return -1;
         let sc = tok.length;
         if (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-/.test(tok)) sc += 50;
-        if (/^[A-Z]{2,4}-[A-Z]{0,3}\d{2,4}[A-Z0-9-]*$/.test(tok)) sc += 25;
+        if (/^[A-Z]{2,4}-[A-Z]{0,3}\d{2,4}[A-Z]{1,4}$/.test(tok)) sc += 30;
+        else if (/^[A-Z]{2,4}-[A-Z]{0,3}\d{2,4}[A-Z0-9-]*$/.test(tok)) sc += 15;
+        if (/\d[A-Z](?:44|11)[A-Z]/.test(tok)) sc -= 60;
         return sc;
       };
 
@@ -4649,7 +4652,15 @@
         if (rawTok.length < 5 || rawTok.length > 14) continue;
         if (rawTok === '24721268' || rawTok === '25160500' || rawTok === 'HITACHI') continue;
 
-        // 1. 最高權重：1~2 碼大寫英文 + 5~7 碼數字（如 T633868）
+        // 1. 最高權重：1~2 碼大寫英文 + 5~7 碼數字（如 T633868）；若開頭因垂直框線黏連多出 1/I（如 1T633868 / IT633868），優先萃取出內含的標準 [A-Z]\d{5,7}
+        const stickyBorderMatch = rawTok.match(/^[1I]([A-Z])([0-9OQDILZSBG]{5,7})$/);
+        if (stickyBorderMatch) {
+          const fixedDigits = stickyBorderMatch[2].split('').map(toDigit).join('');
+          if (/^\d{5,7}$/.test(fixedDigits)) {
+            candidates.push({ val: `${stickyBorderMatch[1]}${fixedDigits}`, score: 138 + fixedDigits.length });
+          }
+        }
+
         const alphaNumMatch = rawTok.match(/^([A-Z]{1,2})([0-9OQDILZSBG]{5,7})$/);
         if (alphaNumMatch) {
           const fixedDigits = alphaNumMatch[2].split('').map(toDigit).join('');
@@ -4657,6 +4668,13 @@
             candidates.push({ val: `${alphaNumMatch[1]}${fixedDigits}`, score: 140 + fixedDigits.length });
             continue;
           }
+        }
+
+        // 1b. 若前後端偶發黏附雜訊字元，嘗試萃取內含的標準 [A-Z]\d{6} 機號
+        const embeddedStdMatch = rawTok.match(/([A-Z]\d{6})/);
+        if (embeddedStdMatch) {
+          candidates.push({ val: embeddedStdMatch[1], score: 135 });
+          continue;
         }
 
         // 2. 次高權重：純 6~7 碼數字（開頭細字 T 誤讀為 1/I 如 1633868 或僅剩 6 碼 633868 皆保留不丟棄）

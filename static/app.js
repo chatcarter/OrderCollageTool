@@ -8428,7 +8428,8 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
         if (!m) return -1;
         let sc = m.length;
         if (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z0-9-]+$/.test(m)) sc += 100;
-        if (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z]{0,3}\d{2,4}[A-Z]{2,}/.test(m)) sc += 25;
+        if (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z]{0,3}\d{2,4}[A-Z]{2,}$/.test(m)) sc += 30;
+        if (/\d[A-Z](?:44|11)[A-Z]/.test(m)) sc -= 80;
         return sc;
       };
 
@@ -8547,27 +8548,36 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
         try {
           const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model)
             ? tpl.ocrRegions.model
-            : { x: 0.320, y: 0.455, w: 0.380, h: 0.105 };
+            : { x: 0.340, y: 0.472, w: 0.245, h: 0.068 };
           const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial)
             ? tpl.ocrRegions.serial
-            : { x: 0.085, y: 0.550, w: 0.275, h: 0.095 };
+            : { x: 0.185, y: 0.568, w: 0.160, h: 0.066 };
 
+          // v64：型號收斂為純白底安全區（x: 34.0% ~ 58.5%, y: 47.2% ~ 54.0%，boxH: 0.066 避開右側垂直線與上下黑框），另備 34.0%~63.5% 次視窗
           const anchorModelRoi = (productLabelBox && productLabelBox.y0 >= 0.38 && productLabelBox.y1 <= 0.60)
             ? (() => {
                 const anchorY = (productLabelBox.y0 + productLabelBox.y1) * 0.5;
-                const boxH = Math.max(0.088, Math.min(0.115, (productLabelBox.y1 - productLabelBox.y0) + 0.042));
-                const ry = Math.max(0.420, Math.min(0.580 - boxH, anchorY - boxH * 0.5));
-                return { x: 0.320, y: ry, w: 0.380, h: boxH };
+                const boxH = 0.066;
+                const ry = Math.max(0.460, Math.min(0.550 - boxH, anchorY - boxH * 0.5));
+                return { x: 0.340, y: ry, w: 0.245, h: boxH };
               })()
             : null;
+          const wideFallbackModelReg = {
+            x: 0.340,
+            y: anchorModelRoi ? anchorModelRoi.y : 0.472,
+            w: 0.295,
+            h: 0.066
+          };
 
-          // v63：連同左側「機號」二字整格橫切（x: 8.5% ~ 36.0%, y: 55.0% ~ 64.5%），提供 Tesseract 穩固文字基線，右止於「購買日期」分隔線前並內縮避開上下水平線
+          // v64：機號收斂為純白底去框線安全區（x: 18.5% ~ 34.5%, y: 56.8% ~ 63.4%，boxH: 0.066 徹底切除三面表格黑框線）
           const anchorSerialRoi = (serialLabelBox && serialLabelBox.y0 >= 0.48 && serialLabelBox.y1 <= 0.70)
             ? (() => {
                 const anchorY = (serialLabelBox.y0 + serialLabelBox.y1) * 0.5;
-                const boxH = Math.max(0.082, Math.min(0.096, (serialLabelBox.y1 - serialLabelBox.y0) + 0.044));
-                const ry = Math.max(0.530, Math.min(0.665 - boxH, anchorY - boxH * 0.5));
-                return { x: 0.085, y: ry, w: 0.275, h: boxH };
+                const boxH = 0.066;
+                const rx = Math.max(0.185, Math.min(0.215, serialLabelBox.x1 + 0.014));
+                const rw = Math.max(0.130, 0.345 - rx);
+                const ry = Math.max(0.552, Math.min(0.648 - boxH, anchorY - boxH * 0.5));
+                return { x: rx, y: ry, w: rw, h: boxH };
               })()
             : null;
 
@@ -8576,10 +8586,12 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
           if (cropBinFn) modelPasses.push({ fn: cropBinFn, roi: primaryModelRoi, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false } });
           if (cropGrayFn) modelPasses.push({ fn: cropGrayFn, roi: primaryModelRoi, opts: null });
           if (anchorModelRoi && cropBinFn) modelPasses.push({ fn: cropBinFn, roi: defaultModelReg, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false } });
+          if (cropBinFn) modelPasses.push({ fn: cropBinFn, roi: wideFallbackModelReg, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false }, onlyIfEmpty: true });
 
           for (let i = 0; i < modelPasses.length; i++) {
             try {
               const p = modelPasses[i];
+              if (p.onlyIfEmpty && modelClean) continue;
               const mCrop = p.opts
                 ? p.fn(srcCanvas, p.roi, 3.5, p.opts)
                 : p.fn(srcCanvas, p.roi, 3.5);
@@ -8603,18 +8615,21 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             }
           }
 
-          // v63 機號整格橫切雙語辨識（4.0x 放大 ＋ chiEngWorker psm=7 無英數白名單鎖定，含標準 19／深墨水低閾值 9／灰階對比）
+          // v64 機號純白底 engWorker 雙模式（psm=7 單行 ＋ psm=8 單字，4.0x 放大，標準 19／深墨水低閾值 9／灰階對比三軌增強）
           const primarySerialRoi = anchorSerialRoi || defaultSerialReg;
           const serialPassConfigs = [];
           if (cropBinFn) {
-            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 19 } });
-            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 9 } });
+            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, psm: '7', opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 19 } });
+            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, psm: '8', opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 19 } });
+            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, psm: '7', opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 9 } });
+            serialPassConfigs.push({ fn: cropBinFn, roi: primarySerialRoi, psm: '8', opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 9 } });
           }
           if (cropGrayFn) {
-            serialPassConfigs.push({ fn: cropGrayFn, roi: primarySerialRoi, opts: null });
+            serialPassConfigs.push({ fn: cropGrayFn, roi: primarySerialRoi, psm: '7', opts: null });
+            serialPassConfigs.push({ fn: cropGrayFn, roi: primarySerialRoi, psm: '8', opts: null });
           }
           if (anchorSerialRoi && cropBinFn) {
-            serialPassConfigs.push({ fn: cropBinFn, roi: defaultSerialReg, opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 9 } });
+            serialPassConfigs.push({ fn: cropBinFn, roi: defaultSerialReg, psm: '8', opts: { despeckle: true, stripDottedUnderline: true, stripBottomDotBand: false, thresholdOffset: 9 } });
           }
 
           for (let i = 0; i < serialPassConfigs.length; i++) {
@@ -8624,23 +8639,22 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
                 ? cfg.fn(srcCanvas, cfg.roi, 4.0, cfg.opts)
                 : cfg.fn(srcCanvas, cfg.roi, 4.0);
               let rawS = '';
-              if (chiEngWorker) {
-                await chiEngWorker.setParameters({ tessedit_pageseg_mode: '7' });
-                try {
-                  const sRes = await chiEngWorker.recognize(sCrop);
-                  rawS = (sRes && sRes.data && sRes.data.text) || '';
-                } finally {
-                  await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
-                }
+              if (worker) {
+                await worker.setParameters({
+                  tessedit_pageseg_mode: cfg.psm,
+                  tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                });
+                const sRes = await worker.recognize(sCrop);
+                rawS = (sRes && sRes.data && sRes.data.text) || '';
               } else {
-                const sRes = await window.Tesseract.recognize(sCrop, 'eng+chi_tra');
+                const sRes = await window.Tesseract.recognize(sCrop, 'eng');
                 rawS = (sRes && sRes.data && sRes.data.text) || '';
               }
               if (rawS && window.CardTemplates.filterHitachiSerialResult) {
                 considerSerialCandidate(window.CardTemplates.filterHitachiSerialResult(rawS));
               }
             } catch (sErr) {
-              console.warn('日立機號整格雙語 OCR 單次重試略過:', sErr);
+              console.warn('日立機號純白底 engWorker OCR 單次重試略過:', sErr);
             }
           }
 

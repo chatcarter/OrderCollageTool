@@ -81,6 +81,22 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 00:57] (第 64 版 / v64)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 鎖定印章定案規格 ＋ 純白底無框線機號／型號雙軌 OCR 修復（v64）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v64`）**：
+     - 建立 `_backup/20261126_005422/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v64 (2026.11.26)` 與 `?v=64`。
+  2. **嚴格鎖死已定案之 `hitachi_tw` 印章規格（`static/card_templates.js`）**：
+     - 完整保留 `HITACHI_TW_STAMP_SPEC` 與 `detectHitachiDealerStampSpec()` 的印章中心座標（`centerX: 0.858`, `centerY: 0.455`）、寬度比例（`widthRatio: 0.237`）與垂直高度係數（`heightScale: 1.18`）一字不改。
+  3. **純白底無框線安全區機號辨識修復（`static/card_templates.js`、`static/app.js`）**：
+     - 收斂 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial` 與 `runHitachiCardTargetedOcr()` 至純白底安全區（`x: 18.5% ~ 34.5%, y: 56.8% ~ 63.4%`，依 `serialLabelBox` 中心內縮 `boxH: 0.066` 切除三面黑框線）。
+     - 改回純英數 `worker`（`eng`，白名單 `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`）`4.0x` 放大，雙軌執行 `psm = '7'`（單行）與 `psm = '8'`（單字）三組對比（`thresholdOffset: 19`、`9` 與灰階對比）。
+     - 強化 `filterHitachiSerialResult()` 支援首碼框線黏連萃取（如 `1T633868`／`IT633868` -> `T633868`）與內嵌 `[A-Z]\d{6}` 提取。
+  4. **純白底無框線型號安全區與誤插 `44`/`11` 濾除（`static/card_templates.js`、`static/app.js`）**：
+     - 收斂 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.model` 與 `runHitachiCardTargetedOcr()` 主視窗至 `x: 34.0% ~ 58.5%, y: 47.2% ~ 54.0%`（`boxH: 0.066`，避開右垂直線與上下框線），保留 `w: 0.295` 作為空值備援。
+     - 於 `filterHitachiModelResult()` 與 `scoreHitachiModel()` 加入數字後尾碼字母間誤插垂直線 `44`/`11` 淨化與扣分（如 `BD-SX150J44J` -> `BD-SX150JJ`）。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與 `CRLF` 換行檢核，並推送至 `origin/main`。
+
 ### [2026-11-26 00:47] (第 63 版 / v63)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章圓鼓高度微調係數 `heightScale = 1.18` ＋ 連字整格橫切穩抓機號修復（v63）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
 - **具體進度**：
