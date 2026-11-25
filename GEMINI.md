@@ -53,6 +53,20 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 00:38] (第 62 版 / v62)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章原始比例鎖定防拉扁 ＋ 型號／機號必經路由與全圖雙重備援（v62）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v62`）**：
+     - 建立 `_backup/20261126_001136/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v62 (2026.11.26)` 與 `?v=62`。
+  2. **強制鎖定 `hitachi_tw` 印章原始寬高等比例縮放（`static/card_templates.js`、`static/app.js`）**：
+     - 保持 `centerX: 0.858`、`centerY: 0.455` 與 `widthRatio: 0.237`（原地放大 `1.1` 倍寬度），嚴禁獨立寫死 `heightRatio` / `targetH`。
+     - 於 `attachInteractiveStampToCardLayer()` 與 `autoArrangeWorkbenchLayout()` 明確以 `stampImg.naturalHeight / stampImg.naturalWidth` 連動計算 `targetH = Math.round(targetW * stampAspectRatio)`，徹底杜絕橫向拉扁變形。
+  3. **打通 `hitachi_tw` 必經路由、橫切擴邊與全圖 OCR 雙重備援（`static/card_templates.js`、`static/app.js`）**：
+     - **必經路由與最高寫回優先權**：於 `btnRunOcr` 補齊 `hitachi_tw` 自動觸發 `runHitachiCardTargetedOcr()` 與 `parsed.brand = '日立'` 保護，嚴禁通用文字解析覆蓋 `hitachi_tw` 結果。
+     - **「商品」橫切放寬至 `x: 32.0% ~ 70.0%` ＋ 「機號」精準切框 `x: 16.0% ~ 36.0%`**：於 `HITACHI_TW_WARRANTY_CONFIG` 與 `runHitachiCardTargetedOcr()` 動態對齊「商品」與「機號」文字框 Y 軸中心，型號跑 `3.5x` 二值化＋灰階對比、機號跑 `4.0x` 標準（`19`）／深墨水低閾值（`9`）／灰階三軌辨識，並在 `filterHitachiModelResult()` 修復連字號後末碼單字元拆字空白（如 `BD-SX150J J`）。
+     - **拉正全圖掃描 ＋ Fallback Regex 雙重備援**：表單錨點缺漏或結果不足時自動掃描 `rectifiedCleanCanvas` 全圖並以 Fallback Regex 從「商品」／「機號」附近撈取完整型號（如 `BD-SX150JJ`）與機號（如 `T633868`），依分數擇優寫回並重繪左下 5 行核對大字。
+  4. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與 `CRLF` 換行檢核，並推送至 `origin/main`。
+
 ### [2026-11-26 00:28] (第 61 版 / v61)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章原地放大 1.1 倍 ＋ 機號／型號尾碼精準辨識修復（v61）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
 - **具體進度**：

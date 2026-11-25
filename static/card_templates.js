@@ -249,8 +249,8 @@
     borderColorType: 'hitachi_white_dual_black',
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
-      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.340, y: 0.465, w: 0.275, h: 0.090 }),
-      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.190, y: 0.558, w: 0.165, h: 0.084 }),
+      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.320, y: 0.455, w: 0.380, h: 0.105 }),
+      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.160, y: 0.555, w: 0.200, h: 0.090 }),
       formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
@@ -4577,7 +4577,9 @@
       };
 
       const candidates = [];
-      const multiHyphen = cleanedRaw.match(/\b([A-Za-z0-9]{2,4}(?:\s*-\s*)?[A-Za-z0-9]{2,12}(?:\s*-\s*[A-Za-z0-9]{1,4})?)\b/g);
+      // 修復連字號後末碼單字元偶發空白拆字（如 "BD-SX150J J" -> "BD-SX150JJ"，嚴格排除後方接續數字的機號）
+      const deSpacedRaw = cleanedRaw.replace(/\b((?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z0-9]{3,9})\s+([A-Z])(?![A-Z0-9])/gi, '$1$2');
+      const multiHyphen = deSpacedRaw.match(/\b([A-Za-z0-9]{2,4}(?:\s*-\s*)?[A-Za-z0-9]{2,12}(?:\s*-\s*[A-Za-z0-9]{1,4})?)\b/g);
       if (multiHyphen) {
         for (let i = 0; i < multiHyphen.length; i++) {
           const compact = multiHyphen[i].replace(/\s+/g, '');
@@ -4588,7 +4590,7 @@
         }
       }
 
-      const tokens = cleanedRaw.split(/[\s\r\n:：/|,，]+/).filter(Boolean);
+      const tokens = deSpacedRaw.split(/[\s\r\n:：/|,，]+/).filter(Boolean);
       for (let i = 0; i < tokens.length; i++) {
         const tok = normalizeHitachiModelToken(tokens[i]);
         if (tok.length < 5 || tok.length > 22) continue;
@@ -4621,8 +4623,10 @@
       const tokenPool = [...rawTokens];
       // 若開頭英文字母與後方數字間被空白拆開（例如 "T 633868"），額外合併相鄰組
       for (let i = 0; i < rawTokens.length - 1; i++) {
-        if (/^[A-Z]{1,2}$/.test(rawTokens[i]) && /^\d{5,7}$/.test(rawTokens[i + 1])) {
-          tokenPool.push(rawTokens[i] + rawTokens[i + 1]);
+        const t1 = rawTokens[i].replace(/[^A-Z0-9]/g, '');
+        const t2 = rawTokens[i + 1].replace(/[^A-Z0-9]/g, '');
+        if (/^[A-Z]{1,2}$/.test(t1) && /^[0-9OQDILZSBG]{5,7}$/.test(t2)) {
+          tokenPool.push(t1 + t2);
         }
       }
       const candidates = [];
@@ -4670,7 +4674,7 @@
     let model = '';
     let serialNo = '';
 
-    const productAnchor = flat.match(/(?:商品|型號|機型|MODEL)\s*[:：.]*\s*([^\n]+)/i);
+    const productAnchor = flat.match(/(?:商品|型號|機型|MODEL)\s*[:：.]*\s*([\s\S]{1,90}?)(?=機號|購買日期|經銷商|$)/i);
     if (productAnchor) {
       model = filterHitachiModelResult(productAnchor[1]);
     }
@@ -4678,10 +4682,9 @@
       model = filterHitachiModelResult(flat);
     }
 
-    const serialAnchor = flat.match(/(?:機號|製造號碼|SERIAL|S\/?N)\s*[:：.]*\s*([^\n]+)/i);
+    const serialAnchor = flat.match(/(?:機號|機\s*號|製造號碼|SERIAL|S\/?N)\s*[:：.]*\s*([\s\S]{1,60}?)(?=購買日期|SKU|經銷商|阿奇立克|$)/i);
     if (serialAnchor) {
-      const beforeDate = serialAnchor[1].split(/購買日期|SKU|經銷商/i)[0];
-      serialNo = filterHitachiSerialResult(beforeDate);
+      serialNo = filterHitachiSerialResult(serialAnchor[1]);
     }
     if (!serialNo) {
       serialNo = filterHitachiSerialResult(flat);
