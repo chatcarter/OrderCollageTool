@@ -251,7 +251,7 @@
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
       model: Object.freeze({ label: '型號（日立純白底去框線安全區）', x: 0.340, y: 0.472, w: 0.245, h: 0.068 }),
-      serial: Object.freeze({ label: '機號（日立純白底去框線安全區）', x: 0.185, y: 0.568, w: 0.160, h: 0.066 }),
+      serial: Object.freeze({ label: '機號（日立寬容去框線貼字帶安全區）', x: 0.165, y: 0.552, w: 0.190, h: 0.094 }),
       formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
@@ -563,7 +563,7 @@
     const rw = Math.max(10, Math.min(sw - rx, Math.round(region.w * sw)));
     const rh = Math.max(10, Math.min(sh - ry, Math.round(region.h * sh)));
 
-    const pad = 22;
+    const pad = (options && typeof options.pad === 'number' && options.pad >= 0) ? Math.round(options.pad) : 22;
     const contentW = Math.max(24, Math.round(rw * upscale));
     const contentH = Math.max(24, Math.round(rh * upscale));
     const outW = contentW + pad * 2;
@@ -4614,6 +4614,272 @@
     }
   }
 
+  /**
+   * 台灣日立機號專用（v65）：利用行列墨水投影自動剝除四邊表格黑框線，
+   * 貼緊格內偏下半部實際文字帶，並回傳去框後安全區與緊緻字帶座標
+   */
+  function extractHitachiSerialTightRegion(srcCanvas, candidateRegion = null) {
+    const baseReg = candidateRegion || HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial;
+    if (!srcCanvas || !srcCanvas.width || !srcCanvas.height) {
+      return { tightRegion: { ...baseReg }, borderStrippedRegion: { ...baseReg }, meta: { usedFallback: true } };
+    }
+    try {
+      const sw = srcCanvas.width;
+      const sh = srcCanvas.height;
+      const rx = Math.max(0, Math.round(baseReg.x * sw));
+      const ry = Math.max(0, Math.round(baseReg.y * sh));
+      const rw = Math.max(24, Math.min(sw - rx, Math.round(baseReg.w * sw)));
+      const rh = Math.max(20, Math.min(sh - ry, Math.round(baseReg.h * sh)));
+
+      const tmp = document.createElement('canvas');
+      tmp.width = rw;
+      tmp.height = rh;
+      const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+      tCtx.drawImage(srcCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+      const data = tCtx.getImageData(0, 0, rw, rh).data;
+
+      const total = rw * rh;
+      const lum = new Uint8Array(total);
+      const sampleLums = [];
+      for (let i = 0; i < total; i++) {
+        const p = i * 4;
+        const g = Math.round(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+        lum[i] = g;
+        if ((i & 3) === 0) sampleLums.push(g);
+      }
+      sampleLums.sort((a, b) => a - b);
+      const bgLum = sampleLums[Math.floor(sampleLums.length * 0.80)] || 235;
+      const borderThresh = Math.max(60, Math.min(205, bgLum - 26));
+      const inkThresh = Math.max(70, Math.min(220, bgLum - 18));
+
+      // 1. 偵測左右緣垂直黑框線（左前 25%、右後 15%）並向內縮 4px 剝除
+      const colDark = new Int32Array(rw);
+      for (let y = 0; y < rh; y++) {
+        const rowOff = y * rw;
+        for (let x = 0; x < rw; x++) {
+          if (lum[rowOff + x] < borderThresh) colDark[x]++;
+        }
+      }
+      const vBorderMinHits = Math.max(10, Math.round(rh * 0.55));
+      let cropX0 = 0;
+      const leftScanLimit = Math.floor(rw * 0.25);
+      for (let x = 0; x <= leftScanLimit; x++) {
+        if (colDark[x] >= vBorderMinHits) {
+          cropX0 = Math.min(Math.floor(rw * 0.45), x + 4);
+        }
+      }
+      let cropX1 = rw - 1;
+      const rightScanStart = Math.max(cropX0 + 16, Math.floor(rw * 0.85));
+      for (let x = rw - 1; x >= rightScanStart; x--) {
+        if (colDark[x] >= vBorderMinHits) {
+          cropX1 = Math.max(cropX0 + 16, x - 4);
+        }
+      }
+
+      // 2. 偵測上下緣水平黑框線（上 32%、下 36%）並向內縮 4px 剝除
+      const spanW = Math.max(12, cropX1 - cropX0 + 1);
+      const rowDark = new Int32Array(rh);
+      for (let y = 0; y < rh; y++) {
+        const rowOff = y * rw;
+        let cnt = 0;
+        for (let x = cropX0; x <= cropX1; x++) {
+          if (lum[rowOff + x] < borderThresh) cnt++;
+        }
+        rowDark[y] = cnt;
+      }
+      const hBorderMinHits = Math.max(12, Math.round(spanW * 0.48));
+      let cropY0 = 0;
+      const topScanLimit = Math.floor(rh * 0.32);
+      for (let y = 0; y <= topScanLimit; y++) {
+        if (rowDark[y] >= hBorderMinHits) {
+          cropY0 = Math.min(Math.floor(rh * 0.48), y + 4);
+        }
+      }
+      let cropY1 = rh - 1;
+      const bottomScanStart = Math.max(cropY0 + 14, Math.floor(rh * 0.64));
+      for (let y = bottomScanStart; y < rh; y++) {
+        if (rowDark[y] >= hBorderMinHits) {
+          cropY1 = Math.max(cropY0 + 14, y - 4);
+          break;
+        }
+      }
+
+      if (cropY1 - cropY0 < Math.max(12, Math.round(rh * 0.25))) {
+        cropY0 = Math.min(4, Math.floor(rh * 0.08));
+        cropY1 = Math.max(cropY0 + 14, rh - 1 - Math.min(4, Math.floor(rh * 0.08)));
+      }
+      if (cropX1 - cropX0 < Math.max(24, Math.round(rw * 0.30))) {
+        cropX0 = 0;
+        cropX1 = rw - 1;
+      }
+
+      const borderStrippedRegion = {
+        x: (rx + cropX0) / sw,
+        y: (ry + cropY0) / sh,
+        w: (cropX1 - cropX0 + 1) / sw,
+        h: (cropY1 - cropY0 + 1) / sh
+      };
+
+      // 3. 在去框後乾淨區域投影垂直墨水帶，自動貼緊格內偏下半部實際文字帶（並留足上下呼吸）
+      const bandInk = new Int32Array(rh);
+      for (let y = cropY0; y <= cropY1; y++) {
+        if (rowDark[y] >= hBorderMinHits) continue;
+        const rowOff = y * rw;
+        let cnt = 0;
+        for (let x = cropX0; x <= cropX1; x++) {
+          if (lum[rowOff + x] < inkThresh) cnt++;
+        }
+        bandInk[y] = cnt;
+      }
+
+      const maxGapRows = Math.max(3, Math.round(rh * 0.035));
+      const bands = [];
+      let curBand = null;
+      let gap = 0;
+      for (let y = cropY0; y <= cropY1; y++) {
+        if (bandInk[y] >= 2) {
+          if (!curBand) {
+            curBand = { y0: y, y1: y, inkSum: bandInk[y] };
+          } else {
+            curBand.y1 = y;
+            curBand.inkSum += bandInk[y];
+          }
+          gap = 0;
+        } else if (curBand) {
+          gap++;
+          if (gap > maxGapRows) {
+            bands.push(curBand);
+            curBand = null;
+            gap = 0;
+          }
+        }
+      }
+      if (curBand) bands.push(curBand);
+
+      const minBandH = Math.max(6, Math.round(rh * 0.11));
+      const validBands = bands.filter(b => (b.y1 - b.y0 + 1) >= minBandH && b.inkSum >= 12);
+      let tightY0 = cropY0;
+      let tightY1 = cropY1;
+      let tightX0 = cropX0;
+      let tightX1 = cropX1;
+
+      if (validBands.length > 0) {
+        validBands.sort((a, b) => b.inkSum - a.inkSum);
+        const bestBand = validBands[0];
+        const bandH = bestBand.y1 - bestBand.y0 + 1;
+        const vMargin = Math.max(4, Math.round(bandH * 0.30));
+        tightY0 = Math.max(cropY0, bestBand.y0 - vMargin);
+        tightY1 = Math.min(cropY1, bestBand.y1 + vMargin);
+
+        let minInkX = cropX1;
+        let maxInkX = cropX0;
+        for (let x = cropX0; x <= cropX1; x++) {
+          let colHits = 0;
+          for (let y = tightY0; y <= tightY1; y++) {
+            if (lum[y * rw + x] < inkThresh) colHits++;
+          }
+          if (colHits >= 1) {
+            if (x < minInkX) minInkX = x;
+            if (x > maxInkX) maxInkX = x;
+          }
+        }
+        if (maxInkX > minInkX && (maxInkX - minInkX + 14) >= Math.max(24, Math.round(spanW * 0.25))) {
+          tightX0 = Math.max(cropX0, minInkX - 6);
+          tightX1 = Math.min(cropX1, maxInkX + 8);
+        }
+      }
+
+      const tightRegion = {
+        x: (rx + tightX0) / sw,
+        y: (ry + tightY0) / sh,
+        w: (tightX1 - tightX0 + 1) / sw,
+        h: (tightY1 - tightY0 + 1) / sh
+      };
+
+      return {
+        tightRegion,
+        borderStrippedRegion,
+        meta: {
+          usedFallback: validBands.length === 0,
+          bgLum,
+          cropPx: { cropX0, cropY0, cropX1, cropY1, tightX0, tightY0, tightX1, tightY1 }
+        }
+      };
+    } catch (err) {
+      console.warn('extractHitachiSerialTightRegion 略過例外:', err);
+      return { tightRegion: { ...baseReg }, borderStrippedRegion: { ...baseReg }, meta: { usedFallback: true } };
+    }
+  }
+
+  /**
+   * 台灣日立機號專用（v65）：4.0x 灰階對比增強並於四邊強制補上純白靜區（pad = 28px），
+   * 僅計算內部文字區直方圖分位以避免純白靜區影響對比拉伸
+   */
+  function createHitachiPaddedGrayOcrCrop(srcCanvas, region, upscale = 4.0, pad = 28) {
+    const sw = srcCanvas.width;
+    const sh = srcCanvas.height;
+    const rx = Math.max(0, Math.round(region.x * sw));
+    const ry = Math.max(0, Math.round(region.y * sh));
+    const rw = Math.max(10, Math.min(sw - rx, Math.round(region.w * sw)));
+    const rh = Math.max(10, Math.min(sh - ry, Math.round(region.h * sh)));
+
+    const padPx = Math.max(0, Math.round(pad));
+    const contentW = Math.max(24, Math.round(rw * upscale));
+    const contentH = Math.max(24, Math.round(rh * upscale));
+    const outW = contentW + padPx * 2;
+    const outH = contentH + padPx * 2;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = outW;
+    cropCanvas.height = outH;
+    const cCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    cCtx.fillStyle = '#FFFFFF';
+    cCtx.fillRect(0, 0, outW, outH);
+    cCtx.imageSmoothingEnabled = true;
+    cCtx.imageSmoothingQuality = 'high';
+    cCtx.drawImage(srcCanvas, rx, ry, rw, rh, padPx, padPx, contentW, contentH);
+
+    const imgData = cCtx.getImageData(padPx, padPx, contentW, contentH);
+    const d = imgData.data;
+    const total = contentW * contentH;
+    const hist = new Int32Array(256);
+    const grays = new Uint8Array(total);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
+      grays[i] = g;
+      hist[g]++;
+    }
+
+    let pLow = 0;
+    let pHigh = 240;
+    const lowTarget = Math.floor(total * 0.015);
+    const highTarget = Math.floor(total * 0.86);
+    let acc = 0;
+    for (let t = 0; t < 256; t++) {
+      acc += hist[t];
+      if (acc >= lowTarget && pLow === 0) pLow = t;
+      if (acc >= highTarget) { pHigh = t; break; }
+    }
+
+    const span = Math.max(24, pHigh - pLow);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      let norm = (grays[i] - pLow) / span;
+      if (norm <= 0) norm = 0;
+      else if (norm >= 1) norm = 1;
+      else norm = Math.pow(norm, 1.38);
+
+      const val = Math.max(0, Math.min(255, Math.round(norm * 255)));
+      d[p] = val;
+      d[p + 1] = val;
+      d[p + 2] = val;
+      d[p + 3] = 255;
+    }
+    cCtx.putImageData(imgData, padPx, padPx);
+    return cropCanvas;
+  }
+
   function filterHitachiSerialResult(rawText) {
     if (!rawText) return '';
     try {
@@ -4652,8 +4918,8 @@
         if (rawTok.length < 5 || rawTok.length > 14) continue;
         if (rawTok === '24721268' || rawTok === '25160500' || rawTok === 'HITACHI') continue;
 
-        // 1. 最高權重：1~2 碼大寫英文 + 5~7 碼數字（如 T633868）；若開頭因垂直框線黏連多出 1/I（如 1T633868 / IT633868），優先萃取出內含的標準 [A-Z]\d{5,7}
-        const stickyBorderMatch = rawTok.match(/^[1I]([A-Z])([0-9OQDILZSBG]{5,7})$/);
+        // 1. 最高權重：1~2 碼大寫英文 + 5~7 碼數字（如 T633868）；若開頭因垂直框線黏連多出 1/I/7（如 1T633868 / IT633868 / 7T633868），優先萃取出內含的標準 [A-Z]\d{5,7}
+        const stickyBorderMatch = rawTok.match(/^[1I7]([A-Z])([0-9OQDILZSBG]{5,7})$/);
         if (stickyBorderMatch) {
           const fixedDigits = stickyBorderMatch[2].split('').map(toDigit).join('');
           if (/^\d{5,7}$/.test(fixedDigits)) {
@@ -4745,6 +5011,8 @@
     detectHitachiDealerStampSpec,
     createEnhancedOcrCropCanvas,
     createAdaptiveBinarizedOcrCropCanvas,
+    extractHitachiSerialTightRegion,
+    createHitachiPaddedGrayOcrCrop,
     decodeCode128FromCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,

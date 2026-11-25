@@ -81,6 +81,21 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 01:05] (第 65 版 / v65)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 機號去誤殺＋自動剝黑線貼字帶單點修復（v65）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
+- **具體進度**：
+  1. **備份與版本徽章（`v65`）**：
+     - 建立 `_backup/20261126_010238/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v65 (2026.11.26)` 與 `?v=65`。
+  2. **寬容取框 ＋ 行列投影自動剝黑線貼字帶 ＋ 統一 `28px` 純白靜區（`static/card_templates.js`、`static/app.js`）**：
+     - 放寬 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial` 與候選區至 `x: 16.5% ~ 35.5%`, `y: 55.2% ~ 64.6%`（`serialLabelBox` 僅作保守 Y 界參考，不再將 `rx` 右推至 `0.215` 截斷首碼 `T`）。
+     - 新增 `extractHitachiSerialTightRegion()` 自動偵測並向內縮 `4px` 剝除四邊表格黑框線，再貼緊格內偏下半部實際文字墨水帶；並新增 `createHitachiPaddedGrayOcrCrop()` 與 `createAdaptiveBinarizedOcrCropCanvas()` 之可選 `pad: 28` 靜區參數，確保所有機號圖皆帶 `28px` 純白靜區。
+  3. **關閉機號 `stripDottedUnderline` / `despeckle` 誤殺並補齊雙語 4.0x 備援（`static/app.js`）**：
+     - 於 `runHitachiCardTargetedOcr()` 機號輪次強制設定 `stripDottedUnderline: false`、`stripBottomDotBand: false`、`despeckle: false`，徹底防止下半部較矮首碼 `T` 被誤當虛點底線或孤點抹白。
+     - 對去框線＋補 `28px` 白邊的 `4.0x` 機號圖（含 `tight` 與 `cell` 備援）同步執行 `engWorker`（`psm = '7'` / `'8'`，二值化 `19`/`9` 與灰階對比）及 `chiEngWorker`（`psm = '6'` / `'7'`），並於 `console.debug` 紀錄各輪 `rawS` 供核對。
+  4. **擴充首碼誤讀與訂購單還原容錯（`static/card_templates.js`、`static/app.js`）**：
+     - `filterHitachiSerialResult()` 的 `stickyBorderMatch` 擴充為 `[1I7]`，訂購單 PDF 比對 `tailDigits` 擴充剝除開頭 `'1'` 或 `'7'`（`1633868` / `7633868` → `T633868`）。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與 `CRLF` 換行檢核，並推送至 `origin/main`。
+
 ### [2026-11-26 00:57] (第 64 版 / v64)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 鎖定印章定案規格 ＋ 純白底無框線機號／型號雙軌 OCR 修復（v64）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
 - **具體進度**：
