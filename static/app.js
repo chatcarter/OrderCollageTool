@@ -4024,12 +4024,13 @@ function importImagePureFrontend(file) {
         const isManualPanasonicInit = modeValInit && modeValInit.startsWith('panasonic_');
         const isManualLgInit = modeValInit === 'lg_tw';
         const isManualMitsubishiInit = modeValInit === 'mitsubishi_tw';
+        const isManualHitachiInit = modeValInit === 'hitachi_tw';
 
         const autoSmartEnabled = !switchAutoSmartCard || switchAutoSmartCard.checked;
         const autoLayoutEnabled = !switchAutoLayout || switchAutoLayout.checked;
 
         // v29: 第一時間執行 1280px 高對比灰階預掃描 ＋ 三角色（order_sheet / receipt / warranty_card）文字指紋 100% 鎖定
-        const detectRes = (!isManualLgInit && !isManualMitsubishiInit && window.CardTemplates && window.CardTemplates.detectPanasonicCardQuad)
+        const detectRes = (!isManualLgInit && !isManualMitsubishiInit && !isManualHitachiInit && window.CardTemplates && window.CardTemplates.detectPanasonicCardQuad)
           ? window.CardTemplates.detectPanasonicCardQuad(img)
           : { detected: false, paperBox: null };
 
@@ -4044,7 +4045,9 @@ function importImagePureFrontend(file) {
               ? { role: 'warranty_card', forcedTemplateId: 'lg_tw', reason: '手動指定 LG 台灣樂金保證書' }
               : (isManualMitsubishiInit
                   ? { role: 'warranty_card', forcedTemplateId: 'mitsubishi_tw', reason: '手動指定台灣三菱電機商品保證書' }
-                  : window.CardTemplates.classifyDocumentByTextAndColor(preScan.text, detectRes, sw, sh, isManualPanasonicInit)))
+                  : (isManualHitachiInit
+                      ? { role: 'warranty_card', forcedTemplateId: 'hitachi_tw', reason: '手動指定台灣日立家電製品保證書' }
+                      : window.CardTemplates.classifyDocumentByTextAndColor(preScan.text, detectRes, sw, sh, isManualPanasonicInit))))
           : { role: (!isHorizontal && aspectHW > 1.30) ? 'receipt' : 'warranty_card', reason: '比例備援判定' };
 
         const docRole = docClassify.role; // 'order_sheet' | 'receipt' | 'warranty_card'
@@ -4102,16 +4105,18 @@ function importImagePureFrontend(file) {
           }
           showToast(`📄 已鎖定訂購單圖片（${docClassify.reason}），將置頂 100% 滿版排版`);
         }
-        // 分支 B：保卡專屬管線（嚴格依品牌獨立路由：LG lg_tw / 三菱 mitsubishi_tw / 國際牌 Panasonic / 未建檔品牌）
+        // 分支 B：保卡專屬管線（嚴格依品牌獨立路由：LG lg_tw / 三菱 mitsubishi_tw / 日立 hitachi_tw / 國際牌 Panasonic / 未建檔品牌）
         let isUnmatchedBrandCard = false;
         let preCalibratedStampSpec = null;
         let preLgDealerOcrAnchor = null;
         let preLgOcrData = null;
         let preMitsuDealerOcrAnchors = null;
         let preMitsuOcrData = null;
+        let preHitachiDealerOcrAnchors = null;
+        let preHitachiOcrData = null;
         if (isWarrantyCandidate && autoSmartEnabled && window.CardTemplates) {
           const preTextUpper = (preScan.text || '').toUpperCase();
-          const lgMatch = (!isManualPanasonicInit && !isManualMitsubishiInit && window.CardTemplates.detectLgWarrantyByText)
+          const lgMatch = (!isManualPanasonicInit && !isManualMitsubishiInit && !isManualHitachiInit && window.CardTemplates.detectLgWarrantyByText)
             ? window.CardTemplates.detectLgWarrantyByText(preScan.text)
             : { isLg: false };
           const isPanasonicBrandText =
@@ -4121,16 +4126,23 @@ function importImagePureFrontend(file) {
             preTextUpper.includes('台灣松下');
           const looksLikeLg = !!(
             isManualLgInit ||
-            (!isManualPanasonicInit && !isManualMitsubishiInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'lg_tw' || lgMatch.isLg))
+            (!isManualPanasonicInit && !isManualMitsubishiInit && !isManualHitachiInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'lg_tw' || lgMatch.isLg))
           );
-          const mitsuMatch = (!looksLikeLg && !isManualPanasonicInit && window.CardTemplates.detectMitsubishiWarrantyByText)
+          const mitsuMatch = (!looksLikeLg && !isManualPanasonicInit && !isManualHitachiInit && window.CardTemplates.detectMitsubishiWarrantyByText)
             ? window.CardTemplates.detectMitsubishiWarrantyByText(preScan.text)
             : { isMitsubishi: false };
           const looksLikeMitsubishi = !looksLikeLg && !!(
             isManualMitsubishiInit ||
-            (!isManualPanasonicInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'mitsubishi_tw' || mitsuMatch.isMitsubishi))
+            (!isManualPanasonicInit && !isManualHitachiInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'mitsubishi_tw' || mitsuMatch.isMitsubishi))
           );
-          const looksLikePanasonic = !looksLikeLg && !looksLikeMitsubishi && !!(
+          const hitachiMatch = (!looksLikeLg && !looksLikeMitsubishi && !isManualPanasonicInit && window.CardTemplates.detectHitachiWarrantyByText)
+            ? window.CardTemplates.detectHitachiWarrantyByText(preScan.text)
+            : { isHitachi: false };
+          const looksLikeHitachi = !looksLikeLg && !looksLikeMitsubishi && !!(
+            isManualHitachiInit ||
+            (!isManualPanasonicInit && !isPanasonicBrandText && (docClassify.forcedTemplateId === 'hitachi_tw' || hitachiMatch.isHitachi))
+          );
+          const looksLikePanasonic = !looksLikeLg && !looksLikeMitsubishi && !looksLikeHitachi && !!(
             detectRes.detected ||
             isManualPanasonicInit ||
             isPanasonicBrandText ||
@@ -4277,6 +4289,76 @@ function importImagePureFrontend(file) {
               );
             }
             cardTemplateId = 'mitsubishi_tw';
+          } else if (looksLikeHitachi) {
+            const tplHitachi = resolveCardTemplate('hitachi_tw');
+            const offscreenW = Math.max(1800, Math.min(3200, sw || 1800));
+            const hitachiQuad = window.CardTemplates.detectHitachiCardQuad
+              ? window.CardTemplates.detectHitachiCardQuad(img)
+              : { detected: false };
+            const hitachiAspect = (hitachiQuad && hitachiQuad.estimatedAspect)
+              ? hitachiQuad.estimatedAspect
+              : (tplHitachi ? tplHitachi.aspectRatio : 1.52);
+
+            if (hitachiQuad.detected && hitachiQuad.corners) {
+              cardQuadCorners = hitachiQuad.corners;
+              const warpedHitachi = window.CardTemplates.rectifyPerspectivePureJS(
+                img,
+                hitachiQuad.corners,
+                hitachiAspect,
+                offscreenW
+              );
+              if (warpedHitachi) {
+                rectifiedCleanCanvas = warpedHitachi;
+                isRectifiedCard = true;
+              }
+            }
+
+            if (!rectifiedCleanCanvas && detectRes.paperBox) {
+              const pb = detectRes.paperBox;
+              const pbAspect = pb.w / Math.max(1, pb.h);
+              const trimCanvas = document.createElement('canvas');
+              trimCanvas.width = offscreenW;
+              trimCanvas.height = Math.round(offscreenW / Math.max(1.20, Math.min(1.85, pbAspect)));
+              const trCtx = trimCanvas.getContext('2d');
+              trCtx.imageSmoothingEnabled = true;
+              trCtx.imageSmoothingQuality = 'high';
+              trCtx.drawImage(img, pb.x, pb.y, pb.w, pb.h, 0, 0, trimCanvas.width, trimCanvas.height);
+              rectifiedCleanCanvas = trimCanvas;
+              isRectifiedCard = true;
+            }
+
+            if (!rectifiedCleanCanvas) {
+              const fbCanvas = document.createElement('canvas');
+              fbCanvas.width = offscreenW;
+              fbCanvas.height = Math.round(offscreenW / (sw / Math.max(1, sh)));
+              const fbCtx = fbCanvas.getContext('2d');
+              fbCtx.imageSmoothingEnabled = true;
+              fbCtx.imageSmoothingQuality = 'high';
+              fbCtx.drawImage(img, 0, 0, fbCanvas.width, fbCanvas.height);
+              rectifiedCleanCanvas = fbCanvas;
+              isRectifiedCard = true;
+            }
+
+            activeImg = rectifiedCleanCanvas;
+
+            const hitachiOcrProxy = {
+              type: 'image',
+              warpedImage: rectifiedCleanCanvas,
+              rectifiedCleanCanvas: rectifiedCleanCanvas,
+              rawSourceImg: img,
+              templateId: 'hitachi_tw',
+              cardTemplateId: 'hitachi_tw'
+            };
+            await runHitachiCardTargetedOcr(hitachiOcrProxy, preScan.text);
+            preHitachiDealerOcrAnchors = hitachiOcrProxy._hitachiDealerOcrAnchors || null;
+            preHitachiOcrData = hitachiOcrProxy.ocrData || null;
+            if (window.CardTemplates.detectHitachiDealerStampSpec) {
+              preCalibratedStampSpec = window.CardTemplates.detectHitachiDealerStampSpec(
+                rectifiedCleanCanvas,
+                preHitachiDealerOcrAnchors
+              );
+            }
+            cardTemplateId = 'hitachi_tw';
           } else {
             const tpl = resolveCardTemplate(isManualPanasonicInit ? modeValInit : 'auto');
             const aspectRatio = tpl ? tpl.aspectRatio : 1.48;
@@ -4403,8 +4485,14 @@ function importImagePureFrontend(file) {
           newLayer._mitsubishiVerifiedModel = preMitsuOcrData.model || '';
           newLayer._mitsubishiVerifiedSerial = preMitsuOcrData.serial || '';
         }
+        if (preHitachiOcrData) {
+          newLayer.ocrData = preHitachiOcrData;
+          newLayer._hitachiVerifiedModel = preHitachiOcrData.model || '';
+          newLayer._hitachiVerifiedSerial = preHitachiOcrData.serial || '';
+        }
         if (preLgDealerOcrAnchor) newLayer._lgDealerOcrAnchor = preLgDealerOcrAnchor;
         if (preMitsuDealerOcrAnchors) newLayer._mitsubishiDealerOcrAnchors = preMitsuDealerOcrAnchors;
+        if (preHitachiDealerOcrAnchors) newLayer._hitachiDealerOcrAnchors = preHitachiDealerOcrAnchors;
         if (preCalibratedStampSpec) newLayer._calibratedStampSpec = preCalibratedStampSpec;
 
         pushUndoState('匯入圖片');
@@ -5374,6 +5462,10 @@ btnRunOcr.addEventListener('click', async () => {
       if (activeWarrantyCard.ocrData.serial) parsed.serialNo = activeWarrantyCard.ocrData.serial;
     } else if (activeWarrantyCard && (activeWarrantyCard.cardTemplateId === 'mitsubishi_tw' || activeWarrantyCard.templateId === 'mitsubishi_tw') && activeWarrantyCard.ocrData) {
       parsed.brand = '三菱';
+      if (activeWarrantyCard.ocrData.model) parsed.model = activeWarrantyCard.ocrData.model;
+      if (activeWarrantyCard.ocrData.serial) parsed.serialNo = activeWarrantyCard.ocrData.serial;
+    } else if (activeWarrantyCard && (activeWarrantyCard.cardTemplateId === 'hitachi_tw' || activeWarrantyCard.templateId === 'hitachi_tw') && activeWarrantyCard.ocrData) {
+      parsed.brand = '日立';
       if (activeWarrantyCard.ocrData.model) parsed.model = activeWarrantyCard.ocrData.model;
       if (activeWarrantyCard.ocrData.serial) parsed.serialNo = activeWarrantyCard.ocrData.serial;
     }
@@ -8250,12 +8342,387 @@ async function runMitsubishiCardTargetedOcr(layer, preScanText = '') {
   });
 }
 
+async function runHitachiCardTargetedOcr(layer, preScanText = '') {
+  return enqueueOcrTask(async () => {
+    if (!layer || layer.type !== 'image' || !window.CardTemplates) return;
+    const srcCanvas = layer.rectifiedCleanCanvas || layer.warpedImage || layer.croppedImage || layer.rawImage || layer.image;
+    if (!srcCanvas) return;
+
+    const tpl = resolveCardTemplate('hitachi_tw');
+    if (!tpl) return;
+
+    layer.cardTemplateId = 'hitachi_tw';
+    layer.templateId = 'hitachi_tw';
+    if (cardTemplateBadge) cardTemplateBadge.textContent = tpl.shortLabel;
+    setCanvasOcrPill('🔍 正在辨識台灣日立家電製品保證書之型號／機號與經銷商確認章錨點...', 'loading');
+
+    if (!window.Tesseract) {
+      const msg = getOcrErrorDisplayMessage(new Error('Tesseract 未載入'));
+      setCardSmartStatus(msg, false);
+      setCanvasOcrPill(msg, 'warning');
+      return;
+    }
+
+    setCardSmartStatus(`⏳ 已鎖定「${tpl.shortLabel}」，正在辨識型號與機號...`, true);
+
+    if (typeof cachedReceiptOcrInfo !== 'undefined') {
+      cachedReceiptOcrInfo.brand = '日立';
+      cachedReceiptOcrInfo.model = '';
+      cachedReceiptOcrInfo.serialNo = '';
+    }
+
+    let worker = null;
+    try {
+      worker = await getWarrantyLineOcrWorker();
+    } catch (wErr) {
+      console.warn('Tesseract Eng Worker 初始化受限:', wErr);
+    }
+
+    const mapOcrItemsNorm = (ocrData, region, cropCanvas, padPx = 0) => {
+      if (!ocrData || !cropCanvas) return [];
+      const contentW = Math.max(1, cropCanvas.width - padPx * 2);
+      const contentH = Math.max(1, cropCanvas.height - padPx * 2);
+      const rawItems = [];
+      if (Array.isArray(ocrData.words) && ocrData.words.length > 0) {
+        rawItems.push(...ocrData.words);
+      } else if (Array.isArray(ocrData.lines)) {
+        rawItems.push(...ocrData.lines);
+      }
+      if (rawItems.length === 0 && Array.isArray(ocrData.blocks)) {
+        ocrData.blocks.forEach(blk => {
+          (blk.paragraphs || []).forEach(para => {
+            (para.lines || []).forEach(ln => {
+              if (Array.isArray(ln.words) && ln.words.length > 0) rawItems.push(...ln.words);
+              else rawItems.push(ln);
+            });
+          });
+        });
+      }
+      return rawItems
+        .filter(it => it && it.bbox && (it.text || '').trim())
+        .map(it => ({
+          text: String(it.text || '').trim(),
+          x0: region.x + ((it.bbox.x0 - padPx) / contentW) * region.w,
+          y0: region.y + ((it.bbox.y0 - padPx) / contentH) * region.h,
+          x1: region.x + ((it.bbox.x1 - padPx) / contentW) * region.w,
+          y1: region.y + ((it.bbox.y1 - padPx) / contentH) * region.h
+        }));
+    };
+
+    try {
+      let modelClean = '';
+      let serialClean = '';
+      let fallbackRowModel = '';
+      let fallbackRowSerial = '';
+      let crossVerifiedNote = '';
+      let productLabelBox = null;
+      let serialLabelBox = null;
+      let purchaseRowBottomY = null;
+
+      let chiEngWorker = null;
+      try {
+        chiEngWorker = await getSharedChiEngWorker();
+      } catch (wErr2) {
+        console.warn('共用中英 Worker 初始化受限:', wErr2);
+      }
+
+      // 1. 掃描左側「商品／型號／機號／購買日期」表單區取得文字錨點與備援文字
+      const formRegion = (tpl.ocrRegions && tpl.ocrRegions.formBlock)
+        ? tpl.ocrRegions.formBlock
+        : { x: 0.030, y: 0.430, w: 0.720, h: 0.240 };
+
+      if (window.CardTemplates.createEnhancedOcrCropCanvas) {
+        try {
+          const formCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, formRegion, 2.2);
+          let formRes = null;
+          if (chiEngWorker) {
+            await chiEngWorker.setParameters({ tessedit_pageseg_mode: '6' });
+            try {
+              formRes = await chiEngWorker.recognize(formCrop);
+            } finally {
+              await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
+            }
+          } else {
+            formRes = await window.Tesseract.recognize(formCrop, 'eng+chi_tra');
+          }
+
+          const formText = (formRes && formRes.data && formRes.data.text) || '';
+          if (formText && window.CardTemplates.parseHitachiFormBlock) {
+            const parsedRow = window.CardTemplates.parseHitachiFormBlock(formText);
+            fallbackRowModel = parsedRow.model || '';
+            fallbackRowSerial = parsedRow.serialNo || '';
+          }
+
+          const formItems = mapOcrItemsNorm(formRes && formRes.data, formRegion, formCrop, 0);
+          for (let i = 0; i < formItems.length; i++) {
+            const item = formItems[i];
+            const compact = item.text.replace(/\s+/g, '');
+            if (!productLabelBox && item.x0 <= 0.20 && (/商品|型號/.test(compact) || compact === '品')) {
+              productLabelBox = item;
+            }
+            if (!serialLabelBox && item.x0 <= 0.20 && (/機號|號碼/.test(compact) || compact === '號')) {
+              serialLabelBox = item;
+            }
+            if (!purchaseRowBottomY && item.x0 <= 0.55 && /購買日期|購買/.test(compact)) {
+              purchaseRowBottomY = item.y1 + 0.015;
+            }
+          }
+        } catch (blkErr) {
+          console.warn('日立表單區雙語 OCR 失敗:', blkErr);
+        }
+      }
+
+      // 2. 局部高解析單行專項辨識（3.5x 自適應二值化，跳過中文品名直讀右側型號與機號）
+      const cropFn = window.CardTemplates.createAdaptiveBinarizedOcrCropCanvas || window.CardTemplates.createEnhancedOcrCropCanvas;
+      if (cropFn) {
+        try {
+          const defaultModelReg = (tpl.ocrRegions && tpl.ocrRegions.model)
+            ? tpl.ocrRegions.model
+            : { x: 0.345, y: 0.465, w: 0.230, h: 0.090 };
+          const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial)
+            ? tpl.ocrRegions.serial
+            : { x: 0.175, y: 0.555, w: 0.170, h: 0.090 };
+
+          const anchorModelRoi = (productLabelBox && productLabelBox.y0 >= 0.40 && productLabelBox.y1 <= 0.58)
+            ? {
+                x: 0.335,
+                y: Math.max(0.440, productLabelBox.y0 - 0.014),
+                w: 0.250,
+                h: Math.max(0.068, Math.min(0.105, (productLabelBox.y1 - productLabelBox.y0) + 0.032))
+              }
+            : null;
+
+          const anchorSerialRoi = (serialLabelBox && serialLabelBox.y0 >= 0.50 && serialLabelBox.y1 <= 0.68)
+            ? {
+                x: Math.max(0.155, Math.min(0.210, serialLabelBox.x1 + 0.010)),
+                y: Math.max(0.525, serialLabelBox.y0 - 0.014),
+                w: 0.185,
+                h: Math.max(0.068, Math.min(0.105, (serialLabelBox.y1 - serialLabelBox.y0) + 0.032))
+              }
+            : null;
+
+          const modelRois = anchorModelRoi ? [defaultModelReg, anchorModelRoi] : [defaultModelReg];
+          let bestModelScore = 0;
+          for (let i = 0; i < modelRois.length; i++) {
+            try {
+              const mCrop = cropFn(srcCanvas, modelRois[i], 3.5, {
+                despeckle: true,
+                stripDottedUnderline: true,
+                stripBottomDotBand: false
+              });
+              let rawM = '';
+              if (worker) {
+                await worker.setParameters({
+                  tessedit_pageseg_mode: '7',
+                  tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+                });
+                const mRes = await worker.recognize(mCrop);
+                rawM = (mRes && mRes.data && mRes.data.text) || '';
+              } else {
+                const mRes = await window.Tesseract.recognize(mCrop, 'eng');
+                rawM = (mRes && mRes.data && mRes.data.text) || '';
+              }
+              if (rawM && window.CardTemplates.filterHitachiModelResult) {
+                const parsedM = window.CardTemplates.filterHitachiModelResult(rawM);
+                if (parsedM) {
+                  const sc = /^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-[A-Z0-9]+/.test(parsedM) ? 100 : parsedM.length;
+                  if (sc > bestModelScore) {
+                    bestModelScore = sc;
+                    modelClean = parsedM;
+                  }
+                  if (sc >= 100) break;
+                }
+              }
+            } catch (mErr) {
+              console.warn('日立型號局部 OCR 單次重試略過:', mErr);
+            }
+          }
+
+          const serialRois = anchorSerialRoi ? [defaultSerialReg, anchorSerialRoi] : [defaultSerialReg];
+          for (let i = 0; i < serialRois.length; i++) {
+            try {
+              const sCrop = cropFn(srcCanvas, serialRois[i], 3.5, {
+                despeckle: true,
+                stripDottedUnderline: true,
+                stripBottomDotBand: false
+              });
+              let rawS = '';
+              if (worker) {
+                await worker.setParameters({
+                  tessedit_pageseg_mode: '7',
+                  tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                });
+                const sRes = await worker.recognize(sCrop);
+                rawS = (sRes && sRes.data && sRes.data.text) || '';
+              } else {
+                const sRes = await window.Tesseract.recognize(sCrop, 'eng');
+                rawS = (sRes && sRes.data && sRes.data.text) || '';
+              }
+              if (rawS && window.CardTemplates.filterHitachiSerialResult) {
+                const parsedS = window.CardTemplates.filterHitachiSerialResult(rawS);
+                if (parsedS) {
+                  serialClean = parsedS;
+                  break;
+                }
+              }
+            } catch (sErr) {
+              console.warn('日立機號局部 OCR 單次重試略過:', sErr);
+            }
+          }
+
+          if (worker) {
+            await worker.setParameters({
+              tessedit_pageseg_mode: '7',
+              tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+            }).catch(() => {});
+          }
+        } catch (localOcrErr) {
+          console.warn('日立局部字元 OCR 流程略過，保留表單列備援文字:', localOcrErr);
+        }
+      }
+
+      if (!modelClean && fallbackRowModel) modelClean = fallbackRowModel;
+      if (!serialClean && fallbackRowSerial) serialClean = fallbackRowSerial;
+
+      if ((!modelClean || !serialClean) && preScanText && window.CardTemplates.parseHitachiFormBlock) {
+        const fallbackParsed = window.CardTemplates.parseHitachiFormBlock(preScanText);
+        if (!modelClean && fallbackParsed.model) modelClean = fallbackParsed.model;
+        if (!serialClean && fallbackParsed.serialNo) serialClean = fallbackParsed.serialNo;
+      }
+
+      // 3. 偵測右上「HITACHI」與「經銷商確認章」文字錨點以精準對位右側蓋章框
+      if (tpl.ocrRegions && tpl.ocrRegions.dealerStampZone && window.CardTemplates.createEnhancedOcrCropCanvas && chiEngWorker) {
+        try {
+          const zRegion = tpl.ocrRegions.dealerStampZone;
+          const zCrop = window.CardTemplates.createEnhancedOcrCropCanvas(srcCanvas, zRegion, 2.0);
+          await chiEngWorker.setParameters({ tessedit_pageseg_mode: '6' });
+          let zRes = null;
+          try {
+            zRes = await chiEngWorker.recognize(zCrop);
+          } finally {
+            await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
+          }
+          if (zRes && zRes.data) {
+            const zLines = Array.isArray(zRes.data.lines) ? zRes.data.lines : [];
+            const zWords = Array.isArray(zRes.data.words) ? zRes.data.words : [];
+            const zItems = [
+              ...mapOcrItemsNorm({ lines: zLines }, zRegion, zCrop, 0),
+              ...mapOcrItemsNorm({ words: zWords }, zRegion, zCrop, 0)
+            ];
+
+            const hitachiLogoAnchor = zItems.find(it => {
+              const t = it.text.replace(/\s+/g, '').toUpperCase();
+              return /HITACHI/.test(t) && it.y1 <= 0.34;
+            });
+            const confirmStampAnchor = zItems.find(it => {
+              const t = it.text.replace(/\s+/g, '');
+              return /經銷商確認章|經銷商確認|確認章/.test(t) && it.x0 >= 0.69 && it.x1 <= 0.80 && it.y0 >= 0.28;
+            });
+
+            layer._hitachiDealerOcrAnchors = {
+              hitachiBottomY: hitachiLogoAnchor ? hitachiLogoAnchor.y1 : null,
+              confirmTextRightX: confirmStampAnchor ? confirmStampAnchor.x1 : null,
+              purchaseRowBottomY: purchaseRowBottomY
+            };
+          }
+        } catch (anchorErr) {
+          console.warn('日立右上經銷商確認章錨點偵測略過:', anchorErr);
+        }
+      }
+
+      // 4. 訂購單品名型號交叉比對校正（優先採用訂購單標準日立型號）
+      try {
+        if (Array.isArray(cachedOrderItemModels) && cachedOrderItemModels.length > 0) {
+          if (modelClean && window.CardTemplates.crossVerifyModelWithOrderSheet) {
+            const cv = window.CardTemplates.crossVerifyModelWithOrderSheet(modelClean, cachedOrderItemModels, 'HITACHI');
+            if (cv && cv.corrected && cv.model) {
+              crossVerifiedNote = `（已依訂購單交叉校正：${modelClean} ➔ ${cv.model}）`;
+              modelClean = cv.model;
+            } else if (cv && cv.similarity >= 0.65 && cv.model === modelClean) {
+              crossVerifiedNote = '（已與訂購單 100% 核對無誤）';
+            }
+          }
+          if (!crossVerifiedNote) {
+            const hitachiPool = cachedOrderItemModels.filter(item =>
+              item && item.model && (
+                (item.brand && item.brand.toUpperCase().includes('HITACHI')) ||
+                /^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-/i.test(item.model.trim())
+              )
+            );
+            if (hitachiPool.length > 0) {
+              const normClean = (modelClean || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+              const digitsMatch = normClean.match(/\d{2,4}/);
+              let picked = null;
+              if (normClean) {
+                picked = hitachiPool.find(item => {
+                  const stdNorm = item.model.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                  return stdNorm.includes(normClean) || normClean.includes(stdNorm) ||
+                    (digitsMatch && stdNorm.includes(digitsMatch[0]) && hitachiPool.length === 1);
+                });
+              } else if (hitachiPool.length === 1) {
+                picked = hitachiPool[0];
+              }
+              if (picked && picked.model) {
+                const stdM = picked.model.toUpperCase().trim();
+                crossVerifiedNote = modelClean
+                  ? `（已依訂購單比對校正：${modelClean} ➔ ${stdM}）`
+                  : `（已優先採用訂購單日立型號：${stdM}）`;
+                modelClean = stdM;
+              }
+            }
+          }
+        }
+      } catch (cvErr) {
+        console.warn('日立訂購單交叉比對略過:', cvErr);
+      }
+
+      // 5. 強制無條件寫回專項結果（禁止舊全域 OCR 覆蓋），並即時帶入左下 5 行大字（日立）
+      if (inputCardModel) inputCardModel.value = modelClean || '';
+      if (inputCardSerial) inputCardSerial.value = serialClean || '';
+      layer._hitachiVerifiedModel = modelClean || '';
+      layer._hitachiVerifiedSerial = serialClean || '';
+      layer.ocrData = {
+        brand: '日立',
+        model: modelClean || '',
+        serial: serialClean || '',
+        updatedAt: Date.now()
+      };
+
+      mergeOcrSummaryFields('warranty_card', {
+        brand: '日立',
+        model: modelClean,
+        serialNo: serialClean
+      }, { forceOverwrite: true });
+
+      if (typeof syncSummaryTextLayer === 'function') {
+        syncSummaryTextLayer(true);
+      }
+
+      setCardSmartStatus(
+        `✅ 辨識完成（${tpl.shortLabel}）${crossVerifiedNote}\n型號：${modelClean || '未讀出'} ｜ 機號：${serialClean || '未讀出'}`,
+        false
+      );
+      setCanvasOcrPill(`✅ 日立保卡辨識完成：${modelClean || '-'} / ${serialClean || '-'}`, 'success');
+      showToast(`日立保卡辨識完成：${modelClean || '-'} / ${serialClean || '-'}`);
+    } catch (err) {
+      console.error('日立保卡 OCR 失敗:', err);
+      const errMsg = getOcrErrorDisplayMessage(err);
+      setCardSmartStatus(errMsg, false);
+      setCanvasOcrPill(errMsg, 'warning');
+      showToast(errMsg);
+    }
+  });
+}
+
 async function runCardTargetedOcr(layer) {
   if (layer && (layer.cardTemplateId === 'lg_tw' || (selectCardTemplateMode && selectCardTemplateMode.value === 'lg_tw'))) {
     return runLgCardTargetedOcr(layer);
   }
   if (layer && (layer.cardTemplateId === 'mitsubishi_tw' || (selectCardTemplateMode && selectCardTemplateMode.value === 'mitsubishi_tw'))) {
     return runMitsubishiCardTargetedOcr(layer);
+  }
+  if (layer && (layer.cardTemplateId === 'hitachi_tw' || (selectCardTemplateMode && selectCardTemplateMode.value === 'hitachi_tw'))) {
+    return runHitachiCardTargetedOcr(layer);
   }
   return enqueueOcrTask(async () => {
     if (!layer || layer.type !== 'image' || !window.CardTemplates) return;
@@ -8463,11 +8930,14 @@ function toggleCardRectifyMode(forceState = null) {
       const modeVal = selectCardTemplateMode ? selectCardTemplateMode.value : 'auto';
       const isLgMode = layer.cardTemplateId === 'lg_tw' || modeVal === 'lg_tw';
       const isMitsuMode = layer.cardTemplateId === 'mitsubishi_tw' || modeVal === 'mitsubishi_tw';
+      const isHitachiMode = layer.cardTemplateId === 'hitachi_tw' || modeVal === 'hitachi_tw';
       const detectRes = isLgMode && window.CardTemplates.detectLgCardQuad
         ? window.CardTemplates.detectLgCardQuad(baseImg)
         : (isMitsuMode && window.CardTemplates.detectMitsubishiCardQuad
             ? window.CardTemplates.detectMitsubishiCardQuad(baseImg)
-            : window.CardTemplates.detectPanasonicCardQuad(baseImg));
+            : (isHitachiMode && window.CardTemplates.detectHitachiCardQuad
+                ? window.CardTemplates.detectHitachiCardQuad(baseImg)
+                : window.CardTemplates.detectPanasonicCardQuad(baseImg)));
       layer.cardQuadCorners = detectRes.corners;
       if (detectRes.detected) {
         setCardSmartStatus(
@@ -8475,7 +8945,9 @@ function toggleCardRectifyMode(forceState = null) {
             ? '✅ 已自動偵測 LG 白底保證書四角並保留 0.5cm 呼吸邊界，可直接微調或點擊「✨ 拉正 + 辨識」。'
             : (isMitsuMode
                 ? '✅ 已自動偵測台灣三菱電機保證書四角（雙紅標對角校準），可直接微調或點擊「✨ 拉正 + 辨識」。'
-                : '✅ 已自動偵測國際牌紅褐色外框四角，可直接微調或點擊「✨ 拉正 + 辨識」。'),
+                : (isHitachiMode
+                    ? '✅ 已自動偵測台灣日立家電製品保證書四角（雙黑線外框保留白邊），可直接微調或點擊「✨ 拉正 + 辨識」。'
+                    : '✅ 已自動偵測國際牌紅褐色外框四角，可直接微調或點擊「✨ 拉正 + 辨識」。')),
           false
         );
       } else {
@@ -8506,16 +8978,19 @@ async function applyCardRectifyAndOcr(targetLayer = null, autoStampAfter = false
       ? window.CardTemplates.detectLgCardQuad(baseImg)
       : ((effectiveMode === 'mitsubishi_tw' && window.CardTemplates.detectMitsubishiCardQuad)
           ? window.CardTemplates.detectMitsubishiCardQuad(baseImg)
-          : window.CardTemplates.detectPanasonicCardQuad(baseImg));
+          : ((effectiveMode === 'hitachi_tw' && window.CardTemplates.detectHitachiCardQuad)
+              ? window.CardTemplates.detectHitachiCardQuad(baseImg)
+              : window.CardTemplates.detectPanasonicCardQuad(baseImg)));
     layer.cardQuadCorners = detectRes.corners;
   }
 
   layer._calibratedStampSpec = null;
   layer._lgDealerOcrAnchor = null;
   layer._mitsubishiDealerOcrAnchors = null;
+  layer._hitachiDealerOcrAnchors = null;
   const tpl = resolveCardTemplate(effectiveMode);
   let aspectRatio = tpl ? tpl.aspectRatio : 1.48;
-  if ((effectiveMode === 'lg_tw' || effectiveMode === 'mitsubishi_tw') && Array.isArray(layer.cardQuadCorners) && layer.cardQuadCorners.length === 4) {
+  if ((effectiveMode === 'lg_tw' || effectiveMode === 'mitsubishi_tw' || effectiveMode === 'hitachi_tw') && Array.isArray(layer.cardQuadCorners) && layer.cardQuadCorners.length === 4) {
     const q = layer.cardQuadCorners;
     const qW = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) * 0.5;
     const qH = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) * 0.5;
@@ -8609,6 +9084,17 @@ function resolveCalibratedStampSpecForCardLayer(cardLayer, cleanCanvas) {
       const calibrated = window.CardTemplates.detectMitsubishiDealerStampSpec(
         cleanCanvas,
         cardLayer._mitsubishiDealerOcrAnchors || null
+      );
+      cardLayer._calibratedStampSpec = calibrated;
+      return calibrated;
+    }
+  }
+  if (cardLayer && cardLayer.cardTemplateId === 'hitachi_tw') {
+    if (cardLayer._calibratedStampSpec) return cardLayer._calibratedStampSpec;
+    if (cleanCanvas && window.CardTemplates && typeof window.CardTemplates.detectHitachiDealerStampSpec === 'function') {
+      const calibrated = window.CardTemplates.detectHitachiDealerStampSpec(
+        cleanCanvas,
+        cardLayer._hitachiDealerOcrAnchors || null
       );
       cardLayer._calibratedStampSpec = calibrated;
       return calibrated;
@@ -9337,10 +9823,16 @@ function initSmartWarrantyModule() {
       if (!inputNewNote) return;
       const currentText = inputNewNote.value || '';
       let lines = currentText.trim() ? currentText.split(/\r?\n/) : [];
+      const cardTarget = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
+      const syncBrandLabel = cardTarget && cardTarget.cardTemplateId === 'hitachi_tw'
+        ? '日立'
+        : (cardTarget && cardTarget.cardTemplateId === 'mitsubishi_tw'
+            ? '三菱'
+            : (cardTarget && cardTarget.cardTemplateId === 'lg_tw' ? 'LG' : '國際牌'));
       if (modelVal) {
-        const idx = lines.findIndex(l => /^\s*(品牌|型號|機種)/.test(l));
-        if (idx >= 0) lines[idx] = `國際牌 ${modelVal}`;
-        else lines.push(`國際牌 ${modelVal}`);
+        const idx = lines.findIndex(l => /^\s*(品牌|型號|機種|國際|LG|三菱|日立)/.test(l));
+        if (idx >= 0) lines[idx] = `${syncBrandLabel} ${modelVal}`;
+        else lines.push(`${syncBrandLabel} ${modelVal}`);
       }
       if (serialVal) {
         const idx = lines.findIndex(l => /^\s*機號/.test(l));
@@ -9350,11 +9842,20 @@ function initSmartWarrantyModule() {
       inputNewNote.value = lines.join('\n');
       if (modelVal) cachedReceiptOcrInfo.model = modelVal;
       if (serialVal) cachedReceiptOcrInfo.serialNo = serialVal;
-      const cardTarget = typeof getTargetWarrantyImageLayer === 'function' ? getTargetWarrantyImageLayer() : null;
       if (cardTarget) {
         if (!cardTarget.ocrData) cardTarget.ocrData = {};
-        if (modelVal) { cardTarget.ocrData.model = modelVal; cardTarget._lgVerifiedModel = modelVal; }
-        if (serialVal) { cardTarget.ocrData.serial = serialVal; cardTarget._lgVerifiedSerial = serialVal; }
+        if (modelVal) {
+          cardTarget.ocrData.model = modelVal;
+          cardTarget._lgVerifiedModel = modelVal;
+          cardTarget._mitsubishiVerifiedModel = modelVal;
+          cardTarget._hitachiVerifiedModel = modelVal;
+        }
+        if (serialVal) {
+          cardTarget.ocrData.serial = serialVal;
+          cardTarget._lgVerifiedSerial = serialVal;
+          cardTarget._mitsubishiVerifiedSerial = serialVal;
+          cardTarget._hitachiVerifiedSerial = serialVal;
+        }
       }
       if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
         syncSummaryTextLayer(true);
@@ -9387,6 +9888,10 @@ function initSmartWarrantyModule() {
       cardTarget.ocrData.serial = serialStr;
       cardTarget._lgVerifiedModel = modelStr;
       cardTarget._lgVerifiedSerial = serialStr;
+      cardTarget._mitsubishiVerifiedModel = modelStr;
+      cardTarget._mitsubishiVerifiedSerial = serialStr;
+      cardTarget._hitachiVerifiedModel = modelStr;
+      cardTarget._hitachiVerifiedSerial = serialStr;
     }
     if (typeof syncSummaryTextLayer === 'function' && layers.length > 0) {
       syncSummaryTextLayer(true);
@@ -9463,7 +9968,9 @@ function applyOrderCrossVerificationToCurrentCard() {
   const targetTplId = targetCard ? (targetCard.cardTemplateId || targetCard.templateId || '') : '';
   const targetBrandKey = targetTplId === 'lg_tw'
     ? 'LG'
-    : (targetTplId === 'mitsubishi_tw' ? 'MITSUBISHI' : 'PANASONIC');
+    : (targetTplId === 'mitsubishi_tw'
+        ? 'MITSUBISHI'
+        : (targetTplId === 'hitachi_tw' ? 'HITACHI' : 'PANASONIC'));
   const cv = window.CardTemplates.crossVerifyModelWithOrderSheet(curModel, cachedOrderItemModels, targetBrandKey);
   if (cv && cv.corrected && cv.model) {
     cachedReceiptOcrInfo.model = cv.model;
@@ -9472,6 +9979,8 @@ function applyOrderCrossVerificationToCurrentCard() {
       if (!targetCard.ocrData) targetCard.ocrData = {};
       targetCard.ocrData.model = cv.model;
       targetCard._lgVerifiedModel = cv.model;
+      targetCard._mitsubishiVerifiedModel = cv.model;
+      targetCard._hitachiVerifiedModel = cv.model;
     }
     setCardSmartStatus(
       `✅ 已依訂購單交叉校正型號：${curModel} ➔ ${cv.model}（相似度 ${Math.round(cv.similarity * 100)}%）`,
@@ -9663,21 +10172,26 @@ function buildAutoFiveLineNoteText() {
   const cardLayer = getTargetWarrantyImageLayer();
   const isLgCard = !!(cardLayer && (cardLayer.cardTemplateId === 'lg_tw' || cardLayer.templateId === 'lg_tw'));
   const isMitsubishiCard = !!(cardLayer && (cardLayer.cardTemplateId === 'mitsubishi_tw' || cardLayer.templateId === 'mitsubishi_tw'));
+  const isHitachiCard = !!(cardLayer && (cardLayer.cardTemplateId === 'hitachi_tw' || cardLayer.templateId === 'hitachi_tw'));
 
-  const cardModel = (isLgCard || isMitsubishiCard)
+  const cardModel = (isLgCard || isMitsubishiCard || isHitachiCard)
     ? (
         (cardLayer.ocrData && cardLayer.ocrData.model) ||
-        (isLgCard ? cardLayer._lgVerifiedModel : cardLayer._mitsubishiVerifiedModel) ||
+        (isLgCard
+          ? cardLayer._lgVerifiedModel
+          : (isMitsubishiCard ? cardLayer._mitsubishiVerifiedModel : cardLayer._hitachiVerifiedModel)) ||
         (inputCardModel && inputCardModel.value.trim()) ||
         cachedReceiptOcrInfo.model ||
         'XXXXXXXX'
       )
     : ((inputCardModel && inputCardModel.value.trim()) || cachedReceiptOcrInfo.model || 'XXXXXXXX');
 
-  const cardSerial = (isLgCard || isMitsubishiCard)
+  const cardSerial = (isLgCard || isMitsubishiCard || isHitachiCard)
     ? (
         (cardLayer.ocrData && cardLayer.ocrData.serial) ||
-        (isLgCard ? cardLayer._lgVerifiedSerial : cardLayer._mitsubishiVerifiedSerial) ||
+        (isLgCard
+          ? cardLayer._lgVerifiedSerial
+          : (isMitsubishiCard ? cardLayer._mitsubishiVerifiedSerial : cardLayer._hitachiVerifiedSerial)) ||
         (inputCardSerial && inputCardSerial.value.trim()) ||
         cachedReceiptOcrInfo.serialNo ||
         'XXXXXXXXXXX'
@@ -9689,6 +10203,8 @@ function buildAutoFiveLineNoteText() {
     brandName = 'LG';
   } else if (isMitsubishiCard) {
     brandName = '三菱';
+  } else if (isHitachiCard) {
+    brandName = '日立';
   } else if (cardLayer && cardLayer.cardTemplateId && cardLayer.cardTemplateId.startsWith('panasonic')) {
     brandName = '國際';
   }

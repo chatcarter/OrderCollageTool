@@ -32,6 +32,13 @@
       description: '台灣三菱電機股份有限公司商品保證書 (mitsubishi_tw)'
     },
     {
+      brandId: 'hitachi',
+      brandName: 'Hitachi',
+      brandZh: '日立',
+      enabled: true,
+      description: '台灣日立阿奇立克家電製品保證書 (hitachi_tw)'
+    },
+    {
       brandId: 'samsung',
       brandName: 'Samsung',
       brandZh: '三星',
@@ -40,12 +47,12 @@
       description: 'Samsung 保證書（預留擴充）'
     },
     {
-      brandId: 'hitachi_sony',
-      brandName: 'Hitachi / Sony',
-      brandZh: '日立 / 索尼',
+      brandId: 'sony',
+      brandName: 'Sony',
+      brandZh: '索尼',
       enabled: false,
       comingSoon: true,
-      description: '日立 / 索尼保證書（預留擴充）'
+      description: 'Sony 保證書（預留擴充）'
     }
   ];
 
@@ -223,6 +230,52 @@
       dealerStampZone: { ...MITSUBISHI_TW_WARRANTY_CONFIG.ocrRegions.dealerStampZone }
     },
     stampSpec: { ...MITSUBISHI_TW_STAMP_SPEC }
+  };
+
+  /**
+   * 台灣日立阿奇立克家電製品保證書獨立命名空間規格 (hitachi_tw，嚴格隔離絕不干擾 Panasonic、LG 與三菱邏輯) (v60)
+   */
+  const HITACHI_TW_STAMP_SPEC = Object.freeze({
+    centerX: 0.858,
+    centerY: 0.455,
+    widthRatio: 0.215,
+    tiltRangeDeg: 1.5,
+    blendMode: 'multiply'
+  });
+
+  const HITACHI_TW_WARRANTY_CONFIG = Object.freeze({
+    brandId: 'hitachi',
+    aspectRatio: 1.52,
+    borderColorType: 'hitachi_white_dual_black',
+    stampSpec: HITACHI_TW_STAMP_SPEC,
+    ocrRegions: Object.freeze({
+      model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.345, y: 0.465, w: 0.230, h: 0.090 }),
+      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.175, y: 0.555, w: 0.170, h: 0.090 }),
+      formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
+      dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
+    }),
+    dealerBoxSearchRegion: Object.freeze({
+      x: 0.680, y: 0.140, w: 0.310, h: 0.560
+    })
+  });
+
+  CARD_TEMPLATES.hitachi_tw = {
+    id: 'hitachi_tw',
+    brandId: HITACHI_TW_WARRANTY_CONFIG.brandId,
+    brand: 'Hitachi',
+    brandZh: '日立',
+    label: '台灣日立家電製品保證書 (hitachi_tw)',
+    shortLabel: '台灣日立家電保證書',
+    formCode: 'HITACHI_TW',
+    aspectRatio: HITACHI_TW_WARRANTY_CONFIG.aspectRatio,
+    borderColorType: HITACHI_TW_WARRANTY_CONFIG.borderColorType,
+    ocrRegions: {
+      model: { ...HITACHI_TW_WARRANTY_CONFIG.ocrRegions.model },
+      serial: { ...HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial },
+      formBlock: { ...HITACHI_TW_WARRANTY_CONFIG.ocrRegions.formBlock },
+      dealerStampZone: { ...HITACHI_TW_WARRANTY_CONFIG.ocrRegions.dealerStampZone }
+    },
+    stampSpec: { ...HITACHI_TW_STAMP_SPEC }
   };
 
   /**
@@ -1662,7 +1715,8 @@
   const WARRANTY_KEYWORDS = [
     'PANASONIC', '商品保證書', '保證書', '台灣松下', '經銷商確認', '經銷商', '顧客收執', '保證內容', '2601335017',
     '台灣樂金', '樂金電器', '經銷商店章', '產品註冊登錄', 'LG LINE', '0800-898-899', 'WWW.LG.COM',
-    '三菱電機', '台灣三菱電機', 'MITSUBISHI', '本欄請蓋店章', '製造號碼'
+    '三菱電機', '台灣三菱電機', 'MITSUBISHI', '本欄請蓋店章', '製造號碼',
+    '家電製品保證書', '阿奇立克日立', '經銷商確認章', 'HITACHI', 'HITACHI-HOMEAPPLIANCES'
   ];
   const TAIWAN_INVOICE_STRUCT_REGEX = /[A-Z]{2}\s*[-—–]?\s*\d[\d\s]{6,9}\d/;
 
@@ -1695,6 +1749,18 @@
           role: 'warranty_card',
           forcedTemplateId: 'mitsubishi_tw',
           reason: `強制命中三菱電機保卡地標 (${mitsuForceMatch.matchedLandmarks.slice(0, 3).join('、')})`
+        };
+      }
+    }
+
+    // 0c. v60 最高優先級：台灣日立家電製品保證書專屬地標強制判定（優先權高於發票編號／QR Code 偵測）
+    if (!hasPanasonicBrandOnly) {
+      const hitachiForceMatch = detectHitachiWarrantyByText(ocrText);
+      if (hitachiForceMatch && hitachiForceMatch.isHitachi) {
+        return {
+          role: 'warranty_card',
+          forcedTemplateId: 'hitachi_tw',
+          reason: `強制命中台灣日立保卡地標 (${hitachiForceMatch.matchedLandmarks.slice(0, 3).join('、')})`
         };
       }
     }
@@ -3867,11 +3933,749 @@
     return { model, serialNo };
   }
 
+  // ===========================================================================
+  // 台灣日立阿奇立克家電製品保證書獨立引擎 (hitachi_tw，v60：專屬地標防誤判 / 雙黑框四點校正 / 經銷商確認章右側十字蓋章 / 商品型號與機號)
+  // ===========================================================================
+  function detectHitachiWarrantyByText(ocrText) {
+    const rawUpper = String(ocrText || '').toUpperCase();
+    if (!rawUpper.trim()) {
+      return { isHitachi: false, hitCount: 0, matchedLandmarks: [], uniqueHits: [], comboHits: [] };
+    }
+    const compactUpper = rawUpper.replace(/[\s\-—–‐‑‒―~～_.:：]+/g, '');
+
+    // 專屬唯一地標（命中任 1 項即無條件鎖定為日立保卡，優先權高於發票／QR Code）
+    const hasCompany =
+      rawUpper.includes('阿奇立克日立台灣家電股份有限公司') ||
+      compactUpper.includes('阿奇立克日立台灣家電股份有限公司') ||
+      rawUpper.includes('阿奇立克日立') ||
+      compactUpper.includes('阿奇立克日立') ||
+      (compactUpper.includes('阿奇立克') && compactUpper.includes('日立'));
+
+    const hasWebsite =
+      rawUpper.includes('HITACHI-HOMEAPPLIANCES.COM.TW') ||
+      compactUpper.includes('HITACHIHOMEAPPLIANCESCOMTW') ||
+      rawUpper.includes('HITACHI-HOMEAPPLIANCES') ||
+      compactUpper.includes('HITACHIHOMEAPPLIANCES');
+
+    const hasAddress =
+      rawUpper.includes('台北市南京東路3段65號2樓') ||
+      compactUpper.includes('台北市南京東路3段65號2樓') ||
+      rawUpper.includes('南京東路3段65號2樓') ||
+      compactUpper.includes('南京東路3段65號2樓') ||
+      compactUpper.includes('南京東路三段65號2樓') ||
+      (compactUpper.includes('南京東路') && compactUpper.includes('65號2樓'));
+
+    const uniqueLandmarks = [];
+    if (hasCompany) uniqueLandmarks.push('阿奇立克日立台灣家電股份有限公司');
+    if (hasWebsite) uniqueLandmarks.push('hitachi-homeappliances.com.tw');
+    if (hasAddress) uniqueLandmarks.push('台北市南京東路3段65號2樓');
+
+    // 組合地標（命中任 2 項即鎖定為日立保卡）
+    const hasHitachiWord =
+      /(?:^|[^A-Z0-9])HITACHI(?:[^A-Z0-9]|$)/.test(rawUpper) ||
+      compactUpper.includes('HITACHI');
+
+    const hasTitleWord =
+      rawUpper.includes('家電製品保證書') ||
+      compactUpper.includes('家電製品保證書');
+
+    const hasConfirmStampWord =
+      rawUpper.includes('經銷商確認章') ||
+      compactUpper.includes('經銷商確認章');
+
+    const hasSkuWord =
+      /SKU\s*NO\.?/i.test(rawUpper) ||
+      compactUpper.includes('SKUNO');
+
+    const comboLandmarks = [];
+    if (hasHitachiWord) comboLandmarks.push('HITACHI');
+    if (hasTitleWord) comboLandmarks.push('家電製品保證書');
+    if (hasConfirmStampWord) comboLandmarks.push('經銷商確認章');
+    if (hasSkuWord) comboLandmarks.push('SKU NO.');
+
+    const matchedLandmarks = [...uniqueLandmarks, ...comboLandmarks];
+    const isHitachi = uniqueLandmarks.length >= 1 || comboLandmarks.length >= 2;
+    return {
+      isHitachi,
+      hitCount: matchedLandmarks.length,
+      matchedLandmarks,
+      uniqueHits: uniqueLandmarks,
+      comboHits: comboLandmarks
+    };
+  }
+
+  function detectHitachiCardQuad(srcImg) {
+    const sw = srcImg && srcImg.width ? srcImg.width : 0;
+    const sh = srcImg && srcImg.height ? srcImg.height : 0;
+    const fallbackCorners = [
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.02) },
+      { x: Math.round(sw * 0.98), y: Math.round(sh * 0.98) },
+      { x: Math.round(sw * 0.02), y: Math.round(sh * 0.98) }
+    ];
+    if (!sw || !sh || sw < 60 || sh < 60) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.52 };
+    }
+
+    const maxDim = 480;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(60, Math.round(sw * scale));
+    const h = Math.max(60, Math.round(sh * scale));
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = w;
+    workCanvas.height = h;
+    const wCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    wCtx.drawImage(srcImg, 0, 0, w, h);
+    const data = wCtx.getImageData(0, 0, w, h).data;
+
+    const total = w * h;
+    const lum = new Float32Array(total);
+    const sat = new Float32Array(total);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const r = data[p], g = data[p + 1], b = data[p + 2];
+      lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+      sat[i] = Math.max(r, g, b) - Math.min(r, g, b);
+    }
+
+    const pickQuantile = (arr, q) => {
+      if (!arr || arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * q)));
+      return sorted[idx];
+    };
+
+    const centerLums = [];
+    const centerSats = [];
+    for (let y = Math.floor(h * 0.25); y < Math.floor(h * 0.75); y += 2) {
+      for (let x = Math.floor(w * 0.25); x < Math.floor(w * 0.75); x += 2) {
+        const idx = y * w + x;
+        centerLums.push(lum[idx]);
+        centerSats.push(sat[idx]);
+      }
+    }
+    const paperLumRef = pickQuantile(centerLums, 0.78);
+    const paperSatRef = pickQuantile(centerSats, 0.40);
+
+    const winOut = Math.max(6, Math.round(Math.min(w, h) * 0.024));
+    const winIn = Math.max(8, Math.round(Math.min(w, h) * 0.034));
+
+    const scanBorderCandidates = side => {
+      const pts = [];
+      if (side === 'left' || side === 'right') {
+        const yStart = Math.round(h * 0.14);
+        const yEnd = Math.round(h * 0.86);
+        for (let y = yStart; y <= yEnd; y += 2) {
+          const rowOff = y * w;
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'left') {
+            const xMax = Math.round(w * 0.48);
+            for (let x = winOut + 2; x <= xMax; x++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x - winOut; k <= x - 2; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = x + 2; k <= Math.min(w - 1, x + winIn); k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 65, outL + 10) && (jump >= 11 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[rowOff + Math.min(w - 1, x + 2)] - lum[rowOff + Math.max(0, x - 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = x;
+                }
+              }
+            }
+          } else {
+            const xMin = Math.round(w * 0.52);
+            for (let x = w - winOut - 3; x >= xMin; x--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = x + 2; k <= x + winOut; k++) {
+                outSum += lum[rowOff + k];
+                outSatSum += sat[rowOff + k];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, x - winIn); k <= x - 2; k++) {
+                inLums.push(lum[rowOff + k]);
+                inSats.push(sat[rowOff + k]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[rowOff + Math.max(0, x - 2)] - lum[rowOff + Math.min(w - 1, x + 2)]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = x;
+                }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x: bestPos, y });
+        }
+      } else {
+        const xStart = Math.round(w * 0.16);
+        const xEnd = Math.round(w * 0.84);
+        for (let x = xStart; x <= xEnd; x += 2) {
+          let bestPos = -1;
+          let bestScore = -Infinity;
+          if (side === 'top') {
+            const yMax = Math.round(h * 0.45);
+            for (let y = winOut + 2; y <= yMax; y++) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y - winOut; k <= y - 2; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = y + 2; k <= Math.min(h - 1, y + winIn); k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(paperLumRef - 65, outL + 10) && (jump >= 10 || (jump >= 6 && satDrop >= 6))) {
+                const localStep = Math.max(0, lum[Math.min(h - 1, y + 2) * w + x] - lum[Math.max(0, y - 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = y;
+                }
+              }
+            }
+          } else {
+            const yMin = Math.round(h * 0.55);
+            for (let y = h - winOut - 3; y >= yMin; y--) {
+              let outSum = 0, outSatSum = 0, outCnt = 0;
+              for (let k = y + 2; k <= y + winOut; k++) {
+                const idx = k * w + x;
+                outSum += lum[idx];
+                outSatSum += sat[idx];
+                outCnt++;
+              }
+              const inLums = [], inSats = [];
+              for (let k = Math.max(0, y - winIn); k <= y - 2; k++) {
+                const idx = k * w + x;
+                inLums.push(lum[idx]);
+                inSats.push(sat[idx]);
+              }
+              const outL = outSum / Math.max(1, outCnt);
+              const outS = outSatSum / Math.max(1, outCnt);
+              const inL80 = pickQuantile(inLums, 0.80);
+              const inS25 = pickQuantile(inSats, 0.25);
+              const jump = inL80 - outL;
+              const satDrop = outS - inS25;
+              if (inL80 >= Math.max(105, paperLumRef - 95, outL + 9) && (jump >= 9 || (jump >= 5 && satDrop >= 5))) {
+                const localStep = Math.max(0, lum[Math.max(0, y - 2) * w + x] - lum[Math.min(h - 1, y + 2) * w + x]);
+                const score = jump + Math.max(0, satDrop) * 0.7 + localStep * 0.6;
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestPos = y;
+                }
+              }
+            }
+          }
+          if (bestPos >= 0) pts.push({ x, y: bestPos });
+        }
+      }
+      return pts;
+    };
+
+    const fitLineRansac = (pts, isVertical, minNeeded) => {
+      if (!pts || pts.length < minNeeded) return null;
+      let bestInliers = [];
+      let bestSlope = 0;
+      let bestIntercept = 0;
+      const step = Math.max(1, Math.floor(pts.length / 24));
+      for (let i = 0; i < pts.length; i += step) {
+        for (let j = i + Math.max(2, step); j < pts.length; j += step) {
+          const p1 = pts[i], p2 = pts[j];
+          const dv = isVertical ? (p2.y - p1.y) : (p2.x - p1.x);
+          if (Math.abs(dv) < 12) continue;
+          const slope = isVertical ? (p2.x - p1.x) / dv : (p2.y - p1.y) / dv;
+          if (Math.abs(slope) > 0.25) continue;
+          const intercept = isVertical ? (p1.x - slope * p1.y) : (p1.y - slope * p1.x);
+          const inliers = [];
+          for (let k = 0; k < pts.length; k++) {
+            const pk = pts[k];
+            const pred = isVertical ? (slope * pk.y + intercept) : (slope * pk.x + intercept);
+            const actual = isVertical ? pk.x : pk.y;
+            if (Math.abs(actual - pred) <= 3.5) inliers.push(pk);
+          }
+          if (inliers.length > bestInliers.length) {
+            bestInliers = inliers;
+            bestSlope = slope;
+            bestIntercept = intercept;
+          }
+        }
+      }
+      if (bestInliers.length < minNeeded) return null;
+      let sumU = 0, sumV = 0, sumUU = 0, sumUV = 0;
+      bestInliers.forEach(p => {
+        const u = isVertical ? p.y : p.x;
+        const v = isVertical ? p.x : p.y;
+        sumU += u; sumV += v; sumUU += u * u; sumUV += u * v;
+      });
+      const n = bestInliers.length;
+      const denom = n * sumUU - sumU * sumU;
+      if (Math.abs(denom) > 1e-4) {
+        const refinedSlope = (n * sumUV - sumU * sumV) / denom;
+        if (Math.abs(refinedSlope) <= 0.25) {
+          bestSlope = refinedSlope;
+          bestIntercept = (sumV - refinedSlope * sumU) / n;
+        }
+      }
+      return { slope: bestSlope, intercept: bestIntercept, count: bestInliers.length, isVertical };
+    };
+
+    const leftPts = scanBorderCandidates('left');
+    const rightPts = scanBorderCandidates('right');
+    const topPts = scanBorderCandidates('top');
+    const bottomPts = scanBorderCandidates('bottom');
+
+    const minVNeeded = Math.max(8, Math.round(h * 0.08));
+    const minHNeeded = Math.max(8, Math.round(w * 0.08));
+    let lineL = fitLineRansac(leftPts, true, minVNeeded);
+    let lineR = fitLineRansac(rightPts, true, minVNeeded);
+    let lineT = fitLineRansac(topPts, false, minHNeeded);
+    let lineB = fitLineRansac(bottomPts, false, minHNeeded);
+
+    const checkRimIsPaper = side => {
+      const rLums = [], rSats = [];
+      if (side === 'left' || side === 'right') {
+        const rx = side === 'left' ? 3 : w - 4;
+        for (let y = Math.round(h * 0.22); y <= Math.round(h * 0.78); y += 3) {
+          rLums.push(lum[y * w + rx]);
+          rSats.push(sat[y * w + rx]);
+        }
+      } else {
+        const ry = side === 'top' ? 3 : h - 4;
+        for (let x = Math.round(w * 0.25); x <= Math.round(w * 0.75); x += 3) {
+          rLums.push(lum[ry * w + x]);
+          rSats.push(sat[ry * w + x]);
+        }
+      }
+      return pickQuantile(rLums, 0.78) >= paperLumRef - 36 && pickQuantile(rSats, 0.35) <= paperSatRef + 18;
+    };
+
+    if (!lineL && checkRimIsPaper('left')) lineL = { slope: 0, intercept: 2, isVertical: true, isRim: true };
+    if (!lineR && checkRimIsPaper('right')) lineR = { slope: 0, intercept: w - 3, isVertical: true, isRim: true };
+    if (!lineT && checkRimIsPaper('top')) lineT = { slope: 0, intercept: 2, isVertical: false, isRim: true };
+    if (!lineB && checkRimIsPaper('bottom')) lineB = { slope: 0, intercept: h - 3, isVertical: false, isRim: true };
+
+    if (!lineL || !lineR || !lineT || !lineB) {
+      const borderSamples = [];
+      const mx = Math.max(2, Math.floor(w * 0.03));
+      const my = Math.max(2, Math.floor(h * 0.03));
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          if (x < mx || x >= w - mx || y < my || y >= h - my) {
+            borderSamples.push(lum[y * w + x]);
+          }
+        }
+      }
+      const deskLum = pickQuantile(borderSamples, 0.35);
+      const lumDiff = paperLumRef - deskLum;
+      if (lumDiff >= 10) {
+        const thresh = deskLum + lumDiff * 0.45;
+        const paperPtsX = [], paperPtsY = [];
+        for (let y = 4; y < h - 4; y += 2) {
+          for (let x = 4; x < w - 4; x += 2) {
+            if (lum[y * w + x] >= thresh && sat[y * w + x] <= paperSatRef + 22) {
+              paperPtsX.push(x);
+              paperPtsY.push(y);
+            }
+          }
+        }
+        if (paperPtsX.length >= 80) {
+          if (!lineL) lineL = { slope: 0, intercept: pickQuantile(paperPtsX, 0.02), isVertical: true };
+          if (!lineR) lineR = { slope: 0, intercept: pickQuantile(paperPtsX, 0.98), isVertical: true };
+          if (!lineT) lineT = { slope: 0, intercept: pickQuantile(paperPtsY, 0.02), isVertical: false };
+          if (!lineB) lineB = { slope: 0, intercept: pickQuantile(paperPtsY, 0.98), isVertical: false };
+        }
+      }
+    }
+
+    if (!lineL || !lineR || !lineT || !lineB) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.52 };
+    }
+
+    const intersectVH = (vLine, hLine) => {
+      const denom = 1 - vLine.slope * hLine.slope;
+      if (Math.abs(denom) < 1e-3) return null;
+      const y = (hLine.slope * vLine.intercept + hLine.intercept) / denom;
+      const x = vLine.slope * y + vLine.intercept;
+      return { x, y };
+    };
+
+    const tlW = intersectVH(lineL, lineT);
+    const trW = intersectVH(lineR, lineT);
+    const brW = intersectVH(lineR, lineB);
+    const blW = intersectVH(lineL, lineB);
+    if (!tlW || !trW || !brW || !blW) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.52 };
+    }
+
+    const avgSpanW = (Math.hypot(trW.x - tlW.x, trW.y - tlW.y) + Math.hypot(brW.x - blW.x, brW.y - blW.y)) * 0.5;
+    const avgSpanH = (Math.hypot(blW.x - tlW.x, blW.y - tlW.y) + Math.hypot(brW.x - trW.x, brW.y - trW.y)) * 0.5;
+    const estAspect = avgSpanW / Math.max(1, avgSpanH);
+    if (avgSpanW < w * 0.30 || avgSpanH < h * 0.30 || estAspect < 1.05 || estAspect > 1.95) {
+      return { corners: fallbackCorners, detected: false, confidence: 'low', estimatedAspect: 1.52 };
+    }
+
+    // 保留雙線黑框外側約 3mm~5mm（~0.8%）均勻呼吸白邊，完整保留左上「家電製品保證書」、右上「HITACHI」與右下資訊
+    const invScale = 1 / scale;
+    const rawCorners = [tlW, trW, brW, blW].map(p => ({
+      x: p.x * invScale,
+      y: p.y * invScale
+    }));
+    const cx = (rawCorners[0].x + rawCorners[1].x + rawCorners[2].x + rawCorners[3].x) * 0.25;
+    const cy = (rawCorners[0].y + rawCorners[1].y + rawCorners[2].y + rawCorners[3].y) * 0.25;
+    const padRatio = 0.008;
+
+    const expandedCorners = rawCorners.map(p => ({
+      x: Math.max(0, Math.min(sw, Math.round(p.x + (p.x - cx) * padRatio))),
+      y: Math.max(0, Math.min(sh, Math.round(p.y + (p.y - cy) * padRatio)))
+    }));
+
+    return {
+      corners: expandedCorners,
+      detected: true,
+      confidence: 'high',
+      estimatedAspect: Number(Math.max(1.20, Math.min(1.85, estAspect)).toFixed(3))
+    };
+  }
+
+  /**
+   * 台灣日立家電製品保證書專屬印章對位 (v60)
+   * 1. 左邊界：緊貼右側「經銷商確認章」直排文字右緣（不遮蓋文字）
+   * 2. 右邊界：緊貼右側表格內框線（不超出雙線黑框）
+   * 3. 垂直對位：位於右上 HITACHI 正下方，中央日期方框對應左側「商品」列，底緣外弧貼齊「購買日期」列下方水平分隔線
+   */
+  function detectHitachiDealerStampSpec(cleanCardCanvas, hitachiOcrAnchors = null) {
+    const fallbackSpec = { ...HITACHI_TW_STAMP_SPEC };
+    if (!cleanCardCanvas || !cleanCardCanvas.width || !cleanCardCanvas.height) {
+      return fallbackSpec;
+    }
+
+    const cw = cleanCardCanvas.width;
+    const ch = cleanCardCanvas.height;
+    const rx = Math.round(cw * 0.680);
+    const ry = Math.round(ch * 0.140);
+    const rw = Math.max(60, Math.round(cw * 0.310));
+    const rh = Math.max(60, Math.round(ch * 0.560));
+
+    const tmp = document.createElement('canvas');
+    tmp.width = rw;
+    tmp.height = rh;
+    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
+    tCtx.drawImage(cleanCardCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+    const data = tCtx.getImageData(0, 0, rw, rh).data;
+
+    const lums = [];
+    for (let i = 0; i < rw * rh; i += 3) {
+      const p = i * 4;
+      lums.push(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+    }
+    lums.sort((a, b) => a - b);
+    const bgLum = lums[Math.floor(lums.length * 0.78)] || 222;
+    const darkThresh = Math.max(58, bgLum - 26);
+
+    const pickPeakInRange = (arr, startIdx, endIdx, minReq) => {
+      let bestIdx = -1;
+      let bestVal = 0;
+      const s = Math.max(0, startIdx);
+      const e = Math.min(arr.length - 1, endIdx);
+      for (let i = s; i <= e; i++) {
+        const val = arr[i] + (i > 0 ? arr[i - 1] * 0.5 : 0) + (i + 1 < arr.length ? arr[i + 1] * 0.5 : 0);
+        if (arr[i] >= minReq && val > bestVal) {
+          bestVal = val;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    };
+
+    // 1. 投影右側垂直線：偵測「經銷商確認章」左側分隔線與最右側雙線外框內線
+    const colDark = new Int32Array(rw);
+    const yProj0 = Math.round(ch * 0.310) - ry;
+    const yProj1 = Math.min(rh - 1, Math.round(ch * 0.620) - ry);
+    const vSpan = Math.max(10, yProj1 - Math.max(0, yProj0) + 1);
+    for (let y = Math.max(0, yProj0); y <= yProj1; y++) {
+      for (let x = 0; x < rw; x++) {
+        const p = (y * rw + x) * 4;
+        const l = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+        if (l < darkThresh) colDark[x]++;
+      }
+    }
+
+    const innerRightLineRel = pickPeakInRange(
+      colDark,
+      Math.max(0, Math.round(cw * 0.945) - rx),
+      Math.min(rw - 1, Math.round(cw * 0.988) - rx),
+      Math.round(vSpan * 0.45)
+    );
+    const innerRightNorm = innerRightLineRel >= 0 ? (rx + innerRightLineRel) / cw : 0.968;
+
+    const confirmLeftDivRel = pickPeakInRange(
+      colDark,
+      Math.max(0, Math.round(cw * 0.700) - rx),
+      Math.min(rw - 1, Math.round(cw * 0.755) - rx),
+      Math.round(vSpan * 0.42)
+    );
+    const confirmLeftDivNorm = confirmLeftDivRel >= 0 ? (rx + confirmLeftDivRel) / cw : null;
+
+    // 2. 投影水平線：偵測右側印章欄上分隔線（HITACHI 下方）與下分隔線（購買日期列底部水平線）
+    const rowDark = new Int32Array(rh);
+    const hProjX0 = Math.max(0, Math.round(cw * 0.760) - rx);
+    const hProjX1 = Math.min(rw - 1, Math.round(cw * 0.955) - rx);
+    const hSpan = Math.max(10, hProjX1 - hProjX0 + 1);
+    for (let y = 0; y < rh; y++) {
+      let cnt = 0;
+      for (let x = hProjX0; x <= hProjX1; x++) {
+        const p = (y * rw + x) * 4;
+        const l = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+        if (l < darkThresh) cnt++;
+      }
+      rowDark[y] = cnt;
+    }
+
+    const topDividerRel = pickPeakInRange(
+      rowDark,
+      Math.max(0, Math.round(ch * 0.265) - ry),
+      Math.min(rh - 1, Math.round(ch * 0.345) - ry),
+      Math.round(hSpan * 0.40)
+    );
+    const purchaseBottomRel = pickPeakInRange(
+      rowDark,
+      Math.max(0, Math.round(ch * 0.545) - ry),
+      Math.min(rh - 1, Math.round(ch * 0.655) - ry),
+      Math.round(hSpan * 0.42)
+    );
+
+    const anchors = hitachiOcrAnchors || {};
+
+    // 左外弧線緊貼「經銷商確認章」直排文字右側
+    let leftBoundNorm = 0.752;
+    if (typeof anchors.confirmTextRightX === 'number' && anchors.confirmTextRightX >= 0.715 && anchors.confirmTextRightX <= 0.785) {
+      leftBoundNorm = anchors.confirmTextRightX + 0.004;
+    } else if (confirmLeftDivNorm !== null) {
+      leftBoundNorm = Math.max(0.742, Math.min(0.775, confirmLeftDivNorm + 0.028));
+    }
+
+    // 右外弧線緊貼右側表格內框線（不超出雙線外框）
+    const rightBoundNorm = Math.max(0.945, Math.min(0.985, innerRightNorm - 0.003));
+
+    let stampWidthRatio = rightBoundNorm - leftBoundNorm;
+    stampWidthRatio = Math.max(0.195, Math.min(0.236, stampWidthRatio));
+    let stampCenterX = (leftBoundNorm + rightBoundNorm) * 0.5;
+    stampCenterX = Math.max(0.838, Math.min(0.880, stampCenterX));
+
+    // 垂直落點：印章底緣外弧貼齊「購買日期」列下方水平線，並確保上弧位於 HITACHI 下方
+    const estStampHNorm = (stampWidthRatio * cw / 1.2806) / ch;
+    let bottomLineNorm = 0.608;
+    if (typeof anchors.purchaseRowBottomY === 'number' && anchors.purchaseRowBottomY >= 0.550 && anchors.purchaseRowBottomY <= 0.660) {
+      bottomLineNorm = anchors.purchaseRowBottomY;
+    } else if (purchaseBottomRel >= 0) {
+      bottomLineNorm = (ry + purchaseBottomRel) / ch;
+    }
+
+    let stampCenterY = bottomLineNorm - estStampHNorm * 0.5;
+    if (topDividerRel >= 0) {
+      const topDivNorm = (ry + topDividerRel) / ch;
+      stampCenterY = Math.max(stampCenterY, topDivNorm + estStampHNorm * 0.48);
+    }
+    if (typeof anchors.hitachiBottomY === 'number' && anchors.hitachiBottomY >= 0.16 && anchors.hitachiBottomY <= 0.34) {
+      stampCenterY = Math.max(stampCenterY, anchors.hitachiBottomY + estStampHNorm * 0.50);
+    }
+
+    return {
+      centerX: Number(stampCenterX.toFixed(4)),
+      centerY: Number(Math.max(0.425, Math.min(0.485, stampCenterY)).toFixed(4)),
+      widthRatio: Number(stampWidthRatio.toFixed(4)),
+      tiltRangeDeg: 1.5,
+      blendMode: 'multiply'
+    };
+  }
+
+  function filterHitachiModelResult(rawText) {
+    if (!rawText) return '';
+    try {
+      const cleanedRaw = String(rawText)
+        .replace(/24721268/g, ' ')
+        .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+        .replace(/\(02\)\s*\d{4}[-\s]?\d{4}/g, ' ')
+        .replace(/2516[-\s]?0500/g, ' ')
+        .replace(/SKU\s*NO\.?/gi, ' ')
+        .replace(/HITACHI/gi, ' ');
+
+      const mapNumChar = ch => ({
+        O: '0', D: '0', Q: '0',
+        I: '1', L: '1', i: '1', l: '1',
+        Z: '2', z: '2',
+        S: '5', s: '5',
+        G: '6', b: '6',
+        B: '8'
+      }[ch] || String(ch).toUpperCase());
+
+      const normalizeHitachiModelToken = rawTok => {
+        let tok = String(rawTok || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '');
+        if (!tok || /^24721268$/.test(tok)) return '';
+
+        // 校準日立常見前綴與漏連字號（BD-/RS-/RAS-/RAC-/RD-/CV-/BW-/MRO-/HT-/SF-/RG-/RZ-/PV-/RV-）
+        tok = tok.replace(/^(BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)([A-Z0-9]{2,})$/, '$1-$2');
+        tok = tok.replace(/^(?:8D|6D)-?([A-Z]{1,3}\d{2,4}[A-Z0-9]*)$/, 'BD-$1');
+        tok = tok.replace(/^(?:R5|8S)-?([A-Z]{0,2}\d{2,4}[A-Z0-9]*)$/, 'RS-$1');
+        tok = tok.replace(/^(?:RA5|8AS)-?(\d{2,3}[A-Z0-9]*)$/, 'RAS-$1');
+        tok = tok.replace(/^(?:R0)-?(\d{2,3}[A-Z0-9]*)$/, 'RD-$1');
+
+        // 校準容量數字夾心錯字（如 BD-SX15OJJ -> BD-SX150JJ），保留尾碼字母
+        const hitMatch = tok.match(/^([A-Z]{2,4}-[A-Z]{0,3})([0-9OIQDGLZSB]{2,4})([A-Z0-9-]*)$/);
+        if (hitMatch) {
+          const fixedNum = hitMatch[2].split('').map(mapNumChar).join('');
+          if (/^\d{2,4}$/.test(fixedNum)) {
+            tok = `${hitMatch[1]}${fixedNum}${hitMatch[3]}`;
+          }
+        }
+        tok = tok.replace(/(\d)([OIQDGLZB])(\d)/g, (_, a, b, c) => `${a}${mapNumChar(b)}${c}`);
+        return tok;
+      };
+
+      const scoreTok = tok => {
+        if (!tok) return -1;
+        let sc = tok.length;
+        if (/^(?:BD|RS|RAS|RAC|RD|CV|BW|MRO|HT|SF|RG|RZ|PV|RV|RB|RM|HS)-/.test(tok)) sc += 50;
+        if (/^[A-Z]{2,4}-[A-Z]{0,3}\d{2,4}[A-Z0-9-]*$/.test(tok)) sc += 25;
+        return sc;
+      };
+
+      const candidates = [];
+      const multiHyphen = cleanedRaw.match(/\b([A-Za-z0-9]{2,4}(?:\s*-\s*)?[A-Za-z0-9]{2,12}(?:\s*-\s*[A-Za-z0-9]{1,4})?)\b/g);
+      if (multiHyphen) {
+        for (let i = 0; i < multiHyphen.length; i++) {
+          const compact = multiHyphen[i].replace(/\s+/g, '');
+          const tok = normalizeHitachiModelToken(compact);
+          if (tok.length >= 5 && /[A-Z]{2}/.test(tok) && /\d{2}/.test(tok)) {
+            candidates.push(tok);
+          }
+        }
+      }
+
+      const tokens = cleanedRaw.split(/[\s\r\n:：/|,，]+/).filter(Boolean);
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = normalizeHitachiModelToken(tokens[i]);
+        if (tok.length < 5 || tok.length > 22) continue;
+        if (/^\d+$/.test(tok)) continue;
+        if (/[A-Z]{2,}/.test(tok) && /\d{2,}/.test(tok)) {
+          candidates.push(tok);
+        }
+      }
+
+      if (candidates.length === 0) return '';
+      candidates.sort((a, b) => scoreTok(b) - scoreTok(a));
+      return candidates[0];
+    } catch (err) {
+      console.warn('filterHitachiModelResult 略過例外:', err);
+      return '';
+    }
+  }
+
+  function filterHitachiSerialResult(rawText) {
+    if (!rawText) return '';
+    try {
+      const cleaned = String(rawText).toUpperCase()
+        .replace(/24721268/g, ' ')
+        .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+        .replace(/2516[-\s]?0500/g, ' ')
+        .replace(/[A-Z]{2,4}-[A-Z0-9-]{3,}/g, ' ');
+
+      const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
+      const tokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+      const candidates = [];
+
+      for (let i = 0; i < tokens.length; i++) {
+        const rawTok = tokens[i].replace(/[^A-Z0-9]/g, '');
+        if (rawTok.length < 5 || rawTok.length > 14) continue;
+        if (rawTok === '24721268' || rawTok === '25160500' || rawTok === 'HITACHI') continue;
+        // 日立機號常見為 1~2 位大寫英文開頭 + 5~8 位數字（如 T633868）
+        const alphaNumMatch = rawTok.match(/^([A-Z]{1,2})([0-9OQDILZSBG]{5,9})$/);
+        if (alphaNumMatch) {
+          const fixedDigits = alphaNumMatch[2].split('').map(toDigit).join('');
+          if (/^\d{5,9}$/.test(fixedDigits)) {
+            candidates.push({ val: `${alphaNumMatch[1]}${fixedDigits}`, score: 100 + fixedDigits.length });
+            continue;
+          }
+        }
+        if (/^[A-Z0-9]{6,12}$/.test(rawTok) && /\d{4,}/.test(rawTok)) {
+          candidates.push({ val: rawTok, score: 50 + rawTok.length });
+        }
+      }
+
+      if (candidates.length === 0) return '';
+      candidates.sort((a, b) => b.score - a.score);
+      return candidates[0].val;
+    } catch (err) {
+      console.warn('filterHitachiSerialResult 略過例外:', err);
+      return '';
+    }
+  }
+
+  function parseHitachiFormBlock(rawText) {
+    if (!rawText) return { model: '', serialNo: '' };
+    const flat = String(rawText).replace(/\r/g, '\n');
+    let model = '';
+    let serialNo = '';
+
+    const productAnchor = flat.match(/(?:商品|型號|機型|MODEL)\s*[:：.]*\s*([^\n]+)/i);
+    if (productAnchor) {
+      model = filterHitachiModelResult(productAnchor[1]);
+    }
+    if (!model) {
+      model = filterHitachiModelResult(flat);
+    }
+
+    const serialAnchor = flat.match(/(?:機號|製造號碼|SERIAL|S\/?N)\s*[:：.]*\s*([^\n]+)/i);
+    if (serialAnchor) {
+      const beforeDate = serialAnchor[1].split(/購買日期|SKU|經銷商/i)[0];
+      serialNo = filterHitachiSerialResult(beforeDate);
+    }
+    if (!serialNo) {
+      serialNo = filterHitachiSerialResult(flat);
+    }
+    return { model, serialNo };
+  }
+
   global.CardTemplates = {
     BRAND_REGISTRY: CARD_BRAND_REGISTRY,
     PANASONIC_WARRANTY_CONFIG,
     LG_TW_WARRANTY_CONFIG,
     MITSUBISHI_TW_WARRANTY_CONFIG,
+    HITACHI_TW_WARRANTY_CONFIG,
     RECEIPT_LANDMARK_CROP_CONFIG,
     TEMPLATES: CARD_TEMPLATES,
     INVOICE_TEMPLATES,
@@ -3883,6 +4687,9 @@
     detectMitsubishiWarrantyByText,
     detectMitsubishiCardQuad,
     detectMitsubishiDealerStampSpec,
+    detectHitachiWarrantyByText,
+    detectHitachiCardQuad,
+    detectHitachiDealerStampSpec,
     createEnhancedOcrCropCanvas,
     createAdaptiveBinarizedOcrCropCanvas,
     decodeCode128FromCanvas,
@@ -3903,6 +4710,9 @@
     filterMitsubishiModelResult,
     filterMitsubishiSerialResult,
     parseMitsubishiTopFormRow,
+    filterHitachiModelResult,
+    filterHitachiSerialResult,
+    parseHitachiFormBlock,
     parsePanasonicLeftInfoBlock,
     crossVerifyModelWithOrderSheet
   };

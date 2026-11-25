@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="static/style.css?v=59">
+  <link rel="stylesheet" href="static/style.css?v=60">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36/v38: 電腦「...」/ 盲打時間；手機三連擊 / 數字鍵盤) -->
@@ -39,7 +39,7 @@
   <div id="mobileTopBar" class="mobile-top-bar">
     <div class="mobile-top-left">
       <span class="mobile-top-title">拼貼工作台</span>
-      <span class="version-badge mobile-ver-badge">v59 (2026.11.24)</span>
+      <span class="version-badge mobile-ver-badge">v60 (2026.11.26)</span>
     </div>
     <div class="mobile-progress-badges" id="mobileProgressBadges">
       <span class="mobile-step-badge" id="mBadgeOrder">訂購單</span>
@@ -71,7 +71,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v59 (2026.11.24)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v60 (2026.11.26)</span>
     </div>
 
     <div class="header-actions">
@@ -174,10 +174,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v59) -->
+      <!-- 目前版本資訊橫幅 (v60) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v59 (2026.11.24)</span>
+        <span class="version-badge">v60 (2026.11.26)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -445,8 +445,9 @@
               <option value="panasonic_slip2">手動指定：國際牌 第二聯（顧客聯 S203B01）</option>
               <option value="lg_tw">手動指定：LG 台灣樂金電器保證書 (lg_tw)</option>
               <option value="mitsubishi_tw">手動指定：台灣三菱電機商品保證書 (mitsubishi_tw)</option>
+              <option value="hitachi_tw">手動指定：台灣日立家電製品保證書 (hitachi_tw)</option>
               <option value="samsung_soon" disabled>Samsung 三星保證書（預留擴充）</option>
-              <option value="hitachi_sony_soon" disabled>Hitachi / Sony 保證書（預留擴充）</option>
+              <option value="sony_soon" disabled>Sony 索尼保證書（預留擴充）</option>
             </select>
           </div>
 
@@ -917,9 +918,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v59) -->
-  <script src="static/card_templates.js?v=59"></script>
-  <!-- 主互動程式碼 (v59) -->
-  <script src="static/app.js?v=59"></script>
+  <!-- 品牌保卡智慧模板庫 (v60) -->
+  <script src="static/card_templates.js?v=60"></script>
+  <!-- 主互動程式碼 (v60) -->
+  <script src="static/app.js?v=60"></script>
 </body>
 </html>

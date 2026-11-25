@@ -81,6 +81,21 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 00:15] (第 60 版 / v60)
+- **執行項目**：**新增「台灣日立阿奇立克家電製品保證書 `hitachi_tw`」獨立命名空間模板（v60）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v60`）**：
+     - 建立 `_backup/20261126_000715/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v60 (2026.11.26)` 與 `?v=60`，並於 `#selectCardTemplateMode` 新增啟用 `手動指定：台灣日立家電製品保證書 (hitachi_tw)`。
+  2. **註冊 `hitachi_tw` 獨立規則與最前端優先分類（`static/card_templates.js`）**：
+     - 於 `CARD_BRAND_REGISTRY` 啟用 `hitachi`，建立 `HITACHI_TW_STAMP_SPEC`（`centerX: 0.858, centerY: 0.455, widthRatio: 0.215`）、`HITACHI_TW_WARRANTY_CONFIG` 與 `CARD_TEMPLATES.hitachi_tw`（`aspectRatio: 1.52`）。
+     - 新增 `detectHitachiWarrantyByText()`：命中專屬唯一地標（`阿奇立克日立台灣家電股份有限公司` / `阿奇立克日立`、`hitachi-homeappliances.com.tw`、`台北市南京東路3段65號2樓`）任 1 項或組合地標（`HITACHI`、`家電製品保證書`、`經銷商確認章`、`SKU NO.`）任 2 項，即於 `classifyDocumentByTextAndColor()` 最優先級無條件判定為保卡 `hitachi_tw`，徹底防範右下 QR Code 誤判為發票。
+  3. **實作雙黑線四點透視校正 ＋ 經銷商確認章右側十字蓋章（`detectHitachiCardQuad` / `detectHitachiDealerStampSpec`）**：
+     - `detectHitachiCardQuad()` 偵測白底雙黑線外框四邊外緣並保留均勻 `3mm～5mm` 呼吸白邊進行原比例拉正，完整保留左上「家電製品保證書」、右上「HITACHI」與右下聯絡／QR 區。
+     - `detectHitachiDealerStampSpec()` 透過直線投影與 `HITACHI`／`經銷商確認章`／`購買日期` 文字錨點校準：左弧緊貼「經銷商確認章」右側、右弧貼齊右側表格內框線、上在 `HITACHI` 正下方、中央日期方框對應左側「商品」列、底弧貼齊「購買日期」列下方水平線，並掛載為 v56 可拖曳互動式 `Multiply` 印章圖層。
+  4. **實作 `hitachi_tw` 高解析型號／機號辨識、訂購單比對與左下 5 行大字帶入 `日立`（`static/card_templates.js`、`static/app.js`）**：
+     - 新增 `filterHitachiModelResult()`、`filterHitachiSerialResult()`、`parseHitachiFormBlock()` 與 `runHitachiCardTargetedOcr()`（全程 `try / catch` 保護）：跳過中文品名裁切「商品」列右側型號（`x: 34.5%~57.5%, y: 46.5%~55.5%`，如 `BD-SX150JJ`）與「機號」列右側機號（`x: 17.5%~34.5%, y: 55.5%~64.5%`，如 `T633868`），放大 `3.5x` 單行 OCR，支援訂購單交叉校正，並強制於 `buildAutoFiveLineNoteText()` 第 3 行輸出 **`日立 <型號>`**。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與語法檢查、`CRLF` 換行檢核並推送至 `origin/main`。
+
 ### [2026-11-24 23:37] (第 59 版 / v59)
 - **執行項目**：**回滾還原 v57 穩定核心 ＋ 安全輕量修復三菱機型辨識（v59）** — 根除 v58 三菱保卡卡死於「保卡 處理中...」與圖片比例拉扁問題，恢復正常透視、印章落點、互動拖曳與「三菱」5 行輸出。
 - **具體進度**：
