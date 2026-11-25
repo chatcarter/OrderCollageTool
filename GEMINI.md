@@ -53,6 +53,18 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 01:13] (第 66 版 / v66)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 雙錨點十字交會機號定位 ＋ `5.0x` 細字筆畫 `1px` 墨水加粗單點修復（v66）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
+- **具體進度**：
+  1. **備份與版本徽章（`v66`）**：
+     - 建立 `_backup/20261126_011116/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v66 (2026.11.26)` 與 `?v=66`。
+  2. **新增「雙錨點十字交會」機號定位（`resolveHitachiCrossAnchorSerialRoi`）**：
+     - 於 `runHitachiCardTargetedOcr()` 之表單／全圖錨點掃描中收集「商品」列中文品名區（`x: 17.5% ~ 35.5%, y: 45.0% ~ 55.5%`，如 `洗衣機`、`冰箱`、`冷氣`、`除濕機`、`烘衣機`、`清淨機`、`吸塵器` 等中文品名方塊聯集 `productNameBox`）作為水平 `X` 軸錨點（`rx0 = Math.max(0.180, productNameBox.x0 - 0.018)`、`rx1 = Math.min(0.348, productNameBox.x1 + 0.025)` 並含短品名安全寬度下限）；
+     - 交會左側 `serialLabelBox`（或無標籤時由品名／商品列中心下移 `+0.088` 推算）之垂直 `Y` 軸，搭配行列墨水投影剝除四邊黑框線並產生最高優先權之 `crossTightSerialRoi` 與 `crossCellSerialRoi`。
+  3. **新增「`5.0x` 放大 ＋ `1px` 墨水加粗（Min-Filter）＋ `32px` 純白靜區」增強軌道（`createHitachiThickenedInkOcrCrop`）**：
+     - 針對 `T633868` 細筆畫與較矮首碼 `T`，將十字交會與去框貼字帶裁切區放大 `5.0x` 並執行對比拉伸與一次 `3x3` 最小值濾波（`1px` 墨水筆畫膨脹加粗），四邊補上 `32px` 純白靜區後送入 `engWorker`（`psm = '7'` / `'8'`）及 `chiEngWorker`（`psm = '7'`）優先辨識，完整保留 `v65` 去框二值化／灰階軌道備援。
+  4. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與 `CRLF` 換行檢核，並推送至 `origin/main`。
+
 ### [2026-11-26 01:05] (第 65 版 / v65)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 機號去誤殺＋自動剝黑線貼字帶單點修復（v65）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
 - **具體進度**：

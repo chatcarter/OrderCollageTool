@@ -4880,6 +4880,155 @@
     return cropCanvas;
   }
 
+  /**
+   * 台灣日立機號專用（v66）：5.0x 放大 ＋ 自動對比拉伸 ＋ 3x3 Min-Filter 1px 墨水筆畫加粗 ＋ 32px 純白靜區，
+   * 專治細筆畫且首碼 T 較矮之機號於二值化時斷線漏讀問題
+   */
+  function createHitachiThickenedInkOcrCrop(sourceCanvas, roi, upscale = 5.0, pad = 32) {
+    const sw = sourceCanvas.width;
+    const sh = sourceCanvas.height;
+    const rx = Math.max(0, Math.round(roi.x * sw));
+    const ry = Math.max(0, Math.round(roi.y * sh));
+    const rw = Math.max(10, Math.min(sw - rx, Math.round(roi.w * sw)));
+    const rh = Math.max(10, Math.min(sh - ry, Math.round(roi.h * sh)));
+
+    const padPx = Math.max(0, Math.round(pad));
+    const contentW = Math.max(30, Math.round(rw * upscale));
+    const contentH = Math.max(30, Math.round(rh * upscale));
+    const outW = contentW + padPx * 2;
+    const outH = contentH + padPx * 2;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = outW;
+    cropCanvas.height = outH;
+    const cCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    cCtx.fillStyle = '#FFFFFF';
+    cCtx.fillRect(0, 0, outW, outH);
+    cCtx.imageSmoothingEnabled = true;
+    cCtx.imageSmoothingQuality = 'high';
+    cCtx.drawImage(sourceCanvas, rx, ry, rw, rh, padPx, padPx, contentW, contentH);
+
+    const imgData = cCtx.getImageData(padPx, padPx, contentW, contentH);
+    const d = imgData.data;
+    const total = contentW * contentH;
+    const hist = new Int32Array(256);
+    const grays = new Uint8Array(total);
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
+      grays[i] = g;
+      hist[g]++;
+    }
+
+    let pLow = 0;
+    let pHigh = 240;
+    const lowTarget = Math.floor(total * 0.015);
+    const highTarget = Math.floor(total * 0.86);
+    let acc = 0;
+    for (let t = 0; t < 256; t++) {
+      acc += hist[t];
+      if (acc >= lowTarget && pLow === 0) pLow = t;
+      if (acc >= highTarget) { pHigh = t; break; }
+    }
+
+    const span = Math.max(24, pHigh - pLow);
+    const stretched = new Uint8Array(total);
+    for (let i = 0; i < total; i++) {
+      let norm = (grays[i] - pLow) / span;
+      if (norm <= 0) norm = 0;
+      else if (norm >= 1) norm = 1;
+      else norm = Math.pow(norm, 1.35);
+      stretched[i] = Math.max(0, Math.min(255, Math.round(norm * 255)));
+    }
+
+    // 3x3 最小值濾波（Min-Filter 1px 墨水加粗）：深色墨跡向外擴張 1px，避免較矮細筆畫斷裂
+    for (let y = 0; y < contentH; y++) {
+      const y0 = y > 0 ? y - 1 : 0;
+      const y1 = y + 1 < contentH ? y + 1 : contentH - 1;
+      for (let x = 0; x < contentW; x++) {
+        const x0 = x > 0 ? x - 1 : 0;
+        const x1 = x + 1 < contentW ? x + 1 : contentW - 1;
+        let minVal = 255;
+        for (let ny = y0; ny <= y1; ny++) {
+          const rowOff = ny * contentW;
+          for (let nx = x0; nx <= x1; nx++) {
+            const v = stretched[rowOff + nx];
+            if (v < minVal) minVal = v;
+          }
+        }
+        const p = (y * contentW + x) * 4;
+        d[p] = minVal;
+        d[p + 1] = minVal;
+        d[p + 2] = minVal;
+        d[p + 3] = 255;
+      }
+    }
+
+    cCtx.putImageData(imgData, padPx, padPx);
+    return cropCanvas;
+  }
+
+  /**
+   * 台灣日立機號「雙錨點十字交會」計算（v66）：
+   * X 軸：上方「商品」列中文品名框（x: 17.5% ~ 35.5%, y: 45.0% ~ 55.5%）左右適度外擴並避開表格垂直線
+   * Y 軸：左側「機號」標籤列（或無標籤時由品名／商品列中心下移 +0.088 推算），並經行列墨水投影剝除黑框線
+   */
+  function resolveHitachiCrossAnchorSerialRoi(srcCanvas, anchors = {}) {
+    try {
+      const productNameBox = anchors.productNameBox || null;
+      const productLabelBox = anchors.productLabelBox || null;
+      const serialLabelBox = anchors.serialLabelBox || null;
+      const hasValidSerialY = !!(serialLabelBox && serialLabelBox.y0 >= 0.48 && serialLabelBox.y1 <= 0.70);
+
+      if (!productNameBox && !productLabelBox && !hasValidSerialY) {
+        return null;
+      }
+
+      let rx0 = 0.180;
+      let rx1 = 0.348;
+      if (productNameBox) {
+        rx0 = Math.max(0.180, productNameBox.x0 - 0.018);
+        rx1 = Math.min(0.348, productNameBox.x1 + 0.025);
+        if (rx1 - rx0 < 0.115) {
+          rx1 = Math.min(0.348, Math.max(rx1, rx0 + 0.135));
+        }
+      }
+
+      let ry0 = 0.552;
+      let ry1 = 0.646;
+      if (hasValidSerialY) {
+        ry0 = Math.max(0.545, serialLabelBox.y0 - 0.016);
+        ry1 = Math.min(0.656, Math.max(serialLabelBox.y1 + 0.045, serialLabelBox.y0 + 0.082));
+      } else {
+        const refBox = productNameBox || productLabelBox;
+        const refCy = (refBox.y0 + refBox.y1) * 0.5;
+        const shiftedCy = refCy + 0.088;
+        ry0 = Math.max(0.545, shiftedCy - 0.044);
+        ry1 = Math.min(0.656, shiftedCy + 0.044);
+      }
+
+      const crossCandidate = {
+        x: rx0,
+        y: ry0,
+        w: Math.max(0.085, rx1 - rx0),
+        h: Math.max(0.068, ry1 - ry0)
+      };
+
+      const stripped = extractHitachiSerialTightRegion(srcCanvas, crossCandidate);
+      return {
+        crossCandidate,
+        tightRegion: stripped.tightRegion || crossCandidate,
+        borderStrippedRegion: stripped.borderStrippedRegion || crossCandidate,
+        meta: stripped.meta || {},
+        usedProductNameX: !!productNameBox,
+        usedSerialLabelY: hasValidSerialY
+      };
+    } catch (err) {
+      console.warn('resolveHitachiCrossAnchorSerialRoi 略過例外:', err);
+      return null;
+    }
+  }
+
   function filterHitachiSerialResult(rawText) {
     if (!rawText) return '';
     try {
@@ -5013,6 +5162,8 @@
     createAdaptiveBinarizedOcrCropCanvas,
     extractHitachiSerialTightRegion,
     createHitachiPaddedGrayOcrCrop,
+    createHitachiThickenedInkOcrCrop,
+    resolveHitachiCrossAnchorSerialRoi,
     decodeCode128FromCanvas,
     rectifyPerspectivePureJS,
     sampleStampRegionLighting,
