@@ -251,8 +251,8 @@
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
       model: Object.freeze({ label: '型號（日立純白底去框線安全區）', x: 0.340, y: 0.472, w: 0.245, h: 0.068 }),
-      serial: Object.freeze({ label: '機號（日立寬容去框線貼字帶安全區）', x: 0.165, y: 0.552, w: 0.190, h: 0.094 }),
-      formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
+      serial: Object.freeze({ label: '機號（日立寬容去框線貼字帶安全區）', x: 0.165, y: 0.615, w: 0.193, h: 0.115 }),
+      formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.310 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
     dealerBoxSearchRegion: Object.freeze({
@@ -4978,7 +4978,7 @@
       const productNameBox = anchors.productNameBox || null;
       const productLabelBox = anchors.productLabelBox || null;
       const serialLabelBox = anchors.serialLabelBox || null;
-      const hasValidSerialY = !!(serialLabelBox && serialLabelBox.y0 >= 0.48 && serialLabelBox.y1 <= 0.70);
+      const hasValidSerialY = !!(serialLabelBox && serialLabelBox.y0 >= 0.56 && serialLabelBox.y1 <= 0.76);
 
       if (!productNameBox && !productLabelBox && !hasValidSerialY) {
         return null;
@@ -4987,24 +4987,24 @@
       let rx0 = 0.180;
       let rx1 = 0.348;
       if (productNameBox) {
-        rx0 = Math.max(0.180, productNameBox.x0 - 0.018);
-        rx1 = Math.min(0.348, productNameBox.x1 + 0.025);
+        rx0 = Math.max(0.178, productNameBox.x0 - 0.022);
+        rx1 = Math.min(0.352, productNameBox.x1 + 0.030);
         if (rx1 - rx0 < 0.115) {
-          rx1 = Math.min(0.348, Math.max(rx1, rx0 + 0.135));
+          rx1 = Math.min(0.352, Math.max(rx1, rx0 + 0.140));
         }
       }
 
-      let ry0 = 0.552;
-      let ry1 = 0.646;
+      let ry0 = 0.615;
+      let ry1 = 0.730;
       if (hasValidSerialY) {
-        ry0 = Math.max(0.545, serialLabelBox.y0 - 0.016);
-        ry1 = Math.min(0.656, Math.max(serialLabelBox.y1 + 0.045, serialLabelBox.y0 + 0.082));
+        ry0 = Math.max(0.595, serialLabelBox.y0 - 0.022);
+        ry1 = Math.min(0.742, Math.max(serialLabelBox.y1 + 0.055, serialLabelBox.y0 + 0.105));
       } else {
         const refBox = productNameBox || productLabelBox;
         const refCy = (refBox.y0 + refBox.y1) * 0.5;
-        const shiftedCy = refCy + 0.088;
-        ry0 = Math.max(0.545, shiftedCy - 0.044);
-        ry1 = Math.min(0.656, shiftedCy + 0.044);
+        const shiftedCy = refCy + 0.120;
+        ry0 = Math.max(0.600, shiftedCy - 0.056);
+        ry1 = Math.min(0.742, shiftedCy + 0.056);
       }
 
       const crossCandidate = {

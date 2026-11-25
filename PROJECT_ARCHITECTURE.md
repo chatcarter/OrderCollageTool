@@ -81,6 +81,19 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 01:30] (第 67 版 / v67)
+- **執行項目**：**瀏覽器實測抓因修復台灣日立家電製品保證書 `hitachi_tw` 機號真實 `Y` 軸座標（v67）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
+- **具體進度**：
+  1. **瀏覽器自動實測定位真實病因**：
+     - 以本機伺服器啟動預覽網頁並直接上傳 `日立保卡.jpg`，擷取實測資料與畫面座標疊圖後確認：拉正後「商品」列（`洗衣機`／`BD-SX150JJ`）實際落在 `y ≈ 48.9% ~ 61.1%`（文字帶 `53.5% ~ 59.5%`），緊鄰下方的「機號」列實際落在 `y ≈ 61.1% ~ 72.7%`（`T633868` 印在 **`y ≈ 66.2% ~ 71.5%`**）。
+     - 舊版 `ocrRegions.serial`（`y: 55.2% ~ 64.6%`）整框落在「商品」列 `洗衣機` 與機號格上方留白區，而 `ocrRegions.formBlock` 下緣止於 `67.0%`、十字交會 Y 軸偏移 `+0.088` 與 `productNameBox` Y 上限 `55.8%` 皆錯過真實機號列與品名列，導致過去 `T633868` 未曾進入裁切框內。
+  2. **精準校準 `hitachi_tw` 機號與表單區真實垂直範圍（`static/card_templates.js`、`static/app.js`）**：
+     - 更新 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial` 為 `x: 0.165, y: 0.615, w: 0.193, h: 0.115`（`y: 61.5% ~ 73.0%`），`ocrRegions.formBlock` 擴展為 `h: 0.310`（`y: 43.0% ~ 74.0%`），並校準 `resolveHitachiCrossAnchorSerialRoi()` 之 `serialLabelBox` 範圍（`0.56 ~ 0.76`）與品名列下移列高偏移 **`+0.120`**，於 `collectHitachiAnchorsFromItems()` 放寬 `productNameBox` 偵測至 `y: 44.8% ~ 61.5%`（同步保留 `model` 錨點完全不變）。
+     - 於 `runHitachiCardTargetedOcr()` 同步保留 `[Hitachi Serial ROI]` / `[Hitachi Serial Passes]` `console.debug` 輸出與 `#cardSmartStatus[data-hitachi-debug]` 除錯屬性鏡像。
+  3. **瀏覽器實測驗證與版本歸檔（`v67`）**：
+     - 重新於瀏覽器上傳 `日立保卡.jpg` 實測，十字交會緊緻區 `cross_tight`（`x: 22.17%, y: 66.63%, w: 10.17%, h: 4.85%`）8 輪增強辨識（含 `5.0x` 墨水加粗 `thick5_32`、二值化 `bin19`/`bin9`、灰階 `gray28`）**8/8 全數精準讀出 `T633868`**，畫面第 3 行穩定顯示 `日立 BD-SX150JJ`、第 4 行顯示 `機號 T633868`，且專櫃印章（`115.04.17`）對位正常。
+     - 建立 `_backup/20261126_012901/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v67 (2026.11.26)` 與 `?v=67`，通過 `HTML_SYNC_OK=True`、雙 JS 括號平衡與 `CRLF` 檢核後推送 `origin/main`。
+
 ### [2026-11-26 01:13] (第 66 版 / v66)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 雙錨點十字交會機號定位 ＋ `5.0x` 細字筆畫 `1px` 墨水加粗單點修復（v66）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
 - **具體進度**：

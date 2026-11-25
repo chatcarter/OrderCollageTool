@@ -8421,6 +8421,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
       let fullCardText = '';
       let crossVerifiedNote = '';
       let productLabelBox = null;
+      let serialRowProductBox = null;
       let productNameBox = null;
       let serialLabelBox = null;
       let purchaseRowBottomY = null;
@@ -8429,10 +8430,10 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
         if (!Array.isArray(items) || items.length === 0) return;
         const matchedKeywordNames = [];
         const matchedGenericNames = [];
-        const yMinProd = allowLooseY ? 0.36 : 0.36;
-        const yMaxProd = allowLooseY ? 0.62 : 0.62;
-        const yMinSer = allowLooseY ? 0.48 : 0.48;
-        const yMaxSer = allowLooseY ? 0.72 : 0.72;
+        const yMinProd = 0.36;
+        const yMaxProd = 0.62;
+        const yMinSer = 0.56;
+        const yMaxSer = 0.76;
 
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
@@ -8441,15 +8442,18 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
           if (!productLabelBox && item.x0 <= 0.24 && item.y0 >= yMinProd && item.y1 <= yMaxProd && (/商品|型號/.test(compact) || compact === '品')) {
             productLabelBox = item;
           }
+          if (!serialRowProductBox && item.x0 <= 0.24 && item.y0 >= 0.45 && item.y1 <= 0.64 && (/商品|型號/.test(compact) || compact === '品' || compact === '商')) {
+            serialRowProductBox = item;
+          }
           if (!serialLabelBox && item.x0 <= 0.24 && item.y0 >= yMinSer && item.y1 <= yMaxSer && (/機號|號碼/.test(compact) || compact === '號')) {
             serialLabelBox = item;
           }
-          if (!purchaseRowBottomY && item.x0 <= 0.55 && item.y0 >= 0.52 && item.y1 <= 0.72 && /購買日期|購買/.test(compact)) {
+          if (!purchaseRowBottomY && item.x0 <= 0.55 && item.y0 >= 0.52 && item.y1 <= 0.75 && /購買日期|購買/.test(compact)) {
             purchaseRowBottomY = item.y1 + 0.015;
           }
-          // 偵測「商品」列中文品名區（x: 17.5% ~ 35.5%, y: 45.0% ~ 55.5%），作為下方機號之水平 X 軸十字錨點
-          if (item.x0 >= 0.172 && item.x1 <= 0.362 && item.y0 >= 0.448 && item.y1 <= 0.558 && /[\u4e00-\u9fff]/.test(compact)) {
-            if (/^(?:商品|型號|機號|號碼|品|號)$/.test(compact)) continue;
+          // 偵測「商品」列中文品名區（x: 17.5% ~ 35.5%, y: 45.0% ~ 61.5%），作為下方機號之水平 X 軸十字錨點
+          if (item.x0 >= 0.172 && item.x1 <= 0.362 && item.y0 >= 0.448 && item.y1 <= 0.615 && /[\u4e00-\u9fff]/.test(compact)) {
+            if (/^(?:商品|型號|機號|號碼|品|商|號)$/.test(compact)) continue;
             if (/洗衣機|冰箱|冷氣|除濕機|除溼機|烘衣機|乾衣機|清淨機|空氣清淨|吸塵器|電子鍋|微波爐|水波爐|電冰箱|冷凍櫃|空調/.test(compact)) {
               matchedKeywordNames.push(item);
             } else {
@@ -8473,7 +8477,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             x0: Math.max(0.175, nx0),
             y0: Math.max(0.450, ny0),
             x1: Math.min(0.355, nx1),
-            y1: Math.min(0.555, ny1)
+            y1: Math.min(0.612, ny1)
           };
         }
       };
@@ -8581,7 +8585,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             : { x: 0.340, y: 0.472, w: 0.245, h: 0.068 };
           const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial)
             ? tpl.ocrRegions.serial
-            : { x: 0.165, y: 0.552, w: 0.190, h: 0.094 };
+            : { x: 0.165, y: 0.615, w: 0.193, h: 0.115 };
 
           // v64：型號收斂為純白底安全區（x: 34.0% ~ 58.5%, y: 47.2% ~ 54.0%，boxH: 0.066 避開右側垂直線與上下黑框），另備 34.0%~63.5% 次視窗
           const anchorModelRoi = (productLabelBox && productLabelBox.y0 >= 0.38 && productLabelBox.y1 <= 0.60)
@@ -8599,16 +8603,16 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             h: 0.066
           };
 
-          // v65：機號改採寬容候選區（x: 16.5% ~ 35.5%, y: 55.2% ~ 64.6%，serialLabelBox 僅作保守 Y 界參考，絕不右推 rx 切掉首碼 T）
+          // v67：實測確認拉正後機號列位於 y: 61.1% ~ 72.7%（T633868 位於 66.2% ~ 71.5%），改採真實機號列寬容候選區（y: 61.5% ~ 73.0%）
           const serialCandidateReg = (() => {
-            if (serialLabelBox && serialLabelBox.y0 >= 0.48 && serialLabelBox.y1 <= 0.70) {
-              const candY0 = Math.max(0.542, Math.min(0.556, serialLabelBox.y0 - 0.012));
-              const candY1 = Math.min(0.656, Math.max(0.646, serialLabelBox.y1 + 0.046));
+            if (serialLabelBox && serialLabelBox.y0 >= 0.56 && serialLabelBox.y1 <= 0.76) {
+              const candY0 = Math.max(0.595, serialLabelBox.y0 - 0.022);
+              const candY1 = Math.min(0.742, Math.max(serialLabelBox.y1 + 0.055, serialLabelBox.y0 + 0.105));
               return {
                 x: 0.165,
                 y: candY0,
-                w: 0.190,
-                h: Math.max(0.088, candY1 - candY0)
+                w: 0.193,
+                h: Math.max(0.095, candY1 - candY0)
               };
             }
             return { ...defaultSerialReg };
@@ -8650,7 +8654,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
 
           // v66 機號最高優先權升級：「雙錨點十字交會定位（crossAnchorSerialRoi）」＋「5.0x 放大 1px Min-Filter 墨水加粗 ＋ 32px 純白靜區」＋ 保留 v65 去框貼字帶與雙語備援
           const crossAnchorResolved = (typeof window.CardTemplates.resolveHitachiCrossAnchorSerialRoi === 'function')
-            ? window.CardTemplates.resolveHitachiCrossAnchorSerialRoi(srcCanvas, { productNameBox, productLabelBox, serialLabelBox })
+            ? window.CardTemplates.resolveHitachiCrossAnchorSerialRoi(srcCanvas, { productNameBox, productLabelBox: serialRowProductBox || productLabelBox, serialLabelBox })
             : null;
           const serialRoiResolved = (typeof window.CardTemplates.extractHitachiSerialTightRegion === 'function')
             ? window.CardTemplates.extractHitachiSerialTightRegion(srcCanvas, serialCandidateReg)
@@ -8663,15 +8667,19 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
           const cropThickInkFn = window.CardTemplates.createHitachiThickenedInkOcrCrop || cropPaddedGrayFn;
           const serialDebugLogs = [];
 
-          console.debug('[Hitachi Serial ROI v66]', {
+          const hitachiDebugSnapshot = {
             productNameBox,
+            productLabelBox,
             serialLabelBox,
             crossAnchor: crossAnchorResolved,
             candidate: serialCandidateReg,
             tight: tightSerialRoi,
             borderStripped: borderStrippedSerialRoi,
-            meta: serialRoiResolved.meta
-          });
+            meta: serialRoiResolved.meta,
+            formTextSample: String(formText || '').slice(0, 300),
+            fullCardTextSample: String(fullCardText || '').slice(0, 300)
+          };
+          console.debug('[Hitachi Serial ROI v66]', hitachiDebugSnapshot);
 
           const serialBinOpts19 = { despeckle: false, stripDottedUnderline: false, stripBottomDotBand: false, thresholdOffset: 19, pad: 28 };
           const serialBinOpts9 = { despeckle: false, stripDottedUnderline: false, stripBottomDotBand: false, thresholdOffset: 9, pad: 28 };
@@ -8763,6 +8771,16 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             await runSerialSuiteForRoi(borderStrippedSerialRoi, 'cell');
           }
           console.debug('[Hitachi Serial Passes v66]', serialDebugLogs, 'picked:', serialClean);
+          if (cardSmartStatus) {
+            try {
+              cardSmartStatus.setAttribute('data-hitachi-debug', JSON.stringify({
+                roi: hitachiDebugSnapshot,
+                passes: serialDebugLogs,
+                pickedSerial: serialClean,
+                pickedModel: modelClean
+              }));
+            } catch (dbgErr) {}
+          }
 
           if (worker) {
             await worker.setParameters({
