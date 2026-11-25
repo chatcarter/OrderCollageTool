@@ -81,6 +81,19 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 00:47] (第 63 版 / v63)
+- **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章圓鼓高度微調係數 `heightScale = 1.18` ＋ 連字整格橫切穩抓機號修復（v63）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
+- **具體進度**：
+  1. **備份與版本徽章（`v63`）**：
+     - 建立 `_backup/20261126_004417/` 完整備份，同步更新 `index.html` 與 `static/index.html` 至 `v63 (2026.11.26)` 與 `?v=63`。
+  2. **`hitachi_tw` 印章垂直高度微調係數 `heightScale = 1.18`（`static/card_templates.js`、`static/app.js`）**：
+     - 保持 `HITACHI_TW_STAMP_SPEC` 與 `detectHitachiDealerStampSpec()` 的印章中心座標（`centerX: 0.858, centerY: 0.455`）及寬度比例（`widthRatio: 0.237`）完全不變，新增專屬屬性 **`heightScale: 1.18`**。
+     - 於 `attachInteractiveStampToCardLayer()`、`autoArrangeWorkbenchLayout()` 與 `compositeStampOnOffscreenCard()` 套用 `(spec.heightScale || 1)` 計算顯示高度，使其餘品牌維持 `1` 完全不受影響，日立印章上下弧線圓鼓飽滿。
+  3. **連同左側「機號」二字整格橫切 ＋ 剝除前綴穩抓機號（`static/card_templates.js`、`static/app.js`）**：
+     - **整格橫切穩定基線**：調整 `HITACHI_TW_WARRANTY_CONFIG.ocrRegions.serial` 與 `runHitachiCardTargetedOcr()` 為 `x: 8.5% ~ 36.0%, y: 55.0% ~ 64.5%`（結合「機號」`Y` 軸動態定位，止於右側「購買日期」分隔線前並內縮避開上下水平線），放大 **`4.0x`** 以 `chiEngWorker` 雙語單行（`psm = 7`，不限英數白名單）執行標準（`19`）／深墨水低閾值（`9`）／灰階對比辨識。
+     - **剝除「機號」前綴與訂購單還原**：升級 `filterHitachiSerialResult()` 先剝除 `機號`／冒號／空白雜訊，支援標準 `1~2` 碼英文＋`5~7` 碼數字（如 `T633868`）、`1`/`I` 誤讀如 `1633868` 及純 `6~7` 碼數字保底，並於訂購單比對時自動還原前導英文字母且寫回左下 5 行大字。
+  4. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 檔案括號平衡與 `CRLF` 換行檢核，並推送至 `origin/main`。
+
 ### [2026-11-26 00:38] (第 62 版 / v62)
 - **執行項目**：**精修台灣日立家電製品保證書 `hitachi_tw` — 印章原始比例鎖定防拉扁 ＋ 型號／機號必經路由與全圖雙重備援（v62）** — 嚴格遵守品牌隔離原則，絕不修改已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）任何核心邏輯。
 - **具體進度**：

@@ -233,12 +233,13 @@
   };
 
   /**
-   * 台灣日立阿奇立克家電製品保證書獨立命名空間規格 (hitachi_tw，嚴格隔離絕不干擾 Panasonic、LG 與三菱邏輯) (v60/v61 印章原地放大1.1倍)
+   * 台灣日立阿奇立克家電製品保證書獨立命名空間規格 (hitachi_tw，嚴格隔離絕不干擾 Panasonic、LG 與三菱邏輯) (v63 印章 heightScale=1.18 ＋ 整格連字機號橫切)
    */
   const HITACHI_TW_STAMP_SPEC = Object.freeze({
     centerX: 0.858,
     centerY: 0.455,
     widthRatio: 0.237,
+    heightScale: 1.18,
     tiltRangeDeg: 1.5,
     blendMode: 'multiply'
   });
@@ -250,7 +251,7 @@
     stampSpec: HITACHI_TW_STAMP_SPEC,
     ocrRegions: Object.freeze({
       model: Object.freeze({ label: '型號（日立商品列右側）', x: 0.320, y: 0.455, w: 0.380, h: 0.105 }),
-      serial: Object.freeze({ label: '機號（日立機號列右側）', x: 0.160, y: 0.555, w: 0.200, h: 0.090 }),
+      serial: Object.freeze({ label: '機號（日立整格含「機號」二字）', x: 0.085, y: 0.550, w: 0.275, h: 0.095 }),
       formBlock: Object.freeze({ label: '日立商品／機號／購買日期表單區', x: 0.030, y: 0.430, w: 0.720, h: 0.240 }),
       dealerStampZone: Object.freeze({ label: '日立右上經銷商確認章與 HITACHI 錨點區', x: 0.680, y: 0.120, w: 0.305, h: 0.580 })
     }),
@@ -1680,9 +1681,9 @@
     // 1. 繪製高清拉正保卡底圖
     ctx.drawImage(cleanCardCanvas, 0, 0, cw, ch);
 
-    // 2. 以 multiply 正片疊底在避讓座標蓋上光影自適應專櫃章
+    // 2. 以 multiply 正片疊底在避讓座標蓋上光影自適應專櫃章（僅於設定 heightScale 如 hitachi_tw 時微調高度，其餘品牌維持 1）
     const stampW = Math.round(cw * spec.widthRatio);
-    const stampH = Math.round((stampW * adaptedStamp.height) / Math.max(1, adaptedStamp.width));
+    const stampH = Math.round(((stampW * adaptedStamp.height) / Math.max(1, adaptedStamp.width)) * (spec.heightScale || 1));
     const cx = cw * spec.centerX;
     const cy = ch * spec.centerY;
     const maxTilt = spec.tiltRangeDeg || 1.5;
@@ -4520,6 +4521,7 @@
       centerX: Number(stampCenterX.toFixed(4)),
       centerY: Number(Math.max(0.425, Math.min(0.485, stampCenterY)).toFixed(4)),
       widthRatio: Number(enlargedWidthRatio.toFixed(4)),
+      heightScale: 1.18,
       tiltRangeDeg: 1.5,
       blendMode: 'multiply'
     };
@@ -4612,16 +4614,21 @@
   function filterHitachiSerialResult(rawText) {
     if (!rawText) return '';
     try {
-      const cleaned = String(rawText).toUpperCase()
+      // 先剝除左側「機號 / 製造號碼 / SERIAL / S/N」、冒號、空白與雜訊符號，提供乾淨的後方英數字串
+      const stripped = String(rawText).toUpperCase()
+        .replace(/^\s*(?:機\s*號|製\s*造\s*號\s*碼|SERIAL|S\/?N)\s*[:：.\-|_|]*/gi, ' ')
+        .replace(/(?:機\s*號|製\s*造\s*號\s*碼|SERIAL|S\/?N)\s*[:：.\-|_|]*/gi, ' ');
+
+      const cleaned = stripped
         .replace(/24721268/g, ' ')
         .replace(/0800[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
         .replace(/2516[-\s]?0500/g, ' ')
         .replace(/[A-Z]{2,4}-[A-Z0-9-]{3,}/g, ' ');
 
       const toDigit = ch => ({ O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' }[ch] || ch);
-      const rawTokens = cleaned.split(/[\s\r\n:：/|]+/).filter(Boolean);
+      const rawTokens = cleaned.split(/[\s\r\n:：/|_\-—–·•]+/).filter(Boolean);
       const tokenPool = [...rawTokens];
-      // 若開頭英文字母與後方數字間被空白拆開（例如 "T 633868"），額外合併相鄰組
+      // 若開頭英文字母與後方數字間被空白或細線拆開（例如 "T 633868"），額外合併相鄰組
       for (let i = 0; i < rawTokens.length - 1; i++) {
         const t1 = rawTokens[i].replace(/[^A-Z0-9]/g, '');
         const t2 = rawTokens[i + 1].replace(/[^A-Z0-9]/g, '');
@@ -4629,6 +4636,12 @@
           tokenPool.push(t1 + t2);
         }
       }
+      // 也掃描整行去非英數後緊湊比對（如 "機號 T 633868" 去中文字與符號）
+      const compactAlphaNum = cleaned.replace(/[^A-Z0-9]/g, '');
+      if (compactAlphaNum.length >= 6 && compactAlphaNum.length <= 14) {
+        tokenPool.push(compactAlphaNum);
+      }
+
       const candidates = [];
 
       for (let i = 0; i < tokenPool.length; i++) {
@@ -4646,7 +4659,7 @@
           }
         }
 
-        // 2. 次高權重：純 6~7 碼數字（開頭細字英文字母遺失時仍保留輸出，絕不丟棄為空）
+        // 2. 次高權重：純 6~7 碼數字（開頭細字 T 誤讀為 1/I 如 1633868 或僅剩 6 碼 633868 皆保留不丟棄）
         const pureDigits = rawTok.split('').map(toDigit).join('');
         if (/^\d{6,7}$/.test(pureDigits) && pureDigits !== '24721268' && pureDigits !== '25160500') {
           candidates.push({ val: pureDigits, score: 90 + pureDigits.length });

@@ -8550,7 +8550,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             : { x: 0.320, y: 0.455, w: 0.380, h: 0.105 };
           const defaultSerialReg = (tpl.ocrRegions && tpl.ocrRegions.serial)
             ? tpl.ocrRegions.serial
-            : { x: 0.160, y: 0.555, w: 0.200, h: 0.090 };
+            : { x: 0.085, y: 0.550, w: 0.275, h: 0.095 };
 
           const anchorModelRoi = (productLabelBox && productLabelBox.y0 >= 0.38 && productLabelBox.y1 <= 0.60)
             ? (() => {
@@ -8561,15 +8561,13 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
               })()
             : null;
 
-          // 結合左側「機號」字樣 Y 軸垂直中心線動態對齊純白底機號區（x: 16.0% ~ 36.0%），避開左側「機號」與右側「購買日期」框線
+          // v63：連同左側「機號」二字整格橫切（x: 8.5% ~ 36.0%, y: 55.0% ~ 64.5%），提供 Tesseract 穩固文字基線，右止於「購買日期」分隔線前並內縮避開上下水平線
           const anchorSerialRoi = (serialLabelBox && serialLabelBox.y0 >= 0.48 && serialLabelBox.y1 <= 0.70)
             ? (() => {
                 const anchorY = (serialLabelBox.y0 + serialLabelBox.y1) * 0.5;
-                const boxH = 0.088;
-                const rx = Math.max(0.155, Math.min(0.205, serialLabelBox.x1 + 0.006));
-                const rw = Math.max(0.155, 0.365 - rx);
-                const ry = Math.max(0.525, Math.min(0.665 - boxH, anchorY - boxH * 0.5));
-                return { x: rx, y: ry, w: rw, h: boxH };
+                const boxH = Math.max(0.082, Math.min(0.096, (serialLabelBox.y1 - serialLabelBox.y0) + 0.044));
+                const ry = Math.max(0.530, Math.min(0.665 - boxH, anchorY - boxH * 0.5));
+                return { x: 0.085, y: ry, w: 0.275, h: boxH };
               })()
             : null;
 
@@ -8605,7 +8603,7 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             }
           }
 
-          // 機號雙閾值＋灰階對比增強（4.0x 放大：標準 thresholdOffset=19 ＋ 深墨水低閾值 thresholdOffset=9 ＋ 灰階對比）
+          // v63 機號整格橫切雙語辨識（4.0x 放大 ＋ chiEngWorker psm=7 無英數白名單鎖定，含標準 19／深墨水低閾值 9／灰階對比）
           const primarySerialRoi = anchorSerialRoi || defaultSerialReg;
           const serialPassConfigs = [];
           if (cropBinFn) {
@@ -8626,22 +8624,23 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
                 ? cfg.fn(srcCanvas, cfg.roi, 4.0, cfg.opts)
                 : cfg.fn(srcCanvas, cfg.roi, 4.0);
               let rawS = '';
-              if (worker) {
-                await worker.setParameters({
-                  tessedit_pageseg_mode: '7',
-                  tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                });
-                const sRes = await worker.recognize(sCrop);
-                rawS = (sRes && sRes.data && sRes.data.text) || '';
+              if (chiEngWorker) {
+                await chiEngWorker.setParameters({ tessedit_pageseg_mode: '7' });
+                try {
+                  const sRes = await chiEngWorker.recognize(sCrop);
+                  rawS = (sRes && sRes.data && sRes.data.text) || '';
+                } finally {
+                  await chiEngWorker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
+                }
               } else {
-                const sRes = await window.Tesseract.recognize(sCrop, 'eng');
+                const sRes = await window.Tesseract.recognize(sCrop, 'eng+chi_tra');
                 rawS = (sRes && sRes.data && sRes.data.text) || '';
               }
               if (rawS && window.CardTemplates.filterHitachiSerialResult) {
                 considerSerialCandidate(window.CardTemplates.filterHitachiSerialResult(rawS));
               }
             } catch (sErr) {
-              console.warn('日立機號局部雙閾值 OCR 單次重試略過:', sErr);
+              console.warn('日立機號整格雙語 OCR 單次重試略過:', sErr);
             }
           }
 
@@ -8785,10 +8784,12 @@ async function runHitachiCardTargetedOcr(layer, preScanText = '') {
             }
           }
         }
-        // 若機號開頭細字英文字母遺失（目前僅為純 5~7 碼數字），嘗試自訂購單 PDF 原生純文字比對補全前導英文字母（如 633868 -> T633868）
+        // 若機號開頭細字英文字母遺失或誤讀為 1（如 633868 或 1633868），嘗試自訂購單 PDF 原生純文字比對還原前導英文字母（如 T633868）
         if (serialClean && /^\d{5,7}$/.test(serialClean) && Array.isArray(layers)) {
           const orderLayers = layers.filter(l => l && l.rawPdfText);
-          const serialRe = new RegExp(`\\b([A-Z]{1,2}${serialClean})\\b`, 'i');
+          const tailDigits = (serialClean.length === 7 && serialClean[0] === '1') ? serialClean.slice(1) : serialClean;
+          const patternPart = tailDigits !== serialClean ? `(?:${serialClean}|${tailDigits})` : serialClean;
+          const serialRe = new RegExp(`\\b([A-Z]{1,2}${patternPart})\\b`, 'i');
           for (let i = 0; i < orderLayers.length; i++) {
             const sm = String(orderLayers[i].rawPdfText || '').toUpperCase().match(serialRe);
             if (sm && sm[1]) {
@@ -9270,7 +9271,7 @@ async function attachInteractiveStampToCardLayer(cardLayer, stampImg, dateStr, f
   const natStampH = stampImg.naturalHeight || stampImg.height || 1440;
   const stampAspectRatio = natStampH / Math.max(1, natStampW);
   const displayW = Math.max(120, Math.round(cardLayer.width * (spec.widthRatio || 0.210)));
-  const displayH = Math.round(displayW * stampAspectRatio);
+  const displayH = Math.round(displayW * stampAspectRatio * (spec.heightScale || 1));
   const localDx = ((spec.centerX ?? 0.845) - 0.5) * cardLayer.width;
   const localDy = ((spec.centerY ?? 0.395) - 0.5) * cardLayer.height;
   const cosR = Math.cos(cardLayer.rotation || 0);
@@ -10519,7 +10520,7 @@ function autoArrangeWorkbenchLayout(recordUndo = true) {
         const sImgH = s.image.naturalHeight || s.image.height || 1440;
         const stampAspectRatio = sImgH / Math.max(1, sImgW);
         s.width = Math.round(cardLayer.width * spec.widthRatio);
-        s.height = Math.round(s.width * stampAspectRatio);
+        s.height = Math.round(s.width * stampAspectRatio * (spec.heightScale || 1));
         const localDx = (spec.centerX - 0.5) * cardLayer.width;
         const localDy = (spec.centerY - 0.5) * cardLayer.height;
         s.x = Math.round(cardLayer.x + localDx);
