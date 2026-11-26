@@ -81,6 +81,13 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 18:47] (第 70 版 / v70)
+- **執行項目**：**紙本電子發票證明聯智慧辨識＋雙 QR Code 底緣裁切＋真實三合一檔案自動化實測（`v70`）** — 嚴格鎖死已封版之四大品牌 `static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
+- **具體進度**：
+  1. **備份與版本同步**：建立 `_backup/20261126_173911_v69/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v70 (2026.11.26)` 及 `?v=70`。
+  2. **紙本電子發票證明聯智慧辨識與裁切（`static/app.js`）**：新增 `detectPaperEInvoiceProofFeatures()` 與 `cropPaperEInvoiceProofSlip()`，精準裁切保留頂部商場抬頭至下方左右雙 QR Code 底部（實測 `518 × 614 px`）、嚴禁蓋印章並保留 `rawOriginalImage`；升級 `runReceiptHighResOcr()` 精準讀取 `FN29665822` 與 `2026-10-22` 更新 5 行大字。
+  3. **自動化測試參數 `?autotest=1` 與實測歸檔**：支援 `?autotest=1` 自動解除時間鎖供三合一真實樣本瀏覽器驗收（0 Console 報錯），測畢已清除樣本檔保護客戶個資並通過 `HTML_SYNC_OK=True`、括號平衡與 `CRLF` 檢核。
+
 ### [2026-11-26 17:11] (第 69 版 / v69)
 - **執行項目**：**集雅社專櫃訂購單上下拼接接縫精準修復（`v69`）** — 嚴格鎖死已封版之四大品牌 `static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
 - **具體進度**：
