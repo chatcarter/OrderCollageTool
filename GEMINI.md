@@ -53,6 +53,21 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 16:52] (第 68 版 / v68)
+- **執行項目**：**新增「🖼️ 維持原圖」一鍵還原、全面升級「小畫家 3D 級」自由變形控制框與訂購單下半部裁切上緣安全留白（v68）** — 嚴格鎖死已封版之四大品牌（Panasonic 國際牌、`lg_tw`、`mitsubishi_tw`、`hitachi_tw`）`static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
+- **具體進度**：
+  1. **備份與版本徽章同步（`v68`）**：
+     - 建立 `_backup/20261126_155729_v67/` 完整基線備份，同步更新 `index.html` 與 `static/index.html` 版本徽章至 `v68 (2026.11.26)` 及資源參數 `?v=68`。
+  2. **新增「🖼️ 維持原圖」一鍵還原按鈕（`index.html`、`static/index.html`、`static/app.js`）**：
+     - 於「🏷️ 品牌保卡智慧辨識與自動蓋章」卡片標題列加入 `btnKeepOriginalSmartCard`（`🖼️ 維持原圖`），並於右側選取圖片物件控制面板加入 `btnKeepOriginalImage`（`🖼️ 維持原圖（取消自動拉正）`）。
+     - 匯入圖片時保存原始影像快照 `rawOriginalImage`；點擊按鈕後呼叫 `keepOriginalImageForLayer()` 推入 `pushUndoState()`，恢復為未經透視拉正與未自動變形之原始圖片，同時完整保留已 OCR 辨識的機種、機號、發票資訊與左下角 5 行大字。
+  3. **全面升級「小畫家 3D 級」自由變形控制框（`static/app.js`）**：
+     - 升級 `drawSelectionBox()`、`hitTestLayerControlHandles()` 與 `applyActiveLayerPointerDrag()`：保留四角等比例縮放，並於所有畫布物件（印章、保卡、發票、訂購單、文字）選取框之左右與上下中點加入雙向箭頭控制點（`rc`/`lc`/`bc`/`tc`），支援旋轉座標系下錨定對邊的獨立拉寬／拉高非等比例變形。
+     - 將上方正中央旋轉柄升級為「小畫家 3D」風格白底圓形＋深藍色圓弧旋轉箭頭手把，拖曳時以物件中心為軸心 360° 自由旋轉並即時顯示角度提示徽章（例如 `12.5°`）。
+  4. **集雅社專櫃訂購單下半部裁切上緣往上外擴 `0.35 cm`（`static/app.js`）**：
+     - 於 `buildPurifiedOrderSheetCanvas()` 調整 `paymentSliceStartY` 上緣安全緩衝至 `Math.max(40, Math.round(7.0 * scale))`（約 300 DPI `0.35 cm` / `40 px` 安全留白，並夾限於明細末列之下），解決左側「顧客姓名」與右側「專櫃名稱／聯絡地址」上方文字被切到的問題。
+  5. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、JS 括號平衡與 Windows `CRLF` 檢核，並自動推送 `origin/main`。（本機預覽伺服器驗證於 `v68` 版本載入與按鈕 DOM 檢查無 Console 報錯後，因隱形時間鎖 `#stealthTimeLockOverlay` 依規範停止自動繞過並經確認後直接歸檔。）
+
 ### [2026-11-26 01:30] (第 67 版 / v67)
 - **執行項目**：**瀏覽器實測抓因修復台灣日立家電製品保證書 `hitachi_tw` 機號真實 `Y` 軸座標（v67）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
 - **具體進度**：

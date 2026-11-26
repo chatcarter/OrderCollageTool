@@ -81,6 +81,14 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 16:52] (第 68 版 / v68)
+- **執行項目**：**新增「🖼️ 維持原圖」一鍵還原、全面升級「小畫家 3D 級」自由變形控制框與訂購單下半部裁切上緣安全留白（v68）** — 嚴格鎖死已封版之四大品牌 `static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
+- **具體進度**：
+  1. **備份與版本同步**：建立 `_backup/20261126_155729_v67/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v68 (2026.11.26)` 及 `?v=68`。
+  2. **「🖼️ 維持原圖」一鍵還原**：於「品牌保卡智慧辨識與自動蓋章」標題列與選取圖片控制面板新增按鈕，透過 `rawOriginalImage` 與 `keepOriginalImageForLayer()` 一鍵還原未經透視拉正／自動變形之原圖並保留已辨識機種、機號與左下角 5 行大字，支援 `Ctrl+Z` 復原。
+  3. **「小畫家 3D 級」自由變形控制框**：`drawSelectionBox()`、`hitTestLayerControlHandles()` 與 `applyActiveLayerPointerDrag()` 支援四邊中點（`rc`/`lc`/`bc`/`tc`）雙向箭頭獨立拉寬／拉高，以及上方圓弧旋轉箭頭手把 360° 旋轉與即時角度徽章顯示。
+  4. **訂購單裁切上緣外擴 `0.35 cm`**：調整 `buildPurifiedOrderSheetCanvas()` 之 `paymentSliceStartY` 往上外擴約 `40 px`（`Math.max(40, Math.round(7.0 * scale))`）安全留白，完整保留「顧客姓名」與「專櫃名稱／聯絡地址」上方文字。
+
 ### [2026-11-26 01:30] (第 67 版 / v67)
 - **執行項目**：**瀏覽器實測抓因修復台灣日立家電製品保證書 `hitachi_tw` 機號真實 `Y` 軸座標（v67）** — 嚴格鎖死已完美定案之 `hitachi_tw` 印章與型號（`BD-SX150JJ`）以及已封版之 Panasonic 國際牌、`lg_tw`（LG 台灣樂金）與 `mitsubishi_tw`（台灣三菱電機）邏輯完全不動。
 - **具體進度**：

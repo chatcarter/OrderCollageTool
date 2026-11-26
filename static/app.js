@@ -331,6 +331,8 @@ const switchAutoLayout = document.getElementById('switchAutoLayout');
 const btnAutoLayout = document.getElementById('btnAutoLayout');
 const selectCardTemplateMode = document.getElementById('selectCardTemplateMode');
 const cardTemplateBadge = document.getElementById('cardTemplateBadge');
+const btnKeepOriginalSmartCard = document.getElementById('btnKeepOriginalSmartCard');
+const btnKeepOriginalImage = document.getElementById('btnKeepOriginalImage');
 const btnToggleCardRectify = document.getElementById('btnToggleCardRectify');
 const btnApplyCardRectify = document.getElementById('btnApplyCardRectify');
 const cardRectifyNotice = document.getElementById('cardRectifyNotice');
@@ -850,6 +852,7 @@ function createLayerObject(options) {
     flipH: false,
     image: options.image || null,
     rawImage: options.rawImage || options.image || null,
+    rawOriginalImage: options.rawOriginalImage || options.rawImage || options.image || null,
     warpedImage: options.warpedImage || null,
     croppedImage: options.croppedImage || null,
     // PDF 專屬快取與萃取純文字
@@ -1016,7 +1019,7 @@ function drawTextLayer(layer) {
   });
 }
 
-// 繪製選取框與四角縮放柄 + 頂部旋轉柄
+// 繪製選取框與四角等比例縮放柄 + 四邊中點獨立拉伸柄 + 小畫家 3D 旋轉圓形控制柄 (v68)
 function drawSelectionBox(layer) {
   ctx.save();
   ctx.translate(layer.x, layer.y);
@@ -1025,7 +1028,7 @@ function drawSelectionBox(layer) {
   const hw = layer.width / 2;
   const hh = layer.height / 2;
   const handleSize = 12 / currentZoom;
-  const rotStemLength = 32 / currentZoom;
+  const rotStemLength = 38 / currentZoom;
 
   ctx.strokeStyle = '#003FBC';
   ctx.lineWidth = 2.0 / currentZoom;
@@ -1051,20 +1054,155 @@ function drawSelectionBox(layer) {
     ctx.stroke();
   });
 
-  // 頂部旋轉控制柄
-  ctx.beginPath();
-  ctx.moveTo(0, -hh);
-  ctx.lineTo(0, -hh - rotStemLength);
-  ctx.strokeStyle = '#003FBC';
-  ctx.stroke();
+  // 四邊中點獨立拉伸控制點（雙向箭頭：左右 ↔ / 上下 ↕）
+  const midHandles = [
+    { x: 0, y: -hh, dir: 'v' },
+    { x: hw, y: 0, dir: 'h' },
+    { x: 0, y: hh, dir: 'v' },
+    { x: -hw, y: 0, dir: 'h' }
+  ];
+  const pillW = 20 / currentZoom;
+  const pillH = 16 / currentZoom;
+  const pillR = 4 / currentZoom;
+
+  midHandles.forEach(m => {
+    const bw = m.dir === 'h' ? pillW : pillH;
+    const bh = m.dir === 'h' ? pillH : pillW;
+    ctx.save();
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(m.x - bw / 2, m.y - bh / 2, bw, bh, pillR);
+    } else {
+      ctx.rect(m.x - bw / 2, m.y - bh / 2, bw, bh);
+    }
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#003FBC';
+    ctx.lineWidth = 2.0 / currentZoom;
+    ctx.stroke();
+
+    // 繪製雙向箭頭圖示
+    ctx.strokeStyle = '#003FBC';
+    ctx.fillStyle = '#003FBC';
+    ctx.lineWidth = 1.6 / currentZoom;
+    const span = 6.2 / currentZoom;
+    const tip = 2.6 / currentZoom;
+    if (m.dir === 'h') {
+      ctx.beginPath();
+      ctx.moveTo(m.x - span, m.y);
+      ctx.lineTo(m.x + span, m.y);
+      ctx.stroke();
+      // 左箭頭
+      ctx.beginPath();
+      ctx.moveTo(m.x - span - 1 / currentZoom, m.y);
+      ctx.lineTo(m.x - span + tip, m.y - tip);
+      ctx.lineTo(m.x - span + tip, m.y + tip);
+      ctx.closePath();
+      ctx.fill();
+      // 右箭頭
+      ctx.beginPath();
+      ctx.moveTo(m.x + span + 1 / currentZoom, m.y);
+      ctx.lineTo(m.x + span - tip, m.y - tip);
+      ctx.lineTo(m.x + span - tip, m.y + tip);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y - span);
+      ctx.lineTo(m.x, m.y + span);
+      ctx.stroke();
+      // 上箭頭
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y - span - 1 / currentZoom);
+      ctx.lineTo(m.x - tip, m.y - span + tip);
+      ctx.lineTo(m.x + tip, m.y - span + tip);
+      ctx.closePath();
+      ctx.fill();
+      // 下箭頭
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y + span + 1 / currentZoom);
+      ctx.lineTo(m.x - tip, m.y + span - tip);
+      ctx.lineTo(m.x + tip, m.y + span - tip);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+
+  // 頂部「小畫家 3D」風格圓弧箭頭旋轉控制柄
+  const rotCy = -hh - rotStemLength;
+  const rotR = 13 / currentZoom;
 
   ctx.beginPath();
-  ctx.arc(0, -hh - rotStemLength, handleSize * 0.7, 0, Math.PI * 2);
+  ctx.moveTo(0, -hh);
+  ctx.lineTo(0, rotCy + rotR);
+  ctx.strokeStyle = '#003FBC';
+  ctx.lineWidth = 2.0 / currentZoom;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+  ctx.shadowBlur = 4 / currentZoom;
+  ctx.shadowOffsetY = 1 / currentZoom;
+  ctx.beginPath();
+  ctx.arc(0, rotCy, rotR, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(0, rotCy, rotR, 0, Math.PI * 2);
+  ctx.strokeStyle = '#003FBC';
+  ctx.lineWidth = 2.2 / currentZoom;
+  ctx.stroke();
+
+  // 圓形手把內嵌 270° 圓弧旋轉箭頭
+  const arcR = 6.8 / currentZoom;
+  const startA = -Math.PI * 0.75;
+  const endA = Math.PI * 0.75;
+  ctx.beginPath();
+  ctx.arc(0, rotCy, arcR, startA, endA, false);
+  ctx.strokeStyle = '#003FBC';
+  ctx.lineWidth = 2.0 / currentZoom;
+  ctx.stroke();
+
+  const ax = Math.cos(endA) * arcR;
+  const ay = rotCy + Math.sin(endA) * arcR;
+  const arrowLen = 4.2 / currentZoom;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - arrowLen * 0.9, ay - arrowLen * 0.25);
+  ctx.lineTo(ax + arrowLen * 0.15, ay - arrowLen * 0.95);
+  ctx.closePath();
   ctx.fillStyle = '#003FBC';
   ctx.fill();
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 1.8 / currentZoom;
-  ctx.stroke();
+
+  // 拖曳旋轉時於手把旁顯示即時角度徽章
+  if (isRotating && layer === activeLayer) {
+    let deg = ((layer.rotation * 180) / Math.PI) % 360;
+    if (deg < 0) deg += 360;
+    const degText = `${deg.toFixed(1)}°`;
+    ctx.font = `bold ${Math.round(13 / currentZoom)}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    const tw = ctx.measureText(degText).width;
+    const bw = tw + 14 / currentZoom;
+    const bh = 22 / currentZoom;
+    const bx = rotR + 10 / currentZoom;
+    const by = rotCy - bh / 2;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(bx, by, bw, bh, 5 / currentZoom);
+    } else {
+      ctx.rect(bx, by, bw, bh);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(degText, bx + bw / 2, rotCy);
+  }
 
   ctx.restore();
 }
@@ -1718,9 +1856,9 @@ function hitTest(x, y) {
     return expHit;
   }
 
-  // 4. 若目前選取物件本身就是專櫃印章，優先偵測其控制把手 (旋轉與 4 角縮放)
+  // 4. 若目前選取物件本身就是專櫃印章，優先偵測其控制把手 (旋轉、4 角等比例與 4 邊中點獨立拉伸)
   const hitRadiusForHandles = (document.body.classList.contains('is-mobile-mode') ? 30 : 22) / currentZoom;
-  const hitRotStemLength = 32 / currentZoom;
+  const hitRotStemLength = 38 / currentZoom;
   const hitTestLayerControlHandles = targetLayer => {
     if (!targetLayer || targetLayer.rectCropMode || targetLayer.distortMode) return null;
     const dx = x - targetLayer.x;
@@ -1737,6 +1875,10 @@ function hitTest(x, y) {
     if (Math.hypot(localX - hw, localY - (-hh)) <= hitRadiusForHandles) return { layer: targetLayer, part: 'tr' };
     if (Math.hypot(localX - hw, localY - hh) <= hitRadiusForHandles) return { layer: targetLayer, part: 'br' };
     if (Math.hypot(localX - (-hw), localY - hh) <= hitRadiusForHandles) return { layer: targetLayer, part: 'bl' };
+    if (Math.hypot(localX - 0, localY - (-hh)) <= hitRadiusForHandles) return { layer: targetLayer, part: 'tc' };
+    if (Math.hypot(localX - hw, localY - 0) <= hitRadiusForHandles) return { layer: targetLayer, part: 'rc' };
+    if (Math.hypot(localX - 0, localY - hh) <= hitRadiusForHandles) return { layer: targetLayer, part: 'bc' };
+    if (Math.hypot(localX - (-hw), localY - 0) <= hitRadiusForHandles) return { layer: targetLayer, part: 'lc' };
     return null;
   };
 
@@ -1886,7 +2028,7 @@ canvas.addEventListener('mousedown', e => {
       rectCropInitialState = { ...hit.layer.cropRect };
     } else if (hit.part === 'rot') {
       isRotating = true;
-    } else if (['tl', 'tr', 'br', 'bl'].includes(hit.part)) {
+    } else if (['tl', 'tr', 'br', 'bl', 'tc', 'rc', 'bc', 'lc'].includes(hit.part)) {
       isResizing = true;
       resizeHandle = hit.part;
     } else if (hit.part === 'body') {
@@ -2162,8 +2304,8 @@ window.addEventListener('mousemove', e => {
     if (hit.part === 'rot') canvas.style.cursor = 'grab';
     else if (['tl', 'br'].includes(hit.part) || ['tl', 'br'].includes(hit.handle)) canvas.style.cursor = 'nwse-resize';
     else if (['tr', 'bl'].includes(hit.part) || ['tr', 'bl'].includes(hit.handle)) canvas.style.cursor = 'nesw-resize';
-    else if (['tc', 'bc'].includes(hit.handle)) canvas.style.cursor = 'ns-resize';
-    else if (['lc', 'rc'].includes(hit.handle)) canvas.style.cursor = 'ew-resize';
+    else if (['tc', 'bc'].includes(hit.part) || ['tc', 'bc'].includes(hit.handle)) canvas.style.cursor = 'ns-resize';
+    else if (['lc', 'rc'].includes(hit.part) || ['lc', 'rc'].includes(hit.handle)) canvas.style.cursor = 'ew-resize';
     else if (hit.part === 'distort_corner') canvas.style.cursor = 'crosshair';
     else canvas.style.cursor = 'move';
   } else {
@@ -2272,6 +2414,30 @@ function applyActiveLayerPointerDrag(coords, dx, dy) {
 
     const localDx = dx * Math.cos(-objInitialState.rotation) - dy * Math.sin(-objInitialState.rotation);
     const localDy = dx * Math.sin(-objInitialState.rotation) + dy * Math.cos(-objInitialState.rotation);
+
+    if (['rc', 'lc', 'bc', 'tc'].includes(resizeHandle)) {
+      const cosR = Math.cos(objInitialState.rotation);
+      const sinR = Math.sin(objInitialState.rotation);
+      if (resizeHandle === 'rc' || resizeHandle === 'lc') {
+        const sign = resizeHandle === 'rc' ? 1 : -1;
+        const newW = Math.max(24, Math.round(origW + sign * localDx));
+        const shiftLocalX = sign * ((newW - origW) / 2);
+        activeLayer.width = newW;
+        activeLayer.height = origH;
+        activeLayer.x = objInitialState.x + shiftLocalX * cosR;
+        activeLayer.y = objInitialState.y + shiftLocalX * sinR;
+      } else {
+        const sign = resizeHandle === 'bc' ? 1 : -1;
+        const newH = Math.max(24, Math.round(origH + sign * localDy));
+        const shiftLocalY = sign * ((newH - origH) / 2);
+        activeLayer.width = origW;
+        activeLayer.height = newH;
+        activeLayer.x = objInitialState.x - shiftLocalY * sinR;
+        activeLayer.y = objInitialState.y + shiftLocalY * cosR;
+      }
+      render();
+      return true;
+    }
 
     let scaleDelta = 0;
     if (resizeHandle === 'br') {
@@ -3713,7 +3879,10 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
           paymentTopMid
         );
         const itemsAreaEndY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(1.0 * scale));
-        const paymentSliceStartY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(2.5 * scale));
+        // v68: 下半部保留區（顧客姓名 / 專櫃名稱 / 聯絡地址上方）上緣裁切線往上外擴約 0.35 cm (300 DPI 約 40 px) 安全留白
+        const safeMinPaymentStartY = Math.max(0, lastItemRow.bottom + 2);
+        const extraTopSafetyPad = Math.max(40, Math.round(7.0 * scale));
+        const paymentSliceStartY = Math.max(safeMinPaymentStartY, paymentTopLineY - extraTopSafetyPad);
 
         // v44 紅框純白挖空：從「數量」欄位右緣起至紫線 cropRightX，垂直從表頭右三欄上緣至最後一筆明細下緣
         if (nextRightColItem && qtyColRightEdgeX < cropRightX) {
@@ -4460,6 +4629,7 @@ function importImagePureFrontend(file) {
           name: file.name,
           image: activeImg,
           rawImage: img,
+          rawOriginalImage: img,
           warpedImage: stampedCardCanvas || rectifiedCleanCanvas,
           croppedImage: trimmedCanvas,
           rectifiedCleanCanvas: rectifiedCleanCanvas,
@@ -10025,6 +10195,73 @@ function initSmartWarrantyModule() {
   if (btnToggleCardRectify) {
     btnToggleCardRectify.addEventListener('click', () => {
       toggleCardRectifyMode();
+    });
+  }
+
+  function keepOriginalImageForLayer(targetLayer) {
+    if (!targetLayer || targetLayer.type !== 'image') {
+      showToast('請先選取或匯入保卡／發票圖片');
+      return;
+    }
+    const origImg = targetLayer.rawOriginalImage || targetLayer.rawImage;
+    if (!origImg) {
+      showToast('找不到可還原的原始圖片快照');
+      return;
+    }
+
+    pushUndoState('維持原圖（取消自動拉正）');
+
+    targetLayer.image = origImg;
+    targetLayer.rawImage = origImg;
+    targetLayer.warpedImage = null;
+    targetLayer.croppedImage = null;
+    targetLayer.rectifiedCleanCanvas = null;
+    targetLayer.hasBakedStamp = false;
+    targetLayer.isRectifiedCard = false;
+    targetLayer.cardRectifyMode = false;
+    targetLayer.rectCropMode = false;
+    targetLayer.cropRect = null;
+    targetLayer.distortMode = false;
+    targetLayer.distortCorners = null;
+    targetLayer.liveDistortPreview = null;
+    targetLayer.liveDistortOffset = null;
+    targetLayer.scanEnhance = false;
+    targetLayer.rotation = 0;
+
+    const origW = origImg.naturalWidth || origImg.width || 800;
+    const origH = origImg.naturalHeight || origImg.height || 600;
+    const origAspect = origW / Math.max(1, origH);
+    const keepW = Math.max(320, Math.min(Math.round(canvasWidth * 0.72), targetLayer.width || Math.round(canvasWidth * 0.58)));
+    targetLayer.width = keepW;
+    targetLayer.height = Math.round(keepW / origAspect);
+    if (targetLayer.height > Math.round(canvasHeight * 0.88)) {
+      targetLayer.height = Math.round(canvasHeight * 0.88);
+      targetLayer.width = Math.round(targetLayer.height * origAspect);
+    }
+
+    if (switchScanEnhance) switchScanEnhance.checked = false;
+    if (enhanceSliders) enhanceSliders.classList.add('hidden');
+    if (typeof updateRectCropUI === 'function') updateRectCropUI(targetLayer);
+    if (typeof updateDistortUI === 'function') updateDistortUI(targetLayer);
+    if (typeof updateCardRectifyUI === 'function') updateCardRectifyUI(targetLayer);
+    setActiveLayer(targetLayer);
+    updateLayersListUI();
+    render();
+    showToast('🖼️ 已還原為未變形原始圖片（保留已辨識機種、機號與 5 行大字）');
+  }
+
+  if (btnKeepOriginalSmartCard) {
+    btnKeepOriginalSmartCard.addEventListener('click', () => {
+      const targetLayer = (activeLayer && activeLayer.type === 'image')
+        ? activeLayer
+        : getTargetWarrantyImageLayer();
+      keepOriginalImageForLayer(targetLayer);
+    });
+  }
+
+  if (btnKeepOriginalImage) {
+    btnKeepOriginalImage.addEventListener('click', () => {
+      keepOriginalImageForLayer(activeLayer);
     });
   }
 

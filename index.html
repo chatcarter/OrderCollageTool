@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>訂單、保卡與發票拼貼工作台 (超高解析純前端版)</title>
-  <link rel="stylesheet" href="static/style.css?v=67">
+  <link rel="stylesheet" href="static/style.css?v=68">
 </head>
 <body>
   <!-- 純前端極簡淺灰全螢幕隱形時間鎖 (v36/v38: 電腦「...」/ 盲打時間；手機三連擊 / 數字鍵盤) -->
@@ -39,7 +39,7 @@
   <div id="mobileTopBar" class="mobile-top-bar">
     <div class="mobile-top-left">
       <span class="mobile-top-title">拼貼工作台</span>
-      <span class="version-badge mobile-ver-badge">v67 (2026.11.26)</span>
+      <span class="version-badge mobile-ver-badge">v68 (2026.11.26)</span>
     </div>
     <div class="mobile-progress-badges" id="mobileProgressBadges">
       <span class="mobile-step-badge" id="mBadgeOrder">訂購單</span>
@@ -71,7 +71,7 @@
       </svg>
       <span>訂單、保卡與發票拼貼工作台</span>
       <span class="brand-badge">A4 橫向 300DPI 印刷級 (3508 × 2480)</span>
-      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v67 (2026.11.26)</span>
+      <span class="version-badge" id="headerVersionBadge" title="目前系統正式版本">v68 (2026.11.26)</span>
     </div>
 
     <div class="header-actions">
@@ -174,10 +174,10 @@
     <!-- Right Control Panel (28%) -->
     <aside class="control-section">
 
-      <!-- 目前版本資訊橫幅 (v67) -->
+      <!-- 目前版本資訊橫幅 (v68) -->
       <div class="panel-version-banner" id="panelVersionBanner">
         <span>目前系統版本</span>
-        <span class="version-badge">v67 (2026.11.26)</span>
+        <span class="version-badge">v68 (2026.11.26)</span>
       </div>
       
       <!-- 1. 已匯入物件清單 -->
@@ -227,6 +227,13 @@
           <!-- 圖片（保卡/發票）專用：矩形裁切與自由梯形變形 -->
           <div id="imagePerspectiveControls" class="control-row hidden">
             
+            <!-- 一鍵維持原圖（取消自動拉正） -->
+            <div style="margin-bottom: 8px;">
+              <button type="button" class="btn btn-outline btn-sm btn-full" id="btnKeepOriginalImage" title="恢復為未經透視拉正與自動變形的原始圖片，並保留已辨識的機種、機號與 5 行文字">
+                🖼️ 維持原圖（取消自動拉正）
+              </button>
+            </div>
+
             <!-- 矩形裁切工具 -->
             <div style="font-size: 12px; font-weight: 700; color: var(--text-main); margin-bottom: 2px;">
               1. 矩形裁切（去桌面背景／對照片點兩下可快開）
@@ -414,8 +421,9 @@
 
       <!-- 2-1. 🏷️ 品牌保卡智慧辨識與自動蓋章 (v21) -->
       <div class="panel-card" id="cardSmartWarranty">
-        <div class="card-title">
-          <span>🏷️ 品牌保卡智慧辨識與自動蓋章</span>
+        <div class="card-title" style="gap: 6px;">
+          <span style="flex: 1;">🏷️ 品牌保卡智慧辨識與自動蓋章</span>
+          <button type="button" class="btn btn-outline btn-sm" id="btnKeepOriginalSmartCard" title="還原為未經自動透視拉正與裁切的原始圖片（保留已辨識文字）" style="padding: 2px 8px; font-size: 11px; flex-shrink: 0;">🖼️ 維持原圖</button>
           <span class="count-badge" id="cardTemplateBadge">國際牌雙聯</span>
         </div>
 
@@ -918,9 +926,9 @@ demo@example.com
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <!-- Base64 Stamp Data (防止本地 file:/// CORS 限制) -->
   <script src="static/stamp_data.js"></script>
-  <!-- 品牌保卡智慧模板庫 (v67) -->
-  <script src="static/card_templates.js?v=67"></script>
-  <!-- 主互動程式碼 (v67) -->
-  <script src="static/app.js?v=67"></script>
+  <!-- 品牌保卡智慧模板庫 (v68) -->
+  <script src="static/card_templates.js?v=68"></script>
+  <!-- 主互動程式碼 (v68) -->
+  <script src="static/app.js?v=68"></script>
 </body>
 </html>
