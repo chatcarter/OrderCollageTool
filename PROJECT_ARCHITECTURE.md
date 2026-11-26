@@ -81,6 +81,12 @@ OrderCollageTool/
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 17:11] (第 69 版 / v69)
+- **執行項目**：**集雅社專櫃訂購單上下拼接接縫精準修復（`v69`）** — 嚴格鎖死已封版之四大品牌 `static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
+- **具體進度**：
+  1. **備份與版本同步**：建立 `_backup/20261126_171042_v68/` 備份，同步更新 `index.html` 與 `static/index.html` 至 `v69 (2026.11.26)` 及 `?v=69`。
+  2. **精準定位 `bottomMinY` 並外擴 `0.4 cm` 安全留白**：於 `buildPurifiedOrderSheetCanvas()` 定位「顧客姓名 / 客戶名稱 / 專櫃名稱 / 聯絡地址」與收款區實際最小 `Y` 座標 `bottomMinY`，將 `paymentSliceStartY` 往上外擴至少 `0.4 cm`（`Math.max(52, Math.round(9.5 * scale))`）且夾限 `itemsAreaEndY <= paymentSliceStartY`，確保字頭完整無缺且與明細區不重疊。
+
 ### [2026-11-26 16:52] (第 68 版 / v68)
 - **執行項目**：**新增「🖼️ 維持原圖」一鍵還原、全面升級「小畫家 3D 級」自由變形控制框與訂購單下半部裁切上緣安全留白（v68）** — 嚴格鎖死已封版之四大品牌 `static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
 - **具體進度**：

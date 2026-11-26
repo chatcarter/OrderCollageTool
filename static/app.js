@@ -3785,6 +3785,14 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
     bottomStartIdx = rows.findIndex((r, idx) =>
       idx > headerIdx && /收款日期|收款方式|收款:|收款：|實收訂金|訂金金額|尚餘尾款|總金額/.test(r.fullText)
     );
+    const customerRowIdx = rows.findIndex((r, idx) =>
+      idx > headerIdx &&
+      (bottomStartIdx < 0 || idx <= bottomStartIdx) &&
+      /顧客姓名|客戶名稱|專櫃名稱|聯絡地址/.test(r.fullText)
+    );
+    if (customerRowIdx > headerIdx && (bottomStartIdx < 0 || customerRowIdx < bottomStartIdx)) {
+      bottomStartIdx = customerRowIdx;
+    }
   }
 
   const cutoffIdx = rows.findIndex((r, idx) =>
@@ -3878,11 +3886,23 @@ function buildPurifiedOrderSheetCanvas(fullCanvas, textContent, page, viewport, 
           lineScanRight,
           paymentTopMid
         );
-        const itemsAreaEndY = Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(1.0 * scale));
-        // v68: 下半部保留區（顧客姓名 / 專櫃名稱 / 聯絡地址上方）上緣裁切線往上外擴約 0.35 cm (300 DPI 約 40 px) 安全留白
+        // v69: 精準定位「顧客姓名 / 專櫃名稱 / 聯絡地址」與底部收款區之實際最小 Y 座標 (minY)，將 bodyStartY (paymentSliceStartY) 往上外擴至少 0.4 cm (約 52~57 px) 安全留白，並確保與明細末列不重疊
+        const bottomAnchorRows = rows.slice(bottomStartIdx, activeEndIdx).filter(r =>
+          r === bottomFirstRow || /顧客姓名|客戶名稱|專櫃名稱|聯絡地址/.test(r.fullText)
+        );
+        const bottomMinY = bottomAnchorRows.length > 0
+          ? Math.min(...bottomAnchorRows.map(r => r.top))
+          : bottomFirstRow.top;
         const safeMinPaymentStartY = Math.max(0, lastItemRow.bottom + 2);
-        const extraTopSafetyPad = Math.max(40, Math.round(7.0 * scale));
-        const paymentSliceStartY = Math.max(safeMinPaymentStartY, paymentTopLineY - extraTopSafetyPad);
+        const bodyStartPadPx = Math.max(52, Math.round(9.5 * scale));
+        const paymentSliceStartY = Math.max(
+          safeMinPaymentStartY,
+          Math.round(Math.min(bottomMinY, paymentTopLineY) - bodyStartPadPx)
+        );
+        const itemsAreaEndY = Math.min(
+          paymentSliceStartY,
+          Math.max(lastItemRow.bottom + 1, paymentTopLineY - Math.ceil(1.0 * scale))
+        );
 
         // v44 紅框純白挖空：從「數量」欄位右緣起至紫線 cropRightX，垂直從表頭右三欄上緣至最後一筆明細下緣
         if (nextRightColItem && qtyColRightEdgeX < cropRightX) {

@@ -53,6 +53,16 @@
 
 ## 區塊六：工程修改工作日誌
 
+### [2026-11-26 17:11] (第 69 版 / v69)
+- **執行項目**：**集雅社專櫃訂購單上下拼接接縫精準修復（`v69`）** — 嚴格鎖死已封版之四大品牌（Panasonic 國際牌、`lg_tw`、`mitsubishi_tw`、`hitachi_tw`）`static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
+- **具體進度**：
+  1. **備份與版本徽章同步（`v69`）**：
+     - 建立 `_backup/20261126_171042_v68/` 完整基線備份，同步更新 `index.html` 與 `static/index.html` 版本徽章至 `v69 (2026.11.26)` 及 `?v=69`。
+  2. **精準定位「顧客姓名 / 專櫃名稱 / 聯絡地址」最小 `Y` 座標並外擴 `0.4 cm` 安全留白（`static/app.js`）**：
+     - 於 `buildPurifiedOrderSheetCanvas()` 擴充 `bottomStartIdx` 偵測，若 `headerIdx` 之後出現 `/顧客姓名|客戶名稱|專櫃名稱|聯絡地址/` 文字列，優先納入下半部保留區塊起點，避免右側欄位漏網或遭接縫切斷。
+     - 針對 `bottomAnchorRows`（包含 `bottomFirstRow` 與 `顧客姓名` / `專櫃名稱` / `聯絡地址` 文字列）計算實際最小 `Y` 座標 `bottomMinY`，將 `paymentSliceStartY`（`bodyStartY`）從 `Math.min(bottomMinY, paymentTopLineY)` 再往上外擴至少 `0.4 cm`（`Math.max(52, Math.round(9.5 * scale))`，6.0x 畫布約 `57 px`），並夾限 `itemsAreaEndY <= paymentSliceStartY` 與 `lastItemRow.bottom + 2`，確保「顧客姓名」整行字頭與右側「專櫃名稱 / 單號 / 聯絡地址」所有文字行完整無缺且絕不重疊。
+  3. **驗證與歸檔**：通過 `HTML_SYNC_OK=True`、雙 JS 括號平衡與 Windows `CRLF` 檢核，並自動執行 `git commit` 與 `git push origin main`。
+
 ### [2026-11-26 16:52] (第 68 版 / v68)
 - **執行項目**：**新增「🖼️ 維持原圖」一鍵還原、全面升級「小畫家 3D 級」自由變形控制框與訂購單下半部裁切上緣安全留白（v68）** — 嚴格鎖死已封版之四大品牌（Panasonic 國際牌、`lg_tw`、`mitsubishi_tw`、`hitachi_tw`）`static/card_templates.js` 規則與 `static/stamp_data.js` 完全不動。
 - **具體進度**：
